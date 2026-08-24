@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "comfy": {
+      "type": "stdio",
+      "command": "/Users/josiemachalek/Projects/gauntlet-ai/projects/project-11-game-week/.venv/bin/comfy-mcp",
+      "args": [],
+      "env": {
+        "COMFY_BIN": "/Users/josiemachalek/Projects/gauntlet-ai/projects/project-11-game-week/.venv/bin/comfy",
+        "COMFY_PROJECT": "/Users/josiemachalek/Projects/gauntlet-ai/projects/project-11-game-week"
+      }
+    }
+  }
+}

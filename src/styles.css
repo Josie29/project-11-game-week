@@ -1,0 +1,250 @@
+:root {
+  /* Palette — neon-on-night. Kept here so scene materials and DOM UI stay in sync. */
+  --color-night: #05060f;
+  --color-surface: rgba(12, 14, 28, 0.82);
+  --color-border: rgba(120, 132, 200, 0.32);
+  --color-text: #e8ecff;
+  --color-text-muted: #9aa3c8;
+  --color-neon-pink: #ff2d95;
+  --color-neon-cyan: #22e0ff;
+  --color-neon-gold: #ffc63f;
+  --color-win: #3ee08a;
+  --color-loss: #ff5a5a;
+
+  /* Spacing scale — multiples of 0.25rem. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+
+  --radius: 0.5rem;
+  --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-numeric: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--color-night);
+  color: var(--color-text);
+  font-family: var(--font-ui);
+  overflow: hidden;
+  /* dvh over vh so mobile browser chrome doesn't clip the canvas later. */
+  min-height: 100dvh;
+}
+
+canvas {
+  display: block;
+  touch-action: none;
+}
+
+/* ---------- HUD ---------- */
+
+.hud {
+  position: fixed;
+  inset: 0;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  /* Overlay is informational; clicks belong to the canvas underneath. */
+  pointer-events: none;
+}
+
+.hud__bankroll {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.hud__label {
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.hud__amount {
+  font-family: var(--font-numeric);
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: var(--color-neon-gold);
+}
+
+.hud__hint {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+.hud__prompt {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-8);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-6);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+  text-align: center;
+  backdrop-filter: blur(0.5rem);
+}
+
+/* ---------- Blackjack panel ---------- */
+
+.panel {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-4);
+  transform: translateX(-50%);
+  width: min(34rem, calc(100vw - 2rem));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(0.75rem);
+}
+
+.panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.panel__header h1 {
+  margin: 0;
+  font-size: 1.125rem;
+  letter-spacing: 0.04em;
+}
+
+.panel__hands {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.hand {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.hand__label {
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.hand__cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-height: 2.5rem;
+  align-items: center;
+}
+
+.hand__empty {
+  color: var(--color-text-muted);
+}
+
+.card {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.25rem;
+  padding: var(--space-2);
+  background: #f4f6ff;
+  color: #12141f;
+  border-radius: 0.25rem;
+  font-family: var(--font-numeric);
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.card--red {
+  color: #c02037;
+}
+
+.card--back {
+  background: repeating-linear-gradient(45deg, #2a3160, #2a3160 4px, #1d2247 4px, #1d2247 8px);
+  color: var(--color-text-muted);
+}
+
+.panel__outcome {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-loss);
+}
+
+.panel__outcome--win {
+  color: var(--color-win);
+}
+
+.panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.panel__prompt {
+  margin-right: auto;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+.button {
+  padding: var(--space-2) var(--space-4);
+  background: rgba(80, 92, 160, 0.22);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: rgba(110, 126, 210, 0.34);
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.button--primary {
+  background: var(--color-neon-pink);
+  border-color: transparent;
+  color: #14060f;
+  font-weight: 600;
+}
+
+.button--primary:hover:not(:disabled) {
+  background: #ff53a9;
+}
+
+.button--ghost {
+  background: transparent;
+}
