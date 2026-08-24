@@ -6,7 +6,9 @@ import { CasinoInterior } from './scenes/CasinoInterior'
 import { Strip } from './scenes/Strip'
 import { Location, useGameStore } from './store/useGameStore'
 import { BlackjackPanel } from './ui/BlackjackPanel'
+import { CrapsPanel } from './ui/CrapsPanel'
 import { Hud } from './ui/Hud'
+import { GameKind, getCasino } from './world/casinos'
 import { KEYBOARD_MAP } from './world/controls'
 
 export function App() {
@@ -35,7 +37,13 @@ export function App() {
       </Canvas>
 
       <Hud />
-      {isIndoors && activeCasino && <BlackjackPanel casinoId={activeCasino} />}
+      {isIndoors && activeCasino && (
+        getCasino(activeCasino).game === GameKind.Craps ? (
+          <CrapsPanel casinoId={activeCasino} />
+        ) : (
+          <BlackjackPanel casinoId={activeCasino} />
+        )
+      )}
     </KeyboardControls>
   )
 }

@@ -1,5 +1,6 @@
 import { advance, useThree } from '@react-three/fiber'
 import { useEffect } from 'react'
+import { Vector3 } from 'three'
 
 export interface DevRenderBridge {
   /** Draws one frame on demand without advancing animation. */
@@ -11,6 +12,14 @@ export interface DevRenderBridge {
   step: (frames?: number, delta?: number) => void
   /** Current camera world position, as `[x, y, z]`. */
   cameraPosition: () => [number, number, number]
+  /**
+   * World positions of every named object matching a prefix.
+   *
+   * For finding things that should be on screen and are not — a physics body
+   * that has fallen out of the world looks identical to one that was never
+   * created, and neither shows up in a screenshot.
+   */
+  locate: (prefix: string) => { name: string; position: [number, number, number] }[]
 }
 
 /**
@@ -41,6 +50,15 @@ export function DevBridge() {
         }
       },
       cameraPosition: () => [camera.position.x, camera.position.y, camera.position.z],
+      locate: (prefix) => {
+        const found: { name: string; position: [number, number, number] }[] = []
+        scene.traverse((object) => {
+          if (!object.name.startsWith(prefix)) return
+          const world = object.getWorldPosition(new Vector3())
+          found.push({ name: object.name, position: [world.x, world.y, world.z] })
+        })
+        return found
+      },
     }
 
     ;(window as unknown as { devRender: DevRenderBridge }).devRender = bridge

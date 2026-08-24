@@ -1,4 +1,22 @@
 /**
+ * Advances a mulberry32 generator by one step.
+ *
+ * Exposed as a pure state transition, not just a closure, because craps rolls
+ * indefinitely: its state has to be carried in the game state to stay
+ * reproducible, where blackjack only needs one shuffle up front.
+ *
+ * @param seedState Current 32-bit generator state.
+ * @returns The next value in [0, 1) and the state that produced it.
+ */
+export function nextRandom(seedState: number): { value: number; state: number } {
+  const state = (seedState + 0x6d2b79f5) >>> 0
+  let t = state
+  t = Math.imul(t ^ (t >>> 15), t | 1)
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+  return { value: ((t ^ (t >>> 14)) >>> 0) / 4294967296, state }
+}
+
+/**
  * Creates a seeded pseudo-random number generator (mulberry32).
  *
  * The game uses a seeded PRNG rather than Math.random so that a given seed
@@ -12,11 +30,9 @@ export function createRng(seed: number): () => number {
   let state = seed >>> 0 // Coerce to unsigned 32-bit; mulberry32 assumes uint32 state.
 
   return function next(): number {
-    state = (state + 0x6d2b79f5) >>> 0
-    let t = state
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    const step = nextRandom(state)
+    state = step.state
+    return step.value
   }
 }
 

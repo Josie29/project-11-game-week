@@ -2,10 +2,11 @@ import { PerspectiveCamera } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useRef } from 'react'
 import { DoubleSide, PerspectiveCamera as PerspectiveCameraImpl, Vector3 } from 'three'
-import { getCasino, type CasinoId } from '../world/casinos'
+import { GameKind, getCasino, type CasinoId } from '../world/casinos'
 import { BlackjackTable } from './components/BlackjackTable'
 import { CasinoCharacter, Outfit } from './components/CasinoCharacter'
 import { CasinoFloor } from './components/CasinoFloor'
+import { CrapsTable } from './components/CrapsTable'
 import { Stool } from './components/Stool'
 import { useOrbitInput } from './useOrbitInput'
 
@@ -31,7 +32,9 @@ const STOOLS: readonly { x: number; z: number }[] = [
 const PLAYER_SEAT = STOOLS[2] ?? { x: 0, z: 2.95 }
 
 /** Point the camera orbits and looks at — roughly the middle of the felt. */
-const CAMERA_TARGET = new Vector3(0.15, 1.05, 0.45)
+const BLACKJACK_TARGET = new Vector3(0.15, 1.05, 0.45)
+/** The craps table is smaller and centred, and its printed layout is the game. */
+const CRAPS_TARGET = new Vector3(0, 1.05, 0)
 
 /*
  * Opening view, as an orbit rather than a position. Both closer and steeper
@@ -43,6 +46,8 @@ const CAMERA_TARGET = new Vector3(0.15, 1.05, 0.45)
 const DEFAULT_YAW = -0.2925
 const DEFAULT_PITCH = 0.52
 const DEFAULT_DISTANCE = 5.8
+const CRAPS_DISTANCE = 4.5
+const CRAPS_PITCH = 0.68
 
 /*
  * Limits. The near limit is set by the seated player, not by taste: closer than
@@ -73,12 +78,19 @@ const ORBIT_DAMPING = 12
  * Input handling is shared with the strip camera via `useOrbitInput`; only the
  * limits and what it looks at differ.
  */
-function TableCamera() {
+function TableCamera({ game }: { game: GameKind }) {
   const cameraRef = useRef<PerspectiveCameraImpl>(null)
   const defaultCamera = useThree((state) => state.camera)
 
+  const isCraps = game === GameKind.Craps
+  const target = isCraps ? CRAPS_TARGET : BLACKJACK_TARGET
+
   const { orbit } = useOrbitInput(
-    { yaw: DEFAULT_YAW, pitch: DEFAULT_PITCH, distance: DEFAULT_DISTANCE },
+    {
+      yaw: isCraps ? 0 : DEFAULT_YAW,
+      pitch: isCraps ? CRAPS_PITCH : DEFAULT_PITCH,
+      distance: isCraps ? CRAPS_DISTANCE : DEFAULT_DISTANCE,
+    },
     {
       minPitch: MIN_PITCH,
       maxPitch: MAX_PITCH,
@@ -97,13 +109,13 @@ function TableCamera() {
 
     camera.position.lerp(
       DESIRED.set(
-        CAMERA_TARGET.x + Math.sin(yaw) * horizontal,
-        CAMERA_TARGET.y + Math.sin(pitch) * distance,
-        CAMERA_TARGET.z + Math.cos(yaw) * horizontal,
+        target.x + Math.sin(yaw) * horizontal,
+        target.y + Math.sin(pitch) * distance,
+        target.z + Math.cos(yaw) * horizontal,
       ),
       settle,
     )
-    camera.lookAt(CAMERA_TARGET)
+    camera.lookAt(target)
   })
 
   return <PerspectiveCamera ref={cameraRef} makeDefault fov={45} />
@@ -128,7 +140,7 @@ export function CasinoInterior({ casinoId }: CasinoInteriorProps) {
       {/* Haze that swallows the far tables and keeps focus on the felt. */}
       <fog attach="fog" args={['#0b0611', 9, 26]} />
 
-      <TableCamera />
+      <TableCamera game={casino.game} />
 
       {/* Lifted well above a realistic level: at 0.32 the table's cast shadow
           went solid black and swallowed the whole foreground. */}
@@ -178,7 +190,7 @@ export function CasinoInterior({ casinoId }: CasinoInteriorProps) {
           <cylinderGeometry args={[0.018, 0.018, 1.6, 6]} />
           <meshStandardMaterial color="#3a2f1c" roughness={0.6} metalness={0.5} />
         </mesh>
-        <mesh castShadow>
+        <mesh>
           <coneGeometry args={[0.46, 0.34, 20, 1, true]} />
           <meshStandardMaterial color="#8a6a2f" roughness={0.35} metalness={0.75} side={DoubleSide} />
         </mesh>
@@ -209,7 +221,7 @@ export function CasinoInterior({ casinoId }: CasinoInteriorProps) {
       </group>
 
       <CasinoFloor />
-      <BlackjackTable />
+      {casino.game === GameKind.Craps ? <CrapsTable /> : <BlackjackTable />}
     </>
   )
 }

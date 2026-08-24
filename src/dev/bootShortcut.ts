@@ -1,7 +1,9 @@
 import { createGameFromShoe, createShoe, placeBet } from '../games/blackjack/engine'
 import { PlayerAction, Rank, Suit } from '../games/blackjack/types'
 import { useBlackjackStore } from '../store/useBlackjackStore'
+import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
+import { CrapsBet } from '../scenes/crapsFeltLayout'
 import { CasinoId } from '../world/casinos'
 
 /** Wager staked automatically when deep-linking to a dealt table. */
@@ -20,13 +22,20 @@ const DEMO_BET = 50
  * - `?boot=split` deals a pair, which a random shoe will not reliably do.
  * - `?boot=draw` forces the dealer to draw twice, which is the case the staged
  *   reveal exists for and which a random shoe rarely produces on demand.
+ * - `?boot=craps` opens the Lucky Viper with a pass-line bet already down.
  */
 export function applyBootShortcut(): void {
   const boot = new URLSearchParams(window.location.search).get('boot')
   if (!boot) return
 
-  const known = ['casino', 'table', 'settled', 'split', 'draw']
+  const known = ['casino', 'table', 'settled', 'split', 'draw', 'craps']
   if (!known.includes(boot)) return
+
+  if (boot === 'craps') {
+    useGameStore.getState().enterCasino(CasinoId.LuckyViper)
+    useCrapsStore.getState().wager(CrapsBet.PassLine, DEMO_BET)
+    return
+  }
 
   useGameStore.getState().enterCasino(CasinoId.GoldenAce)
 

@@ -1,4 +1,4 @@
-import { createRng, shuffle } from './rng'
+import { createRng, shuffle } from '../rng'
 import {
   type Card,
   type GameState,
