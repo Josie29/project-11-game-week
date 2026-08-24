@@ -55,9 +55,51 @@ export const DISCARD_POSITION: readonly [number, number, number] = [-2.05, SURFA
  * everything. Two columns fit; a third would collide with the left split hand.
  */
 export const STASH_COLUMN_ANCHORS: readonly (readonly [number, number])[] = [
-  [-0.4, 1.75],
-  [-0.74, 1.67],
+  [-0.39, 1.638],
+  [-0.69, 1.562],
 ]
+
+/**
+ * A shallow chip well under the stash.
+ *
+ * Without it the stash and the wager are three similar stacks in a row and a
+ * player cannot tell their money from their bet. The well is what says "these
+ * are yours" — the same job the rail groove does on a real table.
+ *
+ * Sized so all four corners stay on the felt; see `stash rail` in the tests.
+ */
+export const STASH_RAIL = {
+  center: [-0.54, 1.6] as const,
+  rotationY: -0.245,
+  length: 0.62,
+  width: 0.32,
+  /**
+   * Height of the tray floor the chips rest on.
+   *
+   * A flat plate on the felt was too subtle to separate the stash from the
+   * wager at this camera distance. Lifting the chips into a walled tray gives
+   * a height difference, which reads where a colour difference did not.
+   */
+  wallHeight: 0.05,
+} as const
+
+/** The rail's four corners in world XZ, for bounds checking. */
+export function stashRailCorners(): [number, number][] {
+  const { center, rotationY, length, width } = STASH_RAIL
+  const alongX = Math.cos(rotationY)
+  const alongZ = -Math.sin(rotationY)
+
+  const corners: [number, number][] = []
+  for (const lengthwise of [-0.5, 0.5]) {
+    for (const crosswise of [-0.5, 0.5]) {
+      corners.push([
+        center[0] + alongX * length * lengthwise - alongZ * width * crosswise,
+        center[1] + alongZ * length * lengthwise + alongX * width * crosswise,
+      ])
+    }
+  }
+  return corners
+}
 
 /** Chips shown in the stash at once, across all its columns. */
 export const MAX_STASH_CHIPS = 10

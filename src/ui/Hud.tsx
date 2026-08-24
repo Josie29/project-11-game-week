@@ -17,13 +17,13 @@ export function Hud() {
       </div>
 
       {location === Location.Strip && (
-        <div className="hud__hint">WASD or arrow keys to walk</div>
+        <div className="hud__hint">WASD to walk &middot; Q and E to look around</div>
       )}
 
       {nearby && (
         <div className="hud__prompt" style={{ borderColor: nearby.neonColor }}>
           <strong style={{ color: nearby.neonColor }}>{nearby.name}</strong>
-          <span>{nearby.available ? 'Walk in to play' : 'Opening Wednesday'}</span>
+          <span>{nearby.available ? 'Walk in to play' : 'Closed tonight'}</span>
         </div>
       )}
     </div>

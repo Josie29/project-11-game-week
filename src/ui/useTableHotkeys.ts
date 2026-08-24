@@ -7,6 +7,8 @@ export interface TableHotkeyHandlers {
   onSplit: () => void
   onNextRound: () => void
   onLeave: () => void
+  /** Picks a stake by position: 0 for the first chip button, and so on. */
+  onBet: (slot: number) => void
 }
 
 /**
@@ -51,6 +53,11 @@ export function useTableHotkeys(handlers: TableHotkeyHandlers): void {
           break
         case 'escape':
           current.onLeave()
+          break
+        case '1':
+        case '2':
+        case '3':
+          current.onBet(Number(event.key) - 1)
           break
         default:
           return

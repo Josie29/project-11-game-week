@@ -12,9 +12,14 @@ const CARD_WIDTH = 512
 const CARD_HEIGHT = 716 // Standard 2.5:3.5 poker ratio.
 const CORNER_RADIUS = 36
 
-const FACE_BACKGROUND = '#dcdfea'
-const BLACK_INK = '#16182a'
-const RED_INK = '#c31f38'
+/*
+ * Deliberately well below white. A brighter face reads as clean card stock in
+ * isolation, but under the table lamp it clips and bloom smears the highlight
+ * across the pips until the rank is unreadable.
+ */
+const FACE_BACKGROUND = '#bcc2d0'
+const BLACK_INK = '#0d0f1a'
+const RED_INK = '#a8172c'
 
 const BACK_BASE = '#1b1f3d'
 const BACK_LATTICE = '#3a4180'

@@ -17,6 +17,7 @@ import {
   PAYOUT_NUDGE_Z,
   SPLIT_OFFSET,
   STASH_COLUMN_ANCHORS,
+  stashRailCorners,
 } from '../scenes/tableLayout'
 
 describe('chipBreakdown', () => {
@@ -183,6 +184,44 @@ describe('offered stakes', () => {
   it('can render every stake as chips exactly', () => {
     for (const stake of OFFERED_STAKES) {
       expect(chipsValue(chipBreakdown(stake))).toBe(stake)
+    }
+  })
+})
+
+describe('stash rail', () => {
+  // The well sits right against the table edge, where there is barely room.
+  // An earlier, larger version overhung the rail on two corners.
+  it('keeps all four corners on the felt', () => {
+    for (const [x, z] of stashRailCorners()) {
+      expect(isOnFelt(x, z)).toBe(true)
+    }
+  })
+
+  it('covers every stash column', () => {
+    const corners = stashRailCorners()
+    const minX = Math.min(...corners.map(([x]) => x))
+    const maxX = Math.max(...corners.map(([x]) => x))
+
+    for (const [x] of STASH_COLUMN_ANCHORS) {
+      expect(x).toBeGreaterThan(minX)
+      expect(x).toBeLessThan(maxX)
+    }
+  })
+})
+
+describe('stash tray clearance', () => {
+  /*
+   * The tray is much wider than the chip columns inside it, so clearing the
+   * columns is not enough — an earlier size cleared every column but still had
+   * a corner clipping the left split hand's wager.
+   */
+  it('keeps every tray corner clear of both split hands and the centre spot', () => {
+    const CHIP_RADIUS_MARGIN = 0.16
+
+    for (const [x, z] of stashRailCorners()) {
+      for (const handX of [handAnchorX(0, 2), handAnchorX(1, 2), 0]) {
+        expect(Math.hypot(x - handX, z - CHIP_ROW_Z)).toBeGreaterThan(CHIP_RADIUS_MARGIN)
+      }
     }
   })
 })

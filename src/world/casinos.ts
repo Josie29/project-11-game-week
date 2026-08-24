@@ -44,7 +44,7 @@ export const CASINOS: readonly CasinoConfig[] = [
     game: GameKind.Craps,
     doorPosition: [8.5, 0, -34],
     neonColor: '#22e0ff',
-    available: false, // Craps lands Wednesday.
+    available: false, // Flip once the craps table is playable.
   },
 ]
 

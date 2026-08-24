@@ -172,8 +172,8 @@ export function BlackjackTable() {
         <meshStandardMaterial color="#1b1230" roughness={0.6} metalness={0.2} />
       </mesh>
 
-      {/* The player's own chips. Winnings still on the felt are held back so
-          the same money is not shown in the stash and on the table at once. */}
+      {/* The player's own chips, in their own well. Winnings still out on the
+          felt are held back so the same money is not shown twice. */}
       <ChipStash amount={bankroll - uncollectedPayout} />
 
       {game.dealerHand.map((card, index) => (

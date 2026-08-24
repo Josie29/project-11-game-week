@@ -60,6 +60,14 @@ export function BlackjackPanel({ casinoId }: BlackjackPanelProps) {
   const casino = getCasino(casinoId)
   const dealerScore = handValue(game.dealerHand)
 
+  /*
+   * The dealer's first card is face up, so its value is public. Showing a dash
+   * until settlement hid information the player can see on the felt and would
+   * use to decide — the readout now reports what is actually showing.
+   */
+  const dealerUpcard = game.dealerHand[0]
+  const dealerShowing = dealerUpcard ? handValue([dealerUpcard]).total : null
+
   const isBetting = game.phase === RoundPhase.Betting
   const isPlayerTurn = game.phase === RoundPhase.PlayerTurn
   const isSettled = game.phase === RoundPhase.Settled
@@ -82,6 +90,11 @@ export function BlackjackPanel({ casinoId }: BlackjackPanelProps) {
     onSplit: () => canSplitNow && takeAction(PlayerAction.Split),
     onNextRound: () => isSettled && nextRound(),
     onLeave: handleLeave,
+    // 1/2/3 pick a stake, so a hand can be played without touching the mouse.
+    onBet: (slot) => {
+      const amount = CHIP_DENOMINATIONS[slot]
+      if (isBetting && amount !== undefined && amount <= bankroll) placeWager(amount)
+    },
   })
 
   return (
@@ -90,7 +103,12 @@ export function BlackjackPanel({ casinoId }: BlackjackPanelProps) {
         <span className="score">
           <span className="score__label">Dealer</span>
           <span className="score__value">
-            {game.dealerHand.length > 0 && isSettled ? dealerScore.total : '—'}
+            {isSettled && game.dealerHand.length > 0
+              ? dealerScore.total
+              : (dealerShowing ?? '—')}
+            {!isSettled && dealerShowing !== null && (
+              <span className="score__soft">showing</span>
+            )}
           </span>
         </span>
 
@@ -144,7 +162,7 @@ export function BlackjackPanel({ casinoId }: BlackjackPanelProps) {
         {isBetting && !isBroke && (
           <>
             <span className="table-ui__prompt">Place your bet</span>
-            {CHIP_DENOMINATIONS.map((amount) => (
+            {CHIP_DENOMINATIONS.map((amount, index) => (
               <button
                 key={amount}
                 type="button"
@@ -152,7 +170,7 @@ export function BlackjackPanel({ casinoId }: BlackjackPanelProps) {
                 disabled={amount > bankroll}
                 onClick={() => placeWager(amount)}
               >
-                ${amount}
+                ${amount} <kbd>{index + 1}</kbd>
               </button>
             ))}
           </>

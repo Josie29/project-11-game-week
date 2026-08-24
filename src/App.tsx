@@ -29,7 +29,7 @@ export function App() {
           luminance threshold, leaving unlit geometry untouched.
         */}
         <EffectComposer>
-          <Bloom intensity={1.15} luminanceThreshold={0.62} luminanceSmoothing={0.28} mipmapBlur />
+          <Bloom intensity={1.0} luminanceThreshold={0.8} luminanceSmoothing={0.25} mipmapBlur />
           <Vignette offset={0.28} darkness={0.62} />
         </EffectComposer>
       </Canvas>
