@@ -8,8 +8,11 @@ export const CARD_WIDTH = 0.42
 export const CARD_HEIGHT = 0.59
 const CARD_THICKNESS = 0.012
 
-/** Where cards fly in from — the dealer's shoe at the back-right of the table. */
-export const SHOE_POSITION: readonly [number, number, number] = [1.95, 1.06, -1.05]
+/**
+ * Where cards fly in from. Must track the shoe mesh in `BlackjackTable`, which
+ * sits at the dealer's left on the far edge of the felt.
+ */
+export const SHOE_POSITION: readonly [number, number, number] = [-1.55, 1.09, -0.4]
 
 /** Lying flat with the printed face toward the ceiling. */
 const FACE_UP_PITCH = -Math.PI / 2
