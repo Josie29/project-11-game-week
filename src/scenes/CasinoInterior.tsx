@@ -1,6 +1,8 @@
 import { PerspectiveCamera } from '@react-three/drei'
+import { DoubleSide } from 'three'
 import { getCasino, type CasinoId } from '../world/casinos'
 import { BlackjackTable } from './components/BlackjackTable'
+import { CasinoCharacter, Outfit } from './components/CasinoCharacter'
 import { CasinoFloor } from './components/CasinoFloor'
 
 interface CasinoInteriorProps {
@@ -23,7 +25,12 @@ export function CasinoInterior({ casinoId }: CasinoInteriorProps) {
       {/* Haze that swallows the far tables and keeps focus on the felt. */}
       <fog attach="fog" args={['#0b0611', 9, 26]} />
 
-      <PerspectiveCamera makeDefault position={[0, 3.95, 5.5]} fov={46} rotation={[-0.53, 0, 0]} />
+      {/*
+        Seated over the player's shoulder. The distance is set by geometry
+        rather than taste: any closer and the player's head rises above the
+        table's near edge and covers their own cards.
+      */}
+      <PerspectiveCamera makeDefault position={[0, 4.2, 7.2]} fov={45} rotation={[-0.45, 0, 0]} />
 
       {/* Lifted well above a realistic level: at 0.32 the table's cast shadow
           went solid black and swallowed the whole foreground. */}
@@ -65,6 +72,38 @@ export function CasinoInterior({ casinoId }: CasinoInteriorProps) {
         <planeGeometry args={[26, 0.18]} />
         <meshBasicMaterial color={casino.neonColor} toneMapped={false} />
       </mesh>
+
+      {/* Brass pendant over the table, per art/refs/blackjack_floor.png. It
+          gives the overhead spotlight a visible source. */}
+      <group position={[0, 3.9, 0.2]}>
+        <mesh position={[0, 0.8, 0]}>
+          <cylinderGeometry args={[0.018, 0.018, 1.6, 6]} />
+          <meshStandardMaterial color="#3a2f1c" roughness={0.6} metalness={0.5} />
+        </mesh>
+        <mesh castShadow>
+          <coneGeometry args={[0.46, 0.34, 20, 1, true]} />
+          <meshStandardMaterial color="#8a6a2f" roughness={0.35} metalness={0.75} side={DoubleSide} />
+        </mesh>
+        {/* Emissive disc across the shade's mouth, so the lamp reads as lit. */}
+        <mesh position={[0, -0.16, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <circleGeometry args={[0.43, 20]} />
+          <meshBasicMaterial color="#d9b273" toneMapped={false} />
+        </mesh>
+      </group>
+
+      {/* The dealer, standing behind the table facing the player. */}
+      <group position={[0, 0, -1.35]}>
+        <CasinoCharacter outfit={Outfit.Dealer} dealerPose />
+      </group>
+
+      {/*
+        The player, back to camera. Placed to the RIGHT deliberately: turned to
+        face the dealer, their signalling right arm swings toward world -X, so
+        standing them on the left would push that arm off the edge of frame.
+      */}
+      <group position={[1.7, 0, 3]} rotation={[0, Math.PI, 0]}>
+        <CasinoCharacter outfit={Outfit.Player} signalsGestures />
+      </group>
 
       <CasinoFloor />
       <BlackjackTable />

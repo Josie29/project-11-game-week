@@ -34,6 +34,9 @@ const PLAYER_ROW_Z = 1.15
 /** Sits on the centre betting spot printed in the felt. */
 const CHIP_ROW_Z = 1.6
 
+/** How far each hand sits either side of centre once the player splits. */
+const SPLIT_OFFSET = 1.15
+
 const CARD_SPACING = CARD_WIDTH * 0.82
 const DEAL_STAGGER = 0.18
 const HIT_DELAY = 0.06
@@ -176,18 +179,42 @@ export function BlackjackTable() {
         />
       ))}
 
-      {game.playerHand.map((card, index) => (
-        <PlayingCard
-          key={`player-${index}-${card.rank}${card.suit}`}
-          card={card}
-          faceUp
-          position={[cardX(index, game.playerHand.length), CARD_Y, PLAYER_ROW_Z]}
-          delay={dealDelay(index, false)}
-          seatIndex={index + 1}
-        />
-      ))}
+      {game.hands.map((hand, handIndex) => {
+        // A single hand sits on the centre spot; a split pair straddles it.
+        const anchorX = game.hands.length > 1 ? (handIndex === 0 ? -SPLIT_OFFSET : SPLIT_OFFSET) : 0
+        const isActive = handIndex === game.activeHandIndex && game.phase === RoundPhase.PlayerTurn
 
-      <ChipStack amount={game.bet} position={[0, TABLE_TOP_Y + 0.016, CHIP_ROW_Z]} />
+        return (
+          <group key={`hand-${handIndex}`}>
+            {hand.cards.map((card, index) => (
+              <PlayingCard
+                key={`player-${handIndex}-${index}-${card.rank}${card.suit}`}
+                card={card}
+                faceUp
+                position={[anchorX + cardX(index, hand.cards.length), CARD_Y, PLAYER_ROW_Z]}
+                delay={dealDelay(index, false)}
+                seatIndex={index + 1}
+              />
+            ))}
+
+            <ChipStack
+              amount={hand.bet}
+              position={[anchorX, TABLE_TOP_Y + 0.016, CHIP_ROW_Z]}
+            />
+
+            {/* Marks which hand the player is acting on once there is a choice. */}
+            {isActive && game.hands.length > 1 && (
+              <mesh
+                position={[anchorX, TABLE_TOP_Y + 0.014, CHIP_ROW_Z]}
+                rotation={[-Math.PI / 2, 0, 0]}
+              >
+                <ringGeometry args={[0.34, 0.4, 32]} />
+                <meshBasicMaterial color="#ffe08a" toneMapped={false} />
+              </mesh>
+            )}
+          </group>
+        )
+      })}
     </group>
   )
 }

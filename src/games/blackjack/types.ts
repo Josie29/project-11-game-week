@@ -30,6 +30,7 @@ export enum PlayerAction {
   Hit = 'hit',
   Stand = 'stand',
   Double = 'double',
+  Split = 'split',
 }
 
 export enum RoundPhase {
@@ -57,23 +58,48 @@ export interface HandValue {
   readonly isSoft: boolean
 }
 
+/**
+ * One player hand. A round holds several of these once the player splits.
+ */
+export interface Hand {
+  readonly cards: readonly Card[]
+  /** Wager on this hand. Doubling increases it mid-round. */
+  readonly bet: number
+  /**
+   * Result once known.
+   *
+   * Busting sets this immediately; standing leaves it null until the dealer
+   * has played, because the hand's fate is not decided yet.
+   */
+  readonly outcome: RoundOutcome | null
+  /**
+   * Chips returned for this hand on settlement, stake included.
+   *
+   * Even money pays `2 * bet`, a natural pays `2.5 * bet`, a push refunds
+   * `bet`, and a loss pays 0. Because the stake is included, the caller debits
+   * on wager and credits on settlement, and the two always net out.
+   */
+  readonly payout: number
+  /**
+   * True when this hand came from a split.
+   *
+   * A two-card 21 here is an ordinary 21, not a natural — it pays even money.
+   */
+  readonly fromSplit: boolean
+  /** True once the player can no longer act on this hand. */
+  readonly isFinished: boolean
+}
+
 export interface GameState {
   readonly phase: RoundPhase
   readonly shoe: readonly Card[]
   /** Index of the next card to be dealt from `shoe`. */
   readonly shoeIndex: number
-  readonly playerHand: readonly Card[]
+  /** One entry before a split, two after. */
+  readonly hands: readonly Hand[]
+  /** Which hand the player is currently acting on. */
+  readonly activeHandIndex: number
   readonly dealerHand: readonly Card[]
-  /** Current wager. Doubling down increases this mid-round. */
-  readonly bet: number
-  readonly outcome: RoundOutcome | null
-  /**
-   * Chips returned to the player on settlement, stake included.
-   *
-   * Even money pays `2 * bet`, a natural blackjack pays `2.5 * bet`, a push
-   * refunds `bet`, and a loss pays 0. Because the stake is included here, the
-   * caller debits `bet` when the wager is placed and credits `payout` on
-   * settlement — the two always net out correctly.
-   */
-  readonly payout: number
+  /** Sum of every hand's payout, populated at settlement. */
+  readonly totalPayout: number
 }

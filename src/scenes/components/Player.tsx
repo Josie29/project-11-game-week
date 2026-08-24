@@ -5,6 +5,7 @@ import { Group, MathUtils, Vector3 } from 'three'
 import { useGameStore } from '../../store/useGameStore'
 import { CASINOS, DOOR_TRIGGER_RADIUS, STREET_BOUNDS } from '../../world/casinos'
 import { Control } from '../../world/controls'
+import { CasinoCharacter, Outfit } from './CasinoCharacter'
 
 const WALK_SPEED = 7.5
 
@@ -15,16 +16,28 @@ const WALK_SPEED = 7.5
  * frame with roadway; the near-horizontal view puts the towers, their signage
  * and the sky on screen, which is what the strip is worth looking at.
  */
-const CAMERA_OFFSET = new Vector3(0, 3.4, 7)
+const CAMERA_DISTANCE = 7
+const CAMERA_HEIGHT = 3.4
 const CAMERA_LOOK_HEIGHT = 2.2
 
 /** Exponential damping rates; higher is snappier. Frame-rate independent. */
 const CAMERA_DAMPING = 6
+const CAMERA_YAW_DAMPING = 2.6
 const TURN_DAMPING = 14
 
-const CAPSULE_RADIUS = 0.35
-const CAPSULE_LENGTH = 1
-const CAPSULE_CENTER_Y = CAPSULE_RADIUS + CAPSULE_LENGTH / 2
+/** Radians per second the camera orbits under manual Q/E control. */
+const ORBIT_SPEED = 1.9
+
+/**
+ * Angular slack before the camera starts swinging back behind the player.
+ *
+ * Camera-relative input combined with a camera that chases the player's heading
+ * is a feedback loop: turning moves the axes that the turn was measured
+ * against, so holding a direction spins you on the spot. Only correcting the
+ * *excess* beyond this dead zone breaks the loop — the camera lags through a
+ * turn and settles behind afterwards.
+ */
+const FOLLOW_DEAD_ZONE = MathUtils.degToRad(35)
 
 /** Wraps an angle to [-PI, PI] so turns always take the short way round. */
 function wrapAngle(angle: number): number {
@@ -32,20 +45,23 @@ function wrapAngle(angle: number): number {
 }
 
 /**
- * The player avatar: a grey-box capsule driven by WASD with a trailing camera.
+ * The player avatar: a walking character with a trailing, self-orienting camera.
  *
  * Movement is transform-based rather than physics-driven. The strip is flat and
  * the only interaction is walking into a doorway, so a physics engine would add
- * a dependency and a pile of tuning for no gain. Rapier arrives later scoped
- * solely to the craps dice.
- *
- * The visual is isolated in the returned `<mesh>` block so a rigged character
- * model can replace it without touching the movement or camera logic.
+ * a dependency and a pile of tuning for no gain. Rapier stays scoped to craps.
  */
 export function Player() {
   const groupRef = useRef<Group>(null)
   const [, getKeys] = useKeyboardControls<Control>()
   const spawnPosition = useGameStore((state) => state.spawnPosition)
+
+  /** Direction the camera looks, as a yaw about Y. Zero looks down -Z. */
+  const cameraYaw = useRef(0)
+
+  // Current speed, handed to the avatar so its walk cycle can react without
+  // re-rendering the figure every frame.
+  const speedRef = useRef(0)
 
   // Scratch vectors reused every frame to keep the render loop allocation-free.
   const moveDirection = useRef(new Vector3())
@@ -56,14 +72,29 @@ export function Player() {
     const group = groupRef.current
     if (!group) return
 
-    const { forward, back, left, right } = getKeys()
+    const { forward, back, left, right, orbitLeft, orbitRight } = getKeys()
 
-    // Screen-relative axes: the camera never rotates, so -Z is always "away".
-    const inputX = (right ? 1 : 0) - (left ? 1 : 0)
-    const inputZ = (back ? 1 : 0) - (forward ? 1 : 0)
+    const orbitInput = (orbitLeft ? 1 : 0) - (orbitRight ? 1 : 0)
+    if (orbitInput !== 0) {
+      cameraYaw.current += orbitInput * ORBIT_SPEED * delta
+    }
 
-    const direction = moveDirection.current.set(inputX, 0, inputZ)
+    const yaw = cameraYaw.current
+    const sinYaw = Math.sin(yaw)
+    const cosYaw = Math.cos(yaw)
+
+    // Movement axes derived from where the camera is looking, so "forward" is
+    // always away from the viewer regardless of how far the camera has swung.
+    const forwardInput = (forward ? 1 : 0) - (back ? 1 : 0)
+    const rightInput = (right ? 1 : 0) - (left ? 1 : 0)
+
+    const direction = moveDirection.current.set(
+      -sinYaw * forwardInput + cosYaw * rightInput,
+      0,
+      -cosYaw * forwardInput - sinYaw * rightInput,
+    )
     const isMoving = direction.lengthSq() > 0
+    speedRef.current = isMoving ? WALK_SPEED : 0
 
     if (isMoving) {
       direction.normalize().multiplyScalar(WALK_SPEED * delta)
@@ -77,13 +108,34 @@ export function Player() {
       const targetAngle = Math.atan2(direction.x, direction.z)
       const turn = wrapAngle(targetAngle - group.rotation.y)
       group.rotation.y += turn * (1 - Math.exp(-TURN_DAMPING * delta))
+
+      // Swing back behind the player, but only past the dead zone and only
+      // while walking, so standing still never drifts the view.
+      if (orbitInput === 0) {
+        const desiredYaw = group.rotation.y + Math.PI
+        const offBy = wrapAngle(desiredYaw - cameraYaw.current)
+        const excess = Math.abs(offBy) - FOLLOW_DEAD_ZONE
+
+        if (excess > 0) {
+          const correction = Math.sign(offBy) * excess
+          cameraYaw.current += correction * (1 - Math.exp(-CAMERA_YAW_DAMPING * delta))
+        }
+      }
     }
 
-    // Trailing camera.
-    const desired = desiredCameraPos.current.copy(group.position).add(CAMERA_OFFSET)
+    // Trailing camera, seated on the orbit circle at the current yaw.
+    const desired = desiredCameraPos.current.set(
+      group.position.x + Math.sin(cameraYaw.current) * CAMERA_DISTANCE,
+      group.position.y + CAMERA_HEIGHT,
+      group.position.z + Math.cos(cameraYaw.current) * CAMERA_DISTANCE,
+    )
     state.camera.position.lerp(desired, 1 - Math.exp(-CAMERA_DAMPING * delta))
     state.camera.lookAt(
-      lookTarget.current.set(group.position.x, group.position.y + CAMERA_LOOK_HEIGHT, group.position.z),
+      lookTarget.current.set(
+        group.position.x,
+        group.position.y + CAMERA_LOOK_HEIGHT,
+        group.position.z,
+      ),
     )
 
     // Door proximity. Reads the store imperatively so the render loop never
@@ -116,17 +168,7 @@ export function Player() {
       // Start facing down the street (-Z) rather than back at the camera.
       rotation={[0, Math.PI, 0]}
     >
-      {/* Swap this block for the rigged character GLB; nothing above depends on it. */}
-      <mesh position={[0, CAPSULE_CENTER_Y, 0]} castShadow>
-        <capsuleGeometry args={[CAPSULE_RADIUS, CAPSULE_LENGTH, 8, 16]} />
-        <meshStandardMaterial color="#f2f4ff" roughness={0.5} />
-      </mesh>
-
-      {/* Facing marker so the grey-box capsule visibly turns. */}
-      <mesh position={[0, CAPSULE_CENTER_Y + 0.25, CAPSULE_RADIUS * 0.9]}>
-        <boxGeometry args={[0.3, 0.12, 0.18]} />
-        <meshBasicMaterial color="#22e0ff" toneMapped={false} />
-      </mesh>
+      <CasinoCharacter outfit={Outfit.Player} speedRef={speedRef} />
     </group>
   )
 }

@@ -11,17 +11,22 @@ import { chromium } from 'playwright-core'
  * regardless of window focus, so visual checks stop depending on what else is
  * on screen.
  *
- * Usage: node scripts/shot.mjs <url> <output.png> [settleMs]
+ * Usage: node scripts/shot.mjs <url> <output.png> [settleMs] [keys]
+ *
+ * `keys` is a comma-separated list pressed in order before the capture, so an
+ * interaction can be verified headlessly — e.g. "p" to split, "h,h" to hit twice.
  */
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
-const [, , url, output, settleArg] = process.argv
+const [, , url, output, settleArg, keysArg] = process.argv
 
 if (!url || !output) {
-  console.error('Usage: node scripts/shot.mjs <url> <output.png> [settleMs]')
+  console.error('Usage: node scripts/shot.mjs <url> <output.png> [settleMs] [keys]')
   process.exit(1)
 }
+
+const keys = keysArg ? keysArg.split(',').filter(Boolean) : []
 
 // Long enough for the deal animation to ease into place before capture.
 const settleMs = Number(settleArg ?? 2500)
@@ -48,6 +53,14 @@ try {
 
   await page.goto(url, { waitUntil: 'networkidle' })
   await page.waitForSelector('canvas', { timeout: 15000 })
+
+  for (const key of keys) {
+    await page.keyboard.press(key)
+    // Short enough to still catch a hand gesture mid-swing; use settleMs to wait
+    // for the resulting deal to land.
+    await page.waitForTimeout(400)
+  }
+
   await page.waitForTimeout(settleMs)
 
   // Confirm the renderer actually produced frames rather than capturing a

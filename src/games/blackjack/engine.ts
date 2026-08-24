@@ -2,6 +2,7 @@ import { createRng, shuffle } from './rng'
 import {
   type Card,
   type GameState,
+  type Hand,
   type HandValue,
   PlayerAction,
   Rank,
@@ -23,6 +24,14 @@ const BLACKJACK = 21
 
 /** Natural blackjack pays 3:2, so the player gets their stake back plus 1.5x. */
 const BLACKJACK_PAYOUT_MULTIPLIER = 2.5
+
+/**
+ * Hands a player may hold at once.
+ *
+ * Capped at one split. Resplitting multiplies the felt layout and the betting
+ * UI for a case that almost never comes up in a five-minute session.
+ */
+export const MAX_HANDS = 2
 
 /**
  * Returns the base point value of a rank, counting aces high.
@@ -50,15 +59,15 @@ function rankValue(rank: Rank): number {
  * total is bust is what makes multi-ace hands score correctly: A,A,9 totals 21
  * rather than 31 or 11.
  *
- * @param hand Cards to score.
+ * @param cards Cards to score.
  * @returns The best total not exceeding 21 where possible, and whether an ace
  *   is still counted as 11.
  */
-export function handValue(hand: readonly Card[]): HandValue {
+export function handValue(cards: readonly Card[]): HandValue {
   let total = 0
   let acesCountedHigh = 0
 
-  for (const card of hand) {
+  for (const card of cards) {
     total += rankValue(card.rank)
     if (card.rank === Rank.Ace) acesCountedHigh++
   }
@@ -72,12 +81,22 @@ export function handValue(hand: readonly Card[]): HandValue {
 }
 
 /** Returns true when a hand is a natural: exactly two cards totalling 21. */
-export function isNaturalBlackjack(hand: readonly Card[]): boolean {
-  return hand.length === 2 && handValue(hand).total === BLACKJACK
+export function isNaturalBlackjack(cards: readonly Card[]): boolean {
+  return cards.length === 2 && handValue(cards).total === BLACKJACK
 }
 
-export function isBust(hand: readonly Card[]): boolean {
-  return handValue(hand).total > BLACKJACK
+export function isBust(cards: readonly Card[]): boolean {
+  return handValue(cards).total > BLACKJACK
+}
+
+/** Total currently staked across every hand. */
+export function totalStaked(state: GameState): number {
+  return state.hands.reduce((sum, hand) => sum + hand.bet, 0)
+}
+
+/** The hand the player is acting on, or undefined once the round is over. */
+export function activeHand(state: GameState): Hand | undefined {
+  return state.hands[state.activeHandIndex]
 }
 
 /** Builds an ordered, unshuffled shoe of `deckCount` standard decks. */
@@ -139,11 +158,29 @@ export function createGameFromShoe(shoe: readonly Card[]): GameState {
     phase: RoundPhase.Betting,
     shoe,
     shoeIndex: 0,
-    playerHand: [],
+    hands: [],
+    activeHandIndex: 0,
     dealerHand: [],
-    bet: 0,
-    outcome: null,
-    payout: 0,
+    totalPayout: 0,
+  }
+}
+
+/** Returns a copy of `state` with one hand replaced. */
+function withHand(state: GameState, index: number, hand: Hand): GameState {
+  return { ...state, hands: state.hands.map((existing, i) => (i === index ? hand : existing)) }
+}
+
+/** Marks a hand done, optionally with a known result. */
+function finishHand(hand: Hand, outcome: RoundOutcome | null, payout: number): Hand {
+  return { ...hand, outcome, payout, isFinished: true }
+}
+
+/** Closes the round, summing what every hand returned. */
+function settleRound(state: GameState): GameState {
+  return {
+    ...state,
+    phase: RoundPhase.Settled,
+    totalPayout: state.hands.reduce((sum, hand) => sum + hand.payout, 0),
   }
 }
 
@@ -166,13 +203,13 @@ export function placeBet(state: GameState, amount: number): GameState {
   }
 
   let index = state.shoeIndex
-  const playerHand: Card[] = []
+  const playerCards: Card[] = []
   const dealerHand: Card[] = []
 
   // Standard deal order: player, dealer, player, dealer.
   for (let i = 0; i < 2; i++) {
     const toPlayer = draw(state.shoe, index)
-    playerHand.push(toPlayer.card)
+    playerCards.push(toPlayer.card)
     index = toPlayer.nextIndex
 
     const toDealer = draw(state.shoe, index)
@@ -180,45 +217,59 @@ export function placeBet(state: GameState, amount: number): GameState {
     index = toDealer.nextIndex
   }
 
+  const hand: Hand = {
+    cards: playerCards,
+    bet: amount,
+    outcome: null,
+    payout: 0,
+    fromSplit: false,
+    isFinished: false,
+  }
+
   const dealt: GameState = {
     ...state,
     phase: RoundPhase.PlayerTurn,
     shoeIndex: index,
-    playerHand,
+    hands: [hand],
+    activeHandIndex: 0,
     dealerHand,
-    bet: amount,
-    outcome: null,
-    payout: 0,
+    totalPayout: 0,
   }
 
-  const playerNatural = isNaturalBlackjack(playerHand)
+  const playerNatural = isNaturalBlackjack(playerCards)
   const dealerNatural = isNaturalBlackjack(dealerHand)
 
   if (playerNatural && dealerNatural) {
-    return settle(dealt, RoundOutcome.Push, dealt.bet)
+    return settleRound(withHand(dealt, 0, finishHand(hand, RoundOutcome.Push, amount)))
   }
   if (playerNatural) {
-    return settle(dealt, RoundOutcome.PlayerBlackjack, dealt.bet * BLACKJACK_PAYOUT_MULTIPLIER)
+    return settleRound(
+      withHand(
+        dealt,
+        0,
+        finishHand(hand, RoundOutcome.PlayerBlackjack, amount * BLACKJACK_PAYOUT_MULTIPLIER),
+      ),
+    )
   }
   if (dealerNatural) {
-    return settle(dealt, RoundOutcome.DealerWin, 0)
+    return settleRound(withHand(dealt, 0, finishHand(hand, RoundOutcome.DealerWin, 0)))
   }
 
   return dealt
 }
 
-/** Marks a round finished with the given outcome and payout. */
-function settle(state: GameState, outcome: RoundOutcome, payout: number): GameState {
-  return { ...state, phase: RoundPhase.Settled, outcome, payout }
-}
-
 /**
- * Plays out the dealer hand and settles the round.
+ * Plays out the dealer hand and scores every hand still in contention.
  *
  * The dealer draws while below 17 and stands on soft 17 — because `handValue`
- * already returns the best total, a plain `total < 17` test yields stand-on-soft-17.
+ * already returns the best total, a plain `total < 17` test yields
+ * stand-on-soft-17. If every player hand has already busted the dealer does not
+ * draw at all; there is nothing left to beat.
  */
 function resolveDealer(state: GameState): GameState {
+  const contested = state.hands.some((hand) => hand.outcome === null)
+  if (!contested) return settleRound(state)
+
   const dealerHand = [...state.dealerHand]
   let index = state.shoeIndex
 
@@ -228,77 +279,163 @@ function resolveDealer(state: GameState): GameState {
     index = nextIndex
   }
 
-  const resolved: GameState = { ...state, dealerHand, shoeIndex: index }
-  const playerTotal = handValue(state.playerHand).total
   const dealerTotal = handValue(dealerHand).total
+  const dealerBusted = dealerTotal > BLACKJACK
 
-  if (dealerTotal > BLACKJACK) {
-    return settle(resolved, RoundOutcome.DealerBust, resolved.bet * 2)
-  }
-  if (playerTotal > dealerTotal) {
-    return settle(resolved, RoundOutcome.PlayerWin, resolved.bet * 2)
-  }
-  if (playerTotal < dealerTotal) {
-    return settle(resolved, RoundOutcome.DealerWin, 0)
-  }
-  return settle(resolved, RoundOutcome.Push, resolved.bet)
+  const hands = state.hands.map((hand) => {
+    if (hand.outcome !== null) return hand // Already busted or settled on the deal.
+
+    const playerTotal = handValue(hand.cards).total
+
+    if (dealerBusted) return finishHand(hand, RoundOutcome.DealerBust, hand.bet * 2)
+    if (playerTotal > dealerTotal) return finishHand(hand, RoundOutcome.PlayerWin, hand.bet * 2)
+    if (playerTotal < dealerTotal) return finishHand(hand, RoundOutcome.DealerWin, 0)
+    return finishHand(hand, RoundOutcome.Push, hand.bet)
+  })
+
+  return settleRound({ ...state, hands, dealerHand, shoeIndex: index })
 }
 
 /**
- * Applies a player action and advances the round.
+ * Moves to the next hand awaiting a decision, or hands over to the dealer.
+ */
+function advanceOrResolve(state: GameState): GameState {
+  const nextIndex = state.hands.findIndex((hand) => !hand.isFinished)
+  if (nextIndex === -1) return resolveDealer(state)
+  return { ...state, activeHandIndex: nextIndex }
+}
+
+/** Returns true when the player may double the active hand. */
+export function canDouble(state: GameState): boolean {
+  const hand = activeHand(state)
+  return state.phase === RoundPhase.PlayerTurn && hand !== undefined && hand.cards.length === 2
+}
+
+/**
+ * Returns true when the active hand may be split.
  *
- * Standing, busting, or doubling all hand control to the dealer, so those
- * actions return a fully settled state.
+ * Requires an equal *rank* pair, not merely an equal value — a King and a Queen
+ * are both worth ten but are not a pair, and treating them as one surprises
+ * anyone who knows the game.
+ */
+export function canSplit(state: GameState): boolean {
+  const hand = activeHand(state)
+  if (state.phase !== RoundPhase.PlayerTurn || hand === undefined) return false
+  if (state.hands.length >= MAX_HANDS) return false
+  if (hand.cards.length !== 2) return false
+
+  const [first, second] = hand.cards
+  return first !== undefined && second !== undefined && first.rank === second.rank
+}
+
+/**
+ * Splits the active hand into two, dealing one card onto each.
  *
- * After a double the returned `bet` is twice the previous wager; the caller is
- * responsible for debiting the additional stake, i.e. `next.bet - prev.bet`.
+ * Split aces receive exactly one card each and then stand, which is the
+ * standard restriction; without it a pair of aces would be far too strong.
+ */
+function splitActiveHand(state: GameState): GameState {
+  const hand = activeHand(state)
+  if (hand === undefined || !canSplit(state)) {
+    throw new Error('The active hand cannot be split')
+  }
+
+  const [first, second] = hand.cards
+  if (first === undefined || second === undefined) {
+    throw new Error('A splittable hand must hold exactly two cards')
+  }
+
+  let index = state.shoeIndex
+  const firstDraw = draw(state.shoe, index)
+  index = firstDraw.nextIndex
+  const secondDraw = draw(state.shoe, index)
+  index = secondDraw.nextIndex
+
+  const wereAces = first.rank === Rank.Ace
+
+  const makeHand = (original: Card, drawn: Card): Hand => ({
+    cards: [original, drawn],
+    bet: hand.bet,
+    outcome: null,
+    payout: 0,
+    fromSplit: true,
+    // Aces stand on their single extra card; anything else is still playable.
+    isFinished: wereAces,
+  })
+
+  const split: GameState = {
+    ...state,
+    shoeIndex: index,
+    hands: [makeHand(first, firstDraw.card), makeHand(second, secondDraw.card)],
+    activeHandIndex: 0,
+  }
+
+  return wereAces ? resolveDealer(split) : split
+}
+
+/**
+ * Applies a player action to the active hand and advances the round.
  *
- * @throws {Error} If the round is not in the player's turn, or if doubling is
- *   attempted after the opening two cards.
+ * Standing, busting or doubling finishes the active hand and moves on; once no
+ * hand is left awaiting a decision the dealer plays and the round settles.
+ *
+ * Doubling and splitting both raise the amount staked. Callers should debit the
+ * difference in `totalStaked` across the call rather than tracking either case
+ * individually.
+ *
+ * @throws {Error} If the round is not in the player's turn, if doubling is
+ *   attempted after the opening two cards, or if splitting is not permitted.
  */
 export function act(state: GameState, action: PlayerAction): GameState {
   if (state.phase !== RoundPhase.PlayerTurn) {
     throw new Error(`Cannot act during phase "${state.phase}"`)
   }
 
+  const hand = activeHand(state)
+  if (hand === undefined) {
+    throw new Error('No hand is awaiting a decision')
+  }
+
+  const index = state.activeHandIndex
+
   switch (action) {
     case PlayerAction.Hit: {
       const { card, nextIndex } = draw(state.shoe, state.shoeIndex)
-      const playerHand = [...state.playerHand, card]
-      const hit: GameState = { ...state, playerHand, shoeIndex: nextIndex }
+      const cards = [...hand.cards, card]
+      const drawn: GameState = { ...state, shoeIndex: nextIndex }
 
-      // A bust settles at once — the dealer never draws, since the hand is already lost.
-      return isBust(playerHand) ? settle(hit, RoundOutcome.PlayerBust, 0) : hit
+      // A bust ends this hand at once; the dealer never needs to beat it.
+      const updated = isBust(cards)
+        ? finishHand({ ...hand, cards }, RoundOutcome.PlayerBust, 0)
+        : { ...hand, cards }
+
+      const next = withHand(drawn, index, updated)
+      return updated.isFinished ? advanceOrResolve(next) : next
     }
 
     case PlayerAction.Double: {
-      if (state.playerHand.length !== 2) {
+      if (hand.cards.length !== 2) {
         throw new Error('Doubling down is only allowed on the opening two cards')
       }
 
       const { card, nextIndex } = draw(state.shoe, state.shoeIndex)
-      const playerHand = [...state.playerHand, card]
-      const doubled: GameState = {
-        ...state,
-        playerHand,
-        shoeIndex: nextIndex,
-        bet: state.bet * 2,
-      }
+      const cards = [...hand.cards, card]
+      const doubled: Hand = { ...hand, cards, bet: hand.bet * 2 }
 
-      // Doubling buys exactly one card, then the turn ends automatically.
-      return isBust(playerHand)
-        ? settle(doubled, RoundOutcome.PlayerBust, 0)
-        : resolveDealer(doubled)
+      // Doubling buys exactly one card, then the hand is done either way.
+      const updated = isBust(cards)
+        ? finishHand(doubled, RoundOutcome.PlayerBust, 0)
+        : finishHand(doubled, null, 0)
+
+      return advanceOrResolve(withHand({ ...state, shoeIndex: nextIndex }, index, updated))
     }
 
-    case PlayerAction.Stand:
-      return resolveDealer(state)
-  }
-}
+    case PlayerAction.Split:
+      return splitActiveHand(state)
 
-/** Returns true when the player may still double, i.e. holds exactly two cards. */
-export function canDouble(state: GameState): boolean {
-  return state.phase === RoundPhase.PlayerTurn && state.playerHand.length === 2
+    case PlayerAction.Stand:
+      return advanceOrResolve(withHand(state, index, finishHand(hand, null, 0)))
+  }
 }
 
 /**
@@ -320,10 +457,9 @@ export function startNextRound(state: GameState, reshuffleSeed: number): GameSta
     phase: RoundPhase.Betting,
     shoe: needsReshuffle ? createShoe(reshuffleSeed) : state.shoe,
     shoeIndex: needsReshuffle ? 0 : state.shoeIndex,
-    playerHand: [],
+    hands: [],
+    activeHandIndex: 0,
     dealerHand: [],
-    bet: 0,
-    outcome: null,
-    payout: 0,
+    totalPayout: 0,
   }
 }
