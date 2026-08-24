@@ -43,8 +43,29 @@ export const PAYOUT_NUDGE_Z = 0.03
 /** The dealer's chip rack — where losing wagers go. */
 export const DEALER_RACK: readonly [number, number, number] = [0.15, TABLE_TOP_Y + 0.14, -0.63]
 
-/** Spent cards are pushed aside here as a round is cleared. */
-export const DISCARD_POSITION: readonly [number, number, number] = [-2.05, SURFACE_Y, -0.15]
+/**
+ * The dealing shoe, at the dealer's left.
+ *
+ * `SHOE_MOUTH` is the lip cards actually emerge from, a little forward of the
+ * body's centre — dealing from the middle of the box looks like cards
+ * materialising inside it.
+ */
+export const SHOE_POSITION: readonly [number, number, number] = [-1.62, TABLE_TOP_Y, -0.42]
+export const SHOE_ROTATION_Y = 0.3
+export const SHOE_MOUTH: readonly [number, number, number] = [-1.36, TABLE_TOP_Y + 0.055, -0.24]
+
+/**
+ * The discard tray, at the dealer's right.
+ *
+ * Deliberately the opposite side from the shoe. It previously sat at x = -2.05,
+ * alongside the shoe, which is not how any table is laid out: cards come off
+ * the dealer's left and spent hands go down on their right.
+ */
+export const DISCARD_TRAY: readonly [number, number, number] = [2.05, TABLE_TOP_Y, -0.2]
+export const DISCARD_ROTATION_Y = -0.34
+
+/** Where spent cards are pushed as a round is cleared. */
+export const DISCARD_POSITION: readonly [number, number, number] = [2.05, SURFACE_Y + 0.06, -0.2]
 
 /**
  * Columns of the player's chip stash, tucked between the centre betting spot

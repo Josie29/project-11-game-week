@@ -11,11 +11,14 @@ import {
   CHIP_ROW_Z,
   DEALER_RACK,
   DISCARD_POSITION,
+  DISCARD_TRAY,
   handAnchorX,
   isOnFelt,
   PAYOUT_NUDGE_X,
   PAYOUT_NUDGE_Z,
   SPLIT_OFFSET,
+  SHOE_MOUTH,
+  SHOE_POSITION,
   STASH_COLUMN_ANCHORS,
   stashRailCorners,
 } from '../scenes/tableLayout'
@@ -223,5 +226,33 @@ describe('stash tray clearance', () => {
         expect(Math.hypot(x - handX, z - CHIP_ROW_Z)).toBeGreaterThan(CHIP_RADIUS_MARGIN)
       }
     }
+  })
+})
+
+describe('dealer kit placement', () => {
+  // The shoe overhung the table edge once already, and the discard tray used to
+  // sit on the same side as the shoe — which no real table does.
+  it('keeps the shoe and the discard tray on the felt', () => {
+    expect(isOnFelt(SHOE_POSITION[0], SHOE_POSITION[2], 0.3)).toBe(true)
+    expect(isOnFelt(SHOE_MOUTH[0], SHOE_MOUTH[2], 0.2)).toBe(true)
+    expect(isOnFelt(DISCARD_TRAY[0], DISCARD_TRAY[2], 0.25)).toBe(true)
+  })
+
+  it('puts the shoe and the discard tray on opposite sides of the dealer', () => {
+    expect(Math.sign(SHOE_POSITION[0])).not.toBe(Math.sign(DISCARD_TRAY[0]))
+  })
+
+  // The rack spans x -0.65..0.95; either piece of kit landing on it would clip.
+  it('keeps both clear of the dealer’s chip rack', () => {
+    for (const [x, , z] of [SHOE_POSITION, DISCARD_TRAY]) {
+      expect(Math.hypot(x - DEALER_RACK[0], z - DEALER_RACK[2])).toBeGreaterThan(0.9)
+    }
+  })
+
+  // Cards fly out of the mouth, so it has to be part of the shoe, not adrift.
+  it('puts the shoe mouth within reach of the shoe body', () => {
+    expect(
+      Math.hypot(SHOE_MOUTH[0] - SHOE_POSITION[0], SHOE_MOUTH[2] - SHOE_POSITION[2]),
+    ).toBeLessThan(0.45)
   })
 })

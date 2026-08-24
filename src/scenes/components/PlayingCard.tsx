@@ -3,24 +3,31 @@ import { useRef } from 'react'
 import { Group, MathUtils } from 'three'
 import { getCardBackTexture, getCardFaceTexture } from '../../games/blackjack/cardTexture'
 import type { Card } from '../../games/blackjack/types'
+import { SHOE_MOUTH } from '../tableLayout'
 
 export const CARD_WIDTH = 0.34
 export const CARD_HEIGHT = 0.48
 const CARD_THICKNESS = 0.011
 
-/**
- * Where cards fly in from. Must track the shoe mesh in `BlackjackTable`, which
- * sits at the dealer's left on the far edge of the felt.
- */
-export const SHOE_POSITION: readonly [number, number, number] = [-1.55, 1.09, -0.4]
-
 /** Lying flat with the printed face toward the ceiling. */
 const FACE_UP_PITCH = -Math.PI / 2
 const FACE_DOWN_PITCH = Math.PI / 2
 
-/** Higher is snappier. Position settles faster than the flip so cards land, then turn. */
+/** Higher is snappier. Frame-rate independent. */
 const MOVE_DAMPING = 7
-const FLIP_DAMPING = 9
+
+/** How far the card rises off the felt at the midpoint of a turn. */
+const FLIP_LIFT = 0.085
+
+/**
+ * Smooth 0-1 ramp with zero velocity at both ends.
+ *
+ * A linear turn looks mechanical; easing in and out is what makes it read as a
+ * hand turning the card rather than a mesh rotating.
+ */
+function easeInOut(t: number): number {
+  return t * t * (3 - 2 * t)
+}
 
 interface PlayingCardProps {
   card: Card
@@ -30,18 +37,41 @@ interface PlayingCardProps {
   delay: number
   /** Drives a small deterministic tilt so a hand does not look machine-stacked. */
   seatIndex: number
+  /**
+   * How long the turn takes.
+   *
+   * Short while dealing, so the deal stays brisk; long for the dealer's hole
+   * card, which is the one moment worth drawing out.
+   */
+  flipDurationMs?: number | undefined
 }
+
+const DEFAULT_FLIP_MS = 280
 
 /**
  * One animated card.
  *
- * Position and pitch are eased every frame toward props rather than driven by a
- * timeline, so the same component handles dealing, sliding along as a hand
- * grows, and the hole card turning over at settlement.
+ * Position is eased toward props every frame, so the same component handles
+ * dealing from the shoe, sliding along as a hand grows, and being pushed to the
+ * discard tray at the end of a round.
+ *
+ * The turn is a timed animation rather than damping, because damping cannot
+ * express a lift — and a card that rises off the felt as it turns is what makes
+ * the reveal look like a dealer's hand instead of a rotating rectangle.
  */
-export function PlayingCard({ card, faceUp, position, delay, seatIndex }: PlayingCardProps) {
+export function PlayingCard({
+  card,
+  faceUp,
+  position,
+  delay,
+  seatIndex,
+  flipDurationMs = DEFAULT_FLIP_MS,
+}: PlayingCardProps) {
   const groupRef = useRef<Group>(null)
   const elapsed = useRef(0)
+
+  /** Progress of the current turn, 0 face down through 1 face up. */
+  const flip = useRef(0)
 
   const faceTexture = getCardFaceTexture(card)
   const backTexture = getCardBackTexture()
@@ -56,21 +86,28 @@ export function PlayingCard({ card, faceUp, position, delay, seatIndex }: Playin
     elapsed.current += delta
     const dealt = elapsed.current >= delay
 
-    const [targetX, targetY, targetZ] = dealt ? position : SHOE_POSITION
+    // Cards leave the shoe face down and only turn once they are on their spot.
+    const wantsFaceUp = dealt && faceUp
+    const step = delta / (flipDurationMs / 1000)
+    flip.current = MathUtils.clamp(flip.current + (wantsFaceUp ? step : -step), 0, 1)
+
+    const turn = easeInOut(flip.current)
+    // Peaks at the midpoint: the card is highest when it is on its edge.
+    const lift = Math.sin(turn * Math.PI) * FLIP_LIFT
+
+    const [targetX, targetY, targetZ] = dealt ? position : SHOE_MOUTH
     group.position.x = MathUtils.damp(group.position.x, targetX, MOVE_DAMPING, delta)
-    group.position.y = MathUtils.damp(group.position.y, targetY, MOVE_DAMPING, delta)
+    group.position.y = MathUtils.damp(group.position.y, targetY + lift, MOVE_DAMPING * 2, delta)
     group.position.z = MathUtils.damp(group.position.z, targetZ, MOVE_DAMPING, delta)
 
-    // Cards leave the shoe face down and turn over once they are on their spot.
-    const targetPitch = dealt && faceUp ? FACE_UP_PITCH : FACE_DOWN_PITCH
-    group.rotation.x = MathUtils.damp(group.rotation.x, targetPitch, FLIP_DAMPING, delta)
+    group.rotation.x = MathUtils.lerp(FACE_DOWN_PITCH, FACE_UP_PITCH, turn)
     group.rotation.z = MathUtils.damp(group.rotation.z, dealt ? restingYaw : 0, MOVE_DAMPING, delta)
   })
 
   return (
     <group
       ref={groupRef}
-      position={[SHOE_POSITION[0], SHOE_POSITION[1], SHOE_POSITION[2]]}
+      position={[SHOE_MOUTH[0], SHOE_MOUTH[1], SHOE_MOUTH[2]]}
       rotation={[FACE_DOWN_PITCH, 0, 0]}
     >
       <mesh castShadow receiveShadow>

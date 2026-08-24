@@ -18,12 +18,15 @@ const DEMO_BET = 50
  * - `?boot=table` opens the Golden Ace with a hand already dealt.
  * - `?boot=settled` plays that hand out, so the hole card is turned over.
  * - `?boot=split` deals a pair, which a random shoe will not reliably do.
+ * - `?boot=draw` forces the dealer to draw twice, which is the case the staged
+ *   reveal exists for and which a random shoe rarely produces on demand.
  */
 export function applyBootShortcut(): void {
   const boot = new URLSearchParams(window.location.search).get('boot')
   if (!boot) return
 
-  if (boot !== 'casino' && boot !== 'table' && boot !== 'settled' && boot !== 'split') return
+  const known = ['casino', 'table', 'settled', 'split', 'draw']
+  if (!known.includes(boot)) return
 
   useGameStore.getState().enterCasino(CasinoId.GoldenAce)
 
@@ -36,6 +39,24 @@ export function applyBootShortcut(): void {
       { rank: Rank.Eight, suit: Suit.Hearts },
       { rank: Rank.Six, suit: Suit.Diamonds },
       ...createShoe(7),
+    ]
+
+    useGameStore.getState().adjustBankroll(-DEMO_BET)
+    useBlackjackStore.setState({ game: placeBet(createGameFromShoe(stacked), DEMO_BET) })
+    return
+  }
+
+  if (boot === 'draw') {
+    // Player 20 stands pat; the dealer opens on 13 and has to draw twice to
+    // reach seventeen, so the reveal has cards to stage.
+    const stacked = [
+      { rank: Rank.Ten, suit: Suit.Spades },
+      { rank: Rank.Six, suit: Suit.Hearts },
+      { rank: Rank.Ten, suit: Suit.Diamonds },
+      { rank: Rank.Seven, suit: Suit.Clubs },
+      { rank: Rank.Two, suit: Suit.Spades },
+      { rank: Rank.Three, suit: Suit.Hearts },
+      ...createShoe(11),
     ]
 
     useGameStore.getState().adjustBankroll(-DEMO_BET)

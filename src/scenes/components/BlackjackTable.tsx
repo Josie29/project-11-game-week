@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import { CatmullRomCurve3, ExtrudeGeometry, Shape, TubeGeometry, Vector3 } from 'three'
 import { RoundPhase } from '../../games/blackjack/types'
+import { CatmullRomCurve3, ExtrudeGeometry, Shape, TubeGeometry, Vector3 } from 'three'
 import { ChipPhase, useBlackjackStore } from '../../store/useBlackjackStore'
 import { useGameStore } from '../../store/useGameStore'
 import { chipBreakdown, stackHeight } from '../chipLayout'
@@ -21,9 +21,11 @@ import {
   SURFACE_Y,
   TABLE_TOP_Y,
 } from '../tableLayout'
+import { FLIP_DURATION_MS } from '../revealTimeline'
 import { getFeltTexture } from '../tableTexture'
 import { ChipStack } from './ChipStack'
 import { ChipStash } from './ChipStash'
+import { DealerKit } from './DealerKit'
 import { CARD_WIDTH, PlayingCard } from './PlayingCard'
 
 /*
@@ -37,8 +39,13 @@ import { CARD_WIDTH, PlayingCard } from './PlayingCard'
 const CARD_Y = SURFACE_Y
 
 const CARD_SPACING = CARD_WIDTH * 0.82
-const DEAL_STAGGER = 0.18
+/** A touch more deliberate than a machine-gun deal. */
+const DEAL_STAGGER = 0.26
 const HIT_DELAY = 0.06
+
+/** Cards turn as they are dealt; only the hole card gets the slow treatment. */
+const DEAL_FLIP_MS = 280
+const HOLE_FLIP_MS = FLIP_DURATION_MS
 
 /** Chip-tray troughs, dealer's left to right, in standard casino colours. */
 const TRAY_COLORS = ['#e9ecf5', '#a3182f', '#12693f', '#1e4f9c', '#1b1d2e', '#5a2a82'] as const
@@ -103,11 +110,18 @@ export function BlackjackTable() {
   const game = useBlackjackStore((state) => state.game)
   const chipPhase = useBlackjackStore((state) => state.chipPhase)
   const uncollectedPayout = useBlackjackStore((state) => state.uncollectedPayout)
+  const dealerCardsShown = useBlackjackStore((state) => state.dealerCardsShown)
+  const holeCardUp = useBlackjackStore((state) => state.holeCardUp)
+  const revealComplete = useBlackjackStore((state) => state.revealComplete)
   const bankroll = useGameStore((state) => state.bankroll)
 
-  const isSettled = game.phase === RoundPhase.Settled
   /** The round is being cleared away: chips and cards are both leaving. */
   const isClearing = chipPhase === ChipPhase.Settling
+
+  // Empties the shoe and fills the discard tray as the shoe is played down,
+  // and resets itself when `startNextRound` reshuffles at penetration.
+  const shoeRemaining =
+    game.shoe.length > 0 ? 1 - game.shoeIndex / game.shoe.length : 1
 
   const felt = useMemo(() => {
     const texture = getFeltTexture()
@@ -163,29 +177,31 @@ export function BlackjackTable() {
 
       <ChipTray />
 
-      {/*
-        Dealing shoe, the corner cards fly out of. At x = -1.55 the felt edge is
-        z = -0.74, so the box is nudged forward to stay on the table.
-      */}
-      <mesh position={[-1.55, TABLE_TOP_Y + 0.08, -0.4]} rotation={[0, 0.28, 0]} castShadow>
-        <boxGeometry args={[0.44, 0.16, 0.6]} />
-        <meshStandardMaterial color="#1b1230" roughness={0.6} metalness={0.2} />
-      </mesh>
+      {/* Shoe and discard tray. Both fill levels come from how far into the
+          shoe the round has got, so neither needs state of its own. */}
+      <DealerKit shoeRemaining={shoeRemaining} />
 
       {/* The player's own chips, in their own well. Winnings still out on the
           felt are held back so the same money is not shown twice. */}
       <ChipStash amount={bankroll - uncollectedPayout} />
 
-      {game.dealerHand.map((card, index) => (
+      {/*
+        Sliced rather than rendered whole: the engine resolves the dealer's
+        entire hand in one step, so without gating on `dealerCardsShown` every
+        drawn card would land in the same frame.
+      */}
+      {game.dealerHand.slice(0, dealerCardsShown).map((card, index) => (
         <PlayingCard
           key={`dealer-${index}-${card.rank}${card.suit}`}
           card={card}
-          // The hole card stays down until the round resolves.
-          faceUp={index !== 1 || isSettled}
+          // The hole card waits for its beat in the reveal, not for settlement.
+          faceUp={index !== 1 || holeCardUp}
+          // Turned slowly and deliberately; the rest of the deal stays brisk.
+          flipDurationMs={index === 1 ? HOLE_FLIP_MS : DEAL_FLIP_MS}
           position={
             isClearing
               ? DISCARD_POSITION
-              : [cardX(index, game.dealerHand.length), CARD_Y, DEALER_ROW_Z]
+              : [cardX(index, Math.min(dealerCardsShown, game.dealerHand.length)), CARD_Y, DEALER_ROW_Z]
           }
           delay={dealDelay(index, true)}
           seatIndex={index}
@@ -221,6 +237,7 @@ export function BlackjackTable() {
                 key={`player-${handIndex}-${index}-${card.rank}${card.suit}`}
                 card={card}
                 faceUp
+                flipDurationMs={DEAL_FLIP_MS}
                 position={
                   isClearing
                     ? DISCARD_POSITION
@@ -235,7 +252,7 @@ export function BlackjackTable() {
             <ChipStack amount={hand.bet} position={chipTarget} origin={STASH_ORIGIN} />
 
             {/* Winnings, placed on top of the wager by the dealer. */}
-            {winnings > 0 && (
+            {winnings > 0 && revealComplete && (
               <ChipStack
                 amount={winnings}
                 position={

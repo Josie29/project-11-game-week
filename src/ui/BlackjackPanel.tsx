@@ -57,20 +57,27 @@ export function BlackjackPanel({ casinoId }: BlackjackPanelProps) {
   const leaveCasino = useGameStore((state) => state.leaveCasino)
   const resetBankroll = useGameStore((state) => state.resetBankroll)
 
+  const dealerCardsShown = useBlackjackStore((state) => state.dealerCardsShown)
+  const holeCardUp = useBlackjackStore((state) => state.holeCardUp)
+  const revealComplete = useBlackjackStore((state) => state.revealComplete)
+
   const casino = getCasino(casinoId)
-  const dealerScore = handValue(game.dealerHand)
 
   /*
-   * The dealer's first card is face up, so its value is public. Showing a dash
-   * until settlement hid information the player can see on the felt and would
-   * use to decide — the readout now reports what is actually showing.
+   * The dealer's total is read off the cards currently on the table, not off
+   * the engine's finished hand. The engine resolves the dealer atomically, so
+   * reading it directly would print the final total — and announce a bust —
+   * while the cards that produced it were still being turned over.
    */
-  const dealerUpcard = game.dealerHand[0]
-  const dealerShowing = dealerUpcard ? handValue([dealerUpcard]).total : null
+  const dealerVisible = game.dealerHand.slice(0, holeCardUp ? dealerCardsShown : 1)
+  const dealerScore = handValue(dealerVisible)
+  const dealerShowing = dealerVisible.length > 0 ? dealerScore.total : null
 
   const isBetting = game.phase === RoundPhase.Betting
   const isPlayerTurn = game.phase === RoundPhase.PlayerTurn
   const isSettled = game.phase === RoundPhase.Settled
+  /** The round is over *and* the dealer has finished showing their hand. */
+  const isResolved = isSettled && revealComplete
 
   const current = activeHand(game)
   const canDoubleNow = isPlayerTurn && canDouble(game) && bankroll >= (current?.bet ?? 0)
@@ -88,7 +95,7 @@ export function BlackjackPanel({ casinoId }: BlackjackPanelProps) {
     onStand: () => isPlayerTurn && takeAction(PlayerAction.Stand),
     onDouble: () => canDoubleNow && takeAction(PlayerAction.Double),
     onSplit: () => canSplitNow && takeAction(PlayerAction.Split),
-    onNextRound: () => isSettled && nextRound(),
+    onNextRound: () => isResolved && nextRound(),
     onLeave: handleLeave,
     // 1/2/3 pick a stake, so a hand can be played without touching the mouse.
     onBet: (slot) => {
@@ -103,10 +110,8 @@ export function BlackjackPanel({ casinoId }: BlackjackPanelProps) {
         <span className="score">
           <span className="score__label">Dealer</span>
           <span className="score__value">
-            {isSettled && game.dealerHand.length > 0
-              ? dealerScore.total
-              : (dealerShowing ?? '—')}
-            {!isSettled && dealerShowing !== null && (
+            {dealerShowing ?? '—'}
+            {!holeCardUp && dealerShowing !== null && (
               <span className="score__soft">showing</span>
             )}
           </span>
@@ -133,14 +138,14 @@ export function BlackjackPanel({ casinoId }: BlackjackPanelProps) {
               <span className="score__value">
                 {score.total}
                 {score.isSoft && <span className="score__soft">soft</span>}
-                {isSettled && <span className="score__soft">{shortOutcome(hand)}</span>}
+                {isResolved && <span className="score__soft">{shortOutcome(hand)}</span>}
               </span>
             </span>
           )
         })}
       </div>
 
-      {isSettled && game.hands.length === 1 && game.hands[0]?.outcome && (
+      {isResolved && game.hands.length === 1 && game.hands[0]?.outcome && (
         <p
           className={`table-ui__outcome ${
             WINNING_OUTCOMES.has(game.hands[0].outcome) ? 'table-ui__outcome--win' : ''
@@ -151,7 +156,7 @@ export function BlackjackPanel({ casinoId }: BlackjackPanelProps) {
         </p>
       )}
 
-      {isSettled && game.hands.length > 1 && (
+      {isResolved && game.hands.length > 1 && (
         <p className={`table-ui__outcome ${game.totalPayout > 0 ? 'table-ui__outcome--win' : ''}`}>
           {game.totalPayout > 0 ? 'Hands settled' : 'Both hands lost'}
           {game.totalPayout > 0 && <span className="table-ui__payout">+${game.totalPayout}</span>}
@@ -224,7 +229,7 @@ export function BlackjackPanel({ casinoId }: BlackjackPanelProps) {
           </>
         )}
 
-        {isSettled && (
+        {isResolved && (
           <button type="button" className="button button--primary" onClick={nextRound}>
             Next hand <kbd>Space</kbd>
           </button>
