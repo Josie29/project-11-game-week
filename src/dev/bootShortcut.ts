@@ -13,8 +13,8 @@ const DEMO_BET = 25
  * when iterating on the felt or the card art, and it makes rehearsing the demo
  * from a specific point awkward. Development builds only.
  *
- * - `?boot=casino` opens The Mirage at the betting prompt.
- * - `?boot=table` opens The Mirage with a hand already dealt.
+ * - `?boot=casino` opens the Golden Ace at the betting prompt.
+ * - `?boot=table` opens the Golden Ace with a hand already dealt.
  * - `?boot=settled` plays that hand out, so the hole card is turned over.
  */
 export function applyBootShortcut(): void {
@@ -23,7 +23,7 @@ export function applyBootShortcut(): void {
 
   if (boot !== 'casino' && boot !== 'table' && boot !== 'settled') return
 
-  useGameStore.getState().enterCasino(CasinoId.Mirage)
+  useGameStore.getState().enterCasino(CasinoId.GoldenAce)
 
   if (boot === 'table' || boot === 'settled') {
     useBlackjackStore.getState().placeWager(DEMO_BET)

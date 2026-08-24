@@ -35,7 +35,7 @@ export function CasinoInterior({ casinoId }: CasinoInteriorProps) {
         position={[0, 7.2, 0.5]}
         angle={0.68}
         penumbra={0.85}
-        intensity={330}
+        intensity={205}
         distance={20}
         color="#ffe4b5"
         castShadow

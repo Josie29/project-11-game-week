@@ -1,6 +1,6 @@
 export enum CasinoId {
-  Mirage = 'mirage',
-  Sands = 'sands',
+  GoldenAce = 'golden-ace',
+  LuckyViper = 'lucky-viper',
 }
 
 export enum GameKind {
@@ -14,7 +14,7 @@ export interface CasinoConfig {
   readonly game: GameKind
   /** World position of the entrance. Doubles as the proximity-trigger centre. */
   readonly doorPosition: readonly [number, number, number]
-  /** Facade neon colour, also used for the door glow and HUD accent. */
+  /** Facade neon colour, also used for signage and the HUD accent. */
   readonly neonColor: string
   /** False while the game behind the door is still unbuilt. */
   readonly available: boolean
@@ -23,23 +23,26 @@ export interface CasinoConfig {
 /**
  * Single source of truth for casino placement.
  *
- * The strip renders doors from this list, the player's proximity check reads it,
- * and exiting a casino returns the player to the matching `doorPosition`.
+ * The strip renders doors and signage from this list, the player's proximity
+ * check reads it, and exiting returns the player to the matching door.
+ *
+ * Names are invented rather than borrowed from real Las Vegas properties,
+ * which are live trademarks.
  */
 export const CASINOS: readonly CasinoConfig[] = [
   {
-    id: CasinoId.Mirage,
-    name: 'The Mirage',
+    id: CasinoId.GoldenAce,
+    name: 'Golden Ace',
     game: GameKind.Blackjack,
-    doorPosition: [-6.5, 0, -14],
-    neonColor: '#ff2d95',
+    doorPosition: [-8.5, 0, -14],
+    neonColor: '#ffc63f',
     available: true,
   },
   {
-    id: CasinoId.Sands,
-    name: 'The Sands',
+    id: CasinoId.LuckyViper,
+    name: 'Lucky Viper',
     game: GameKind.Craps,
-    doorPosition: [6.5, 0, -34],
+    doorPosition: [8.5, 0, -34],
     neonColor: '#22e0ff',
     available: false, // Craps lands Wednesday.
   },
@@ -53,10 +56,18 @@ export function getCasino(id: CasinoId): CasinoConfig {
   return casino
 }
 
+/** Half-width of the reflective roadway. */
+export const ROAD_HALF_WIDTH = 5
+
+/** Inner face of the building facades; the sidewalk runs from the road to here. */
+export const FACADE_X = 8.8
+
+export const SIDEWALK_HEIGHT = 0.16
+
 /** Walkable bounds of the strip, in world units. */
 export const STREET_BOUNDS = {
-  minX: -6,
-  maxX: 6,
+  minX: -8,
+  maxX: 8,
   minZ: -52,
   maxZ: 12,
 } as const

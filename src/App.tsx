@@ -1,5 +1,6 @@
 import { KeyboardControls } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
+import { Bloom, EffectComposer, Vignette } from '@react-three/postprocessing'
 import { DevBridge } from './dev/DevBridge'
 import { CasinoInterior } from './scenes/CasinoInterior'
 import { Strip } from './scenes/Strip'
@@ -21,6 +22,16 @@ export function App() {
       <Canvas shadows camera={{ position: [0, 5.2, 17.5], fov: 55 }}>
         {import.meta.env.DEV && <DevBridge />}
         {isIndoors && activeCasino ? <CasinoInterior casinoId={activeCasino} /> : <Strip />}
+
+        {/*
+          Bloom is what turns emissive planes into neon. The materials are all
+          drawn with toneMapped={false} so they exceed 1.0 and cross the
+          luminance threshold, leaving unlit geometry untouched.
+        */}
+        <EffectComposer>
+          <Bloom intensity={1.15} luminanceThreshold={0.62} luminanceSmoothing={0.28} mipmapBlur />
+          <Vignette offset={0.28} darkness={0.62} />
+        </EffectComposer>
       </Canvas>
 
       <Hud />

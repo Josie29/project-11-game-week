@@ -12,7 +12,7 @@ const CARD_WIDTH = 512
 const CARD_HEIGHT = 716 // Standard 2.5:3.5 poker ratio.
 const CORNER_RADIUS = 36
 
-const FACE_BACKGROUND = '#f7f8fb'
+const FACE_BACKGROUND = '#dcdfea'
 const BLACK_INK = '#16182a'
 const RED_INK = '#c31f38'
 

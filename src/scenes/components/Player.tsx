@@ -8,9 +8,15 @@ import { Control } from '../../world/controls'
 
 const WALK_SPEED = 7.5
 
-/** Camera seat relative to the player: behind and above, looking down the street. */
-const CAMERA_OFFSET = new Vector3(0, 5.2, 9.5)
-const CAMERA_LOOK_HEIGHT = 1.5
+/**
+ * Camera seat relative to the player: behind and just above head height.
+ *
+ * Kept close to level on purpose. A higher, steeper seat fills most of the
+ * frame with roadway; the near-horizontal view puts the towers, their signage
+ * and the sky on screen, which is what the strip is worth looking at.
+ */
+const CAMERA_OFFSET = new Vector3(0, 3.4, 7)
+const CAMERA_LOOK_HEIGHT = 2.2
 
 /** Exponential damping rates; higher is snappier. Frame-rate independent. */
 const CAMERA_DAMPING = 6
