@@ -1,7 +1,12 @@
 import { PerspectiveCamera } from '@react-three/drei'
-import { useThree } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
-import { DoubleSide, PerspectiveCamera as PerspectiveCameraImpl, Vector3 } from 'three'
+import {
+  DoubleSide,
+  MathUtils,
+  PerspectiveCamera as PerspectiveCameraImpl,
+  Vector3,
+} from 'three'
 import { getCasino, type CasinoId } from '../world/casinos'
 import { BlackjackTable } from './components/BlackjackTable'
 import { CasinoCharacter, Outfit } from './components/CasinoCharacter'
@@ -29,41 +34,175 @@ const STOOLS: readonly { x: number; z: number }[] = [
 /** The seat the player occupies — the centre spot, where their cards land. */
 const PLAYER_SEAT = STOOLS[2] ?? { x: 0, z: 2.95 }
 
+/** Point the camera orbits and looks at — roughly the middle of the felt. */
+const CAMERA_TARGET = new Vector3(0.15, 1.05, 0.45)
+
 /*
- * Offset well to the left of the player's stool. A camera sitting directly
- * behind them puts their back across the middle of the felt; swinging it wide
- * pushes the figure into the corner and leaves the betting area clear.
+ * Opening view, as an orbit rather than a position. Both closer and steeper
+ * than the original fixed shot: at the old distance and eyeline a card was
+ * about sixty pixels wide and seen near edge-on, which is legible in principle
+ * and a squint in practice. The cards should be readable before anyone touches
+ * the controls.
  */
-const CAMERA_POSITION: readonly [number, number, number] = [-1.85, 3.95, 7.1]
-const CAMERA_TARGET: readonly [number, number, number] = [0.15, 1.05, 0.45]
+const DEFAULT_YAW = -0.2925
+const DEFAULT_PITCH = 0.52
+const DEFAULT_DISTANCE = 5.8
+
+/*
+ * Limits. The near limit is set by the seated player, not by taste: closer than
+ * this and the camera ends up inside their head, because they sit a good way
+ * back from the felt. The pitch floor keeps the view above the rail, and the
+ * yaw range lets you swing right around the player's side of the table without
+ * ending up behind the dealer looking into the void.
+ */
+const MIN_DISTANCE = 4.3
+const MAX_DISTANCE = 9.5
+/*
+ * Pitch floor is about readability, not taste. The cards lie flat on the felt,
+ * so at a low enough eyeline they go edge-on and vanish — the first version
+ * allowed almost table level and made them impossible to read. The ceiling is
+ * generous because looking straight down is the best card-reading angle there
+ * is.
+ */
+const MIN_PITCH = 0.3
+const MAX_PITCH = 1.25
+const YAW_RANGE = 1.4
+
+const DRAG_SENSITIVITY = 0.0055
+const ZOOM_SENSITIVITY = 0.0035
+
+/** Higher is snappier; keeps the camera from snapping between frames. */
+const ORBIT_DAMPING = 12
+
+interface OrbitState {
+  yaw: number
+  pitch: number
+  distance: number
+}
 
 /**
- * Aims the fixed table camera.
+ * Orbit camera over the table: drag to look, scroll to zoom, R to reset.
  *
- * Uses `lookAt` rather than hand-authored Euler angles: the framing has to
- * clear the seated player's head while keeping their cards in shot, and
- * deriving that pitch by hand is how you end up an eighth of a radian out.
+ * Listeners go on the WebGL canvas rather than the window, so dragging across
+ * the control bar or the HUD does not swing the view.
  */
 function TableCamera() {
   const cameraRef = useRef<PerspectiveCameraImpl>(null)
   const defaultCamera = useThree((state) => state.camera)
+  const gl = useThree((state) => state.gl)
+
+  const orbit = useRef<OrbitState>({
+    yaw: DEFAULT_YAW,
+    pitch: DEFAULT_PITCH,
+    distance: DEFAULT_DISTANCE,
+  })
 
   useEffect(() => {
+    const element = gl.domElement
+    let pointerId: number | null = null
+    let lastX = 0
+    let lastY = 0
+
+    function onPointerDown(event: PointerEvent): void {
+      pointerId = event.pointerId
+      lastX = event.clientX
+      lastY = event.clientY
+      element.setPointerCapture(event.pointerId)
+    }
+
+    function onPointerMove(event: PointerEvent): void {
+      if (pointerId !== event.pointerId) return
+
+      const deltaX = event.clientX - lastX
+      const deltaY = event.clientY - lastY
+      lastX = event.clientX
+      lastY = event.clientY
+
+      const next = orbit.current
+      next.yaw = MathUtils.clamp(
+        next.yaw - deltaX * DRAG_SENSITIVITY,
+        DEFAULT_YAW - YAW_RANGE,
+        DEFAULT_YAW + YAW_RANGE,
+      )
+      next.pitch = MathUtils.clamp(
+        next.pitch + deltaY * DRAG_SENSITIVITY,
+        MIN_PITCH,
+        MAX_PITCH,
+      )
+    }
+
+    function onPointerUp(event: PointerEvent): void {
+      if (pointerId !== event.pointerId) return
+      element.releasePointerCapture(event.pointerId)
+      pointerId = null
+    }
+
+    function onWheel(event: WheelEvent): void {
+      // Otherwise the page scrolls behind the canvas.
+      event.preventDefault()
+      orbit.current.distance = MathUtils.clamp(
+        orbit.current.distance + event.deltaY * ZOOM_SENSITIVITY,
+        MIN_DISTANCE,
+        MAX_DISTANCE,
+      )
+    }
+
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key.toLowerCase() !== 'r' || event.metaKey || event.ctrlKey) return
+      orbit.current = {
+        yaw: DEFAULT_YAW,
+        pitch: DEFAULT_PITCH,
+        distance: DEFAULT_DISTANCE,
+      }
+    }
+
+    element.addEventListener('pointerdown', onPointerDown)
+    element.addEventListener('pointermove', onPointerMove)
+    element.addEventListener('pointerup', onPointerUp)
+    element.addEventListener('pointercancel', onPointerUp)
+    element.addEventListener('wheel', onWheel, { passive: false })
+    window.addEventListener('keydown', onKeyDown)
+
+    return () => {
+      element.removeEventListener('pointerdown', onPointerDown)
+      element.removeEventListener('pointermove', onPointerMove)
+      element.removeEventListener('pointerup', onPointerUp)
+      element.removeEventListener('pointercancel', onPointerUp)
+      element.removeEventListener('wheel', onWheel)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [gl])
+
+  useFrame((_state, delta) => {
     const camera = cameraRef.current ?? defaultCamera
-    camera.position.set(...CAMERA_POSITION)
-    camera.lookAt(new Vector3(...CAMERA_TARGET))
-    camera.updateProjectionMatrix()
-  }, [defaultCamera])
+    const { yaw, pitch, distance } = orbit.current
+
+    const horizontal = Math.cos(pitch) * distance
+    const settle = 1 - Math.exp(-ORBIT_DAMPING * delta)
+
+    camera.position.lerp(
+      DESIRED.set(
+        CAMERA_TARGET.x + Math.sin(yaw) * horizontal,
+        CAMERA_TARGET.y + Math.sin(pitch) * distance,
+        CAMERA_TARGET.z + Math.cos(yaw) * horizontal,
+      ),
+      settle,
+    )
+    camera.lookAt(CAMERA_TARGET)
+  })
 
   return <PerspectiveCamera ref={cameraRef} makeDefault fov={45} />
 }
 
+/** Scratch vector, reused so the orbit loop allocates nothing. */
+const DESIRED = new Vector3()
+
 /**
  * The casino floor, framed over the seated player's shoulder.
  *
- * The player does not walk indoors, so the camera is fixed: it sits behind and
- * left of their stool, which puts their signalling right arm on the near side
- * rather than hidden behind their own body.
+ * The opening view sits behind and left of their stool, which puts the
+ * signalling right arm on the near side rather than hidden behind their own
+ * body. From there the player can orbit and zoom freely — see `TableCamera`.
  */
 export function CasinoInterior({ casinoId }: CasinoInteriorProps) {
   const casino = getCasino(casinoId)

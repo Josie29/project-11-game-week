@@ -20,6 +20,10 @@ export function Hud() {
         <div className="hud__hint">WASD to walk &middot; Q and E to look around</div>
       )}
 
+      {location === Location.Interior && (
+        <div className="hud__hint">Drag to look &middot; scroll to zoom &middot; R to reset</div>
+      )}
+
       {nearby && (
         <div className="hud__prompt" style={{ borderColor: nearby.neonColor }}>
           <strong style={{ color: nearby.neonColor }}>{nearby.name}</strong>
