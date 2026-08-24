@@ -7,6 +7,14 @@ export enum Gesture {
   PointOne = 'pointOne',
   /** Two fingers spread apart — splitting the pair. */
   SpreadTwo = 'spreadTwo',
+  /** Reach to the stash and push chips out to the betting spot. */
+  PushChips = 'pushChips',
+  /** Reach out to the felt and sweep winnings back toward the body. */
+  RakeChips = 'rakeChips',
+  /** Dealer reaches from the rack to place a payout beside the wager. */
+  DealerPay = 'dealerPay',
+  /** Dealer reaches out and draws a losing wager back to the rack. */
+  DealerSweep = 'dealerSweep',
 }
 
 /** Right-arm joint rotations, in radians. */
@@ -120,6 +128,82 @@ export const GESTURES: Record<Gesture, GestureDefinition> = {
         shoulderPitch: REACH_SHOULDER * reach,
         shoulderRoll: REST_POSE.shoulderRoll - spread,
         elbowPitch: REACH_ELBOW * reach,
+      }
+    },
+  },
+
+  /*
+   * Betting: reach sideways to the stash, then push forward to the spot. The
+   * roll carries the arm out over the chips first and returns to centre as the
+   * push happens, which is what separates it from a plain forward reach.
+   */
+  [Gesture.PushChips]: {
+    durationMs: 800,
+    pose: (t) => {
+      const reach = reachEnvelope(t)
+      // Out to the stash early, back to centre as the chips go forward.
+      const toStash = 1 - smoothstep(0.25, 0.62, t)
+      const push = smoothstep(0.3, 0.7, t)
+
+      return {
+        shoulderPitch: (REACH_SHOULDER - 0.16 * push) * reach,
+        shoulderRoll: REST_POSE.shoulderRoll - 0.5 * toStash * reach,
+        elbowPitch: (REACH_ELBOW + 0.3 * push) * reach,
+      }
+    },
+  },
+
+  /*
+   * Collecting: reach out past the wager, then draw everything back in. The
+   * elbow folds hard on the way back, which is what sells it as dragging chips
+   * rather than just lowering the arm.
+   */
+  [Gesture.RakeChips]: {
+    durationMs: 900,
+    pose: (t) => {
+      const reach = reachEnvelope(t)
+      const pull = smoothstep(0.35, 0.8, t)
+
+      return {
+        shoulderPitch: (REACH_SHOULDER + 0.55 * pull) * reach,
+        shoulderRoll: REST_POSE.shoulderRoll - 0.34 * pull * reach,
+        elbowPitch: (REACH_ELBOW - 0.85 * pull) * reach,
+      }
+    },
+  },
+
+  /*
+   * Dealer paying: reach from the rack out toward the player's spot and hold
+   * briefly, as though setting chips down.
+   */
+  [Gesture.DealerPay]: {
+    durationMs: 850,
+    pose: (t) => {
+      const reach = reachEnvelope(t)
+      const extend = smoothstep(0.2, 0.55, t)
+
+      return {
+        shoulderPitch: (-1.24 - 0.22 * extend) * reach,
+        shoulderRoll: REST_POSE.shoulderRoll + 0.22 * extend * reach,
+        elbowPitch: (-0.62 + 0.42 * extend) * reach,
+      }
+    },
+  },
+
+  /*
+   * Dealer sweeping: reach out to the losing wager and drag it back toward the
+   * rack — the mirror of the player's rake.
+   */
+  [Gesture.DealerSweep]: {
+    durationMs: 850,
+    pose: (t) => {
+      const reach = reachEnvelope(t)
+      const drag = smoothstep(0.35, 0.82, t)
+
+      return {
+        shoulderPitch: (-1.42 + 0.5 * drag) * reach,
+        shoulderRoll: REST_POSE.shoulderRoll + 0.3 * (1 - drag) * reach,
+        elbowPitch: (-0.3 - 0.7 * drag) * reach,
       }
     },
   },

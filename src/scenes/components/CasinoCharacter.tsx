@@ -95,12 +95,16 @@ interface CasinoCharacterProps {
   /** Sits the figure on a stool: hips dropped, thighs forward, shins down. */
   seated?: boolean | undefined
   /**
-   * Drives the right arm from the table's active hand signal.
+   * Which signal stream drives the right arm.
+   *
+   * Player and dealer gesture independently — during a split settlement the
+   * player rakes in a winning hand while the dealer sweeps the losing one — so
+   * each reads its own pair of store fields.
    *
    * The figure subscribes imperatively rather than taking a pose prop, so a
    * gesture animates without re-rendering the whole body every frame.
    */
-  signalsGestures?: boolean | undefined
+  gestureSource?: 'player' | 'dealer' | undefined
 }
 
 /**
@@ -117,7 +121,7 @@ export function CasinoCharacter({
   speedRef,
   dealerPose = false,
   seated = false,
-  signalsGestures = false,
+  gestureSource,
 }: CasinoCharacterProps) {
   const colors = OUTFITS[outfit]
 
@@ -164,9 +168,11 @@ export function CasinoCharacter({
 
     // Read the signal imperatively — subscribing would re-render the figure on
     // every gesture change for no benefit.
-    const { activeGesture, gestureStartedAt } = signalsGestures
-      ? useBlackjackStore.getState()
-      : { activeGesture: null, gestureStartedAt: 0 }
+    const store = gestureSource ? useBlackjackStore.getState() : null
+    const activeGesture =
+      gestureSource === 'dealer' ? (store?.dealerGesture ?? null) : (store?.activeGesture ?? null)
+    const gestureStartedAt =
+      gestureSource === 'dealer' ? (store?.gestureStartedAtDealer ?? 0) : (store?.gestureStartedAt ?? 0)
 
     let pose = REST_POSE
     let driven = false

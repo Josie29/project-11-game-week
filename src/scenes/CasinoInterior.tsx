@@ -146,12 +146,12 @@ export function CasinoInterior({ casinoId }: CasinoInteriorProps) {
 
       {/* The dealer, standing behind the table facing the player. */}
       <group position={[0, 0, -1.35]}>
-        <CasinoCharacter outfit={Outfit.Dealer} dealerPose />
+        <CasinoCharacter outfit={Outfit.Dealer} dealerPose gestureSource="dealer" />
       </group>
 
       {/* The player, seated at the centre spot with their back to the camera. */}
       <group position={[PLAYER_SEAT.x, 0, PLAYER_SEAT.z]} rotation={[0, Math.PI, 0]}>
-        <CasinoCharacter outfit={Outfit.Player} seated signalsGestures />
+        <CasinoCharacter outfit={Outfit.Player} seated gestureSource="player" />
       </group>
 
       <CasinoFloor />

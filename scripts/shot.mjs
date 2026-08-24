@@ -54,15 +54,6 @@ try {
   await page.goto(url, { waitUntil: 'networkidle' })
   await page.waitForSelector('canvas', { timeout: 15000 })
 
-  for (const key of keys) {
-    await page.keyboard.press(key)
-    // Short enough to still catch a hand gesture mid-swing; use settleMs to wait
-    // for the resulting deal to land.
-    await page.waitForTimeout(400)
-  }
-
-  await page.waitForTimeout(settleMs)
-
   // Confirm the renderer actually produced frames rather than capturing a
   // blank canvas and calling it a pass.
   const frames = await page.evaluate(
@@ -78,6 +69,20 @@ try {
         setTimeout(() => resolveFrames(count), 2000)
       }),
   )
+
+  // Let any ?boot= shortcut finish before typing. Those go through the same
+  // gesture lead-in as a real action, so a key pressed immediately would land
+  // while the round is still mid-transition and be ignored.
+  if (keys.length > 0) await page.waitForTimeout(800)
+
+  for (const key of keys) {
+    await page.keyboard.press(key)
+    // Short enough to still catch a hand gesture mid-swing; use settleMs to wait
+    // for the resulting deal to land.
+    await page.waitForTimeout(400)
+  }
+
+  await page.waitForTimeout(settleMs)
 
   const target = resolve(output)
   await mkdir(dirname(target), { recursive: true })

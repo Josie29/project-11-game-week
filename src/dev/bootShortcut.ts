@@ -5,7 +5,7 @@ import { useGameStore } from '../store/useGameStore'
 import { CasinoId } from '../world/casinos'
 
 /** Wager staked automatically when deep-linking to a dealt table. */
-const DEMO_BET = 25
+const DEMO_BET = 50
 
 /**
  * Honours a `?boot=` query parameter so a scene can be opened directly.

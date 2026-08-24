@@ -5,7 +5,12 @@ import { useGameStore } from '../store/useGameStore'
 import { getCasino, type CasinoId } from '../world/casinos'
 import { useTableHotkeys } from './useTableHotkeys'
 
-const CHIP_DENOMINATIONS = [10, 25, 100] as const
+/*
+ * Offered stakes. Every one of these pays a whole number of dollars at 3:2,
+ * which $25 does not — a natural on $25 pays $62.50, and there is no half-dollar
+ * chip to put on the felt for it.
+ */
+const CHIP_DENOMINATIONS = [10, 50, 100] as const
 
 const OUTCOME_LABEL: Record<RoundOutcome, string> = {
   [RoundOutcome.PlayerBlackjack]: 'Blackjack — pays 3:2',

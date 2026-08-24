@@ -1,41 +1,40 @@
 import { useMemo } from 'react'
 import { CatmullRomCurve3, ExtrudeGeometry, Shape, TubeGeometry, Vector3 } from 'three'
 import { RoundPhase } from '../../games/blackjack/types'
-import { useBlackjackStore } from '../../store/useBlackjackStore'
+import { ChipPhase, useBlackjackStore } from '../../store/useBlackjackStore'
+import { useGameStore } from '../../store/useGameStore'
+import { chipBreakdown, stackHeight } from '../chipLayout'
+import {
+  CHIP_ROW_Z,
+  DEALER_DEPTH,
+  DEALER_RACK,
+  DEALER_ROW_Z,
+  DISCARD_POSITION,
+  HALF_WIDTH,
+  handAnchorX,
+  PAYOUT_NUDGE_X,
+  PAYOUT_NUDGE_Z,
+  PLAYER_DEPTH,
+  PLAYER_ROW_Z,
+  SLAB_THICKNESS,
+  STASH_ORIGIN,
+  SURFACE_Y,
+  TABLE_TOP_Y,
+} from '../tableLayout'
 import { getFeltTexture } from '../tableTexture'
 import { ChipStack } from './ChipStack'
+import { ChipStash } from './ChipStash'
 import { CARD_WIDTH, PlayingCard } from './PlayingCard'
 
-/**
- * Table footprint, in shape-space units before the slab is laid flat.
- *
- * A blackjack table is a D, not a circle: a deep semicircular player side and a
- * shallow bulge behind the dealer. `+y` here is the dealer's edge, which
- * becomes world `-z` once the extrusion is rotated flat.
+/*
+ * The table's footprint and every anchor on it now live in `../tableLayout`,
+ * where they are unit-tested against the felt outline. Hand-derived positions
+ * on this table have produced real bugs — cards on the chip rack, a shoe over
+ * the edge, a payout off the felt — and none showed up until a screenshot.
  */
-const HALF_WIDTH = 3.1
-const PLAYER_DEPTH = 2
-const DEALER_DEPTH = 0.85
-const SLAB_THICKNESS = 0.16
-
-export const TABLE_TOP_Y = 1
 
 /** Cards rest a hair above the felt so they never z-fight with it. */
-const CARD_Y = TABLE_TOP_Y + 0.016
-
-/*
- * Row spacing is set by what physically fits. The chip rack occupies
- * z -0.83..-0.43 and the printed headline starts around z 0.44, so the dealer's
- * row has to sit in the gap between them without covering either.
- */
-const DEALER_ROW_Z = -0.18
-/** Clear of the printed INSURANCE line, which sits around z 0.71..0.84. */
-const PLAYER_ROW_Z = 1.15
-/** Sits on the centre betting spot printed in the felt. */
-const CHIP_ROW_Z = 1.6
-
-/** How far each hand sits either side of centre once the player splits. */
-const SPLIT_OFFSET = 1.15
+const CARD_Y = SURFACE_Y
 
 const CARD_SPACING = CARD_WIDTH * 0.82
 const DEAL_STAGGER = 0.18
@@ -102,7 +101,13 @@ function ChipTray() {
 /** The felt, the rail, the dealer's kit, and everything in play on the table. */
 export function BlackjackTable() {
   const game = useBlackjackStore((state) => state.game)
+  const chipPhase = useBlackjackStore((state) => state.chipPhase)
+  const uncollectedPayout = useBlackjackStore((state) => state.uncollectedPayout)
+  const bankroll = useGameStore((state) => state.bankroll)
+
   const isSettled = game.phase === RoundPhase.Settled
+  /** The round is being cleared away: chips and cards are both leaving. */
+  const isClearing = chipPhase === ChipPhase.Settling
 
   const felt = useMemo(() => {
     const texture = getFeltTexture()
@@ -167,22 +172,47 @@ export function BlackjackTable() {
         <meshStandardMaterial color="#1b1230" roughness={0.6} metalness={0.2} />
       </mesh>
 
+      {/* The player's own chips. Winnings still on the felt are held back so
+          the same money is not shown in the stash and on the table at once. */}
+      <ChipStash amount={bankroll - uncollectedPayout} />
+
       {game.dealerHand.map((card, index) => (
         <PlayingCard
           key={`dealer-${index}-${card.rank}${card.suit}`}
           card={card}
           // The hole card stays down until the round resolves.
           faceUp={index !== 1 || isSettled}
-          position={[cardX(index, game.dealerHand.length), CARD_Y, DEALER_ROW_Z]}
+          position={
+            isClearing
+              ? DISCARD_POSITION
+              : [cardX(index, game.dealerHand.length), CARD_Y, DEALER_ROW_Z]
+          }
           delay={dealDelay(index, true)}
           seatIndex={index}
         />
       ))}
 
       {game.hands.map((hand, handIndex) => {
-        // A single hand sits on the centre spot; a split pair straddles it.
-        const anchorX = game.hands.length > 1 ? (handIndex === 0 ? -SPLIT_OFFSET : SPLIT_OFFSET) : 0
+        const anchorX = handAnchorX(handIndex, game.hands.length)
         const isActive = handIndex === game.activeHandIndex && game.phase === RoundPhase.PlayerTurn
+
+        // Winnings above the returned stake. A push returns the stake and pays
+        // nothing extra, so it correctly shows no payout pile.
+        const winnings = Math.max(0, hand.payout - hand.bet)
+
+        /*
+         * Direction is decided per hand, never globally: a split can win one
+         * hand and lose the other, and both sets of chips have to go their own
+         * way. Anything that paid out goes home to the stash — which also gets
+         * pushes right for free, since a push returns the stake.
+         */
+        const chipsGoHome = hand.payout > 0
+        const restingSpot: readonly [number, number, number] = [anchorX, SURFACE_Y, CHIP_ROW_Z]
+        const chipTarget = isClearing
+          ? chipsGoHome
+            ? STASH_ORIGIN
+            : DEALER_RACK
+          : restingSpot
 
         return (
           <group key={`hand-${handIndex}`}>
@@ -191,16 +221,32 @@ export function BlackjackTable() {
                 key={`player-${handIndex}-${index}-${card.rank}${card.suit}`}
                 card={card}
                 faceUp
-                position={[anchorX + cardX(index, hand.cards.length), CARD_Y, PLAYER_ROW_Z]}
+                position={
+                  isClearing
+                    ? DISCARD_POSITION
+                    : [anchorX + cardX(index, hand.cards.length), CARD_Y, PLAYER_ROW_Z]
+                }
                 delay={dealDelay(index, false)}
                 seatIndex={index + 1}
               />
             ))}
 
-            <ChipStack
-              amount={hand.bet}
-              position={[anchorX, TABLE_TOP_Y + 0.016, CHIP_ROW_Z]}
-            />
+            {/* The wager, pushed out from the stash when the bet was placed. */}
+            <ChipStack amount={hand.bet} position={chipTarget} origin={STASH_ORIGIN} />
+
+            {/* Winnings, placed on top of the wager by the dealer. */}
+            {winnings > 0 && (
+              <ChipStack
+                amount={winnings}
+                position={
+                  isClearing
+                    ? chipTarget
+                    : [anchorX + PAYOUT_NUDGE_X, SURFACE_Y, CHIP_ROW_Z + PAYOUT_NUDGE_Z]
+                }
+                origin={DEALER_RACK}
+                baseHeight={isClearing ? 0 : stackHeight(chipBreakdown(hand.bet).length)}
+              />
+            )}
 
             {/* Marks which hand the player is acting on once there is a choice. */}
             {isActive && game.hands.length > 1 && (

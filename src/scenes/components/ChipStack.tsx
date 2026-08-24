@@ -1,54 +1,62 @@
-const CHIP_RADIUS = 0.15
-const CHIP_THICKNESS = 0.045
+import { useFrame } from '@react-three/fiber'
+import { useRef } from 'react'
+import { Group, MathUtils } from 'three'
+import {
+  type ChipDenomination,
+  CHIP_RADIUS,
+  CHIP_THICKNESS,
+  chipBreakdown,
+} from '../chipLayout'
 
-/**
- * Chip colours by denomination, following common casino convention.
- *
- * Brighter than the tray chips on purpose: the wager sits under the lamp and
- * needs to read as a distinct object against the felt rather than a dark disc.
- */
-const CHIP_COLORS: readonly { value: number; color: string; edge: string }[] = [
-  { value: 100, color: '#2b2e45', edge: '#e6e9f5' },
-  { value: 25, color: '#1a9159', edge: '#eaf3ec' },
-  { value: 10, color: '#2f6ecb', edge: '#dce6f7' },
-  { value: 5, color: '#cc2440', edge: '#f6dade' },
-]
-
-/**
- * Breaks a wager into chips, largest denomination first.
- *
- * Falls back to $5 chips for any remainder so odd amounts still render as a
- * plausible stack rather than vanishing.
- */
-function chipBreakdown(amount: number): { color: string; edge: string }[] {
-  const chips: { color: string; edge: string }[] = []
-  let remaining = amount
-
-  for (const { value, color, edge } of CHIP_COLORS) {
-    // Integer division gives how many of this denomination fit.
-    const count = Math.floor(remaining / value)
-    for (let i = 0; i < count; i++) chips.push({ color, edge })
-    remaining -= count * value
-  }
-
-  return chips
-}
+/** Higher is snappier. Frame-rate independent. */
+const TRAVEL_DAMPING = 7
 
 interface ChipStackProps {
-  amount: number
+  /** Wager in dollars, or explicit chips when the caller has already chosen them. */
+  amount?: number | undefined
+  chips?: readonly ChipDenomination[] | undefined
+  /** Resting place. Eased toward every frame. */
   position: readonly [number, number, number]
+  /**
+   * Where the stack appears from on mount.
+   *
+   * This is what makes a bet look like a push and a payout look like the dealer
+   * placing it: a stack that mounts at the stash and targets the betting spot
+   * *is* the push, with no separate animation system.
+   */
+  origin?: readonly [number, number, number] | undefined
+  /** Lifts the stack so it can rest on top of another pile. */
+  baseHeight?: number | undefined
 }
 
-/** A stack of chips standing on the felt, sized to the wager. */
-export function ChipStack({ amount, position }: ChipStackProps) {
-  if (amount <= 0) return null
+/** A stack of chips on the felt, easing between wherever it is and where it belongs. */
+export function ChipStack({ amount, chips, position, origin, baseHeight = 0 }: ChipStackProps) {
+  const groupRef = useRef<Group>(null)
+  const hasMounted = useRef(false)
 
-  const chips = chipBreakdown(amount)
-  const [x, y, z] = position
+  const resolved = chips ?? chipBreakdown(amount ?? 0)
+
+  useFrame((_state, delta) => {
+    const group = groupRef.current
+    if (!group) return
+
+    const [targetX, targetY, targetZ] = position
+    group.position.x = MathUtils.damp(group.position.x, targetX, TRAVEL_DAMPING, delta)
+    group.position.y = MathUtils.damp(group.position.y, targetY + baseHeight, TRAVEL_DAMPING, delta)
+    group.position.z = MathUtils.damp(group.position.z, targetZ, TRAVEL_DAMPING, delta)
+  })
+
+  if (resolved.length === 0) return null
+
+  // Only the very first render starts at the origin; afterwards the group keeps
+  // whatever position it has eased to, so a re-render mid-flight does not snap
+  // the stack back to where it set off from.
+  const start = hasMounted.current ? position : (origin ?? position)
+  hasMounted.current = true
 
   return (
-    <group position={[x, y, z]}>
-      {chips.map((chip, index) => (
+    <group ref={groupRef} position={[start[0], start[1] + baseHeight, start[2]]}>
+      {resolved.map((chip, index) => (
         <group
           key={index}
           position={[0, index * CHIP_THICKNESS, 0]}
