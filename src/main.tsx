@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
+import { applyBootShortcut } from './dev/bootShortcut'
 import { useGameStore } from './store/useGameStore'
 import './styles.css'
 
@@ -14,6 +15,7 @@ if (import.meta.env.DEV) {
   // e.g. jumping straight to a table without walking there first. Stripped from
   // production builds by the DEV guard.
   ;(window as unknown as { gameStore: typeof useGameStore }).gameStore = useGameStore
+  applyBootShortcut()
 }
 
 createRoot(container).render(

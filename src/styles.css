@@ -105,113 +105,113 @@ canvas {
   backdrop-filter: blur(0.5rem);
 }
 
-/* ---------- Blackjack panel ---------- */
+/* ---------- Table control bar ---------- */
 
-.panel {
+.table-ui {
   position: fixed;
   left: 50%;
   bottom: var(--space-4);
   transform: translateX(-50%);
-  width: min(34rem, calc(100vw - 2rem));
+  width: min(46rem, calc(100vw - 2rem));
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-4);
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.table-ui__scores {
+  display: flex;
+  gap: var(--space-8);
+}
+
+.score {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.score__label {
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.score__value {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  font-family: var(--font-numeric);
+  font-size: 1.375rem;
+  font-weight: 600;
+}
+
+.score__soft {
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.table-ui__outcome {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-loss);
+}
+
+.table-ui__outcome--win {
+  color: var(--color-win);
+}
+
+.table-ui__payout {
+  font-family: var(--font-numeric);
+  color: var(--color-neon-gold);
+}
+
+.table-ui__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   backdrop-filter: blur(0.75rem);
 }
 
-.panel__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.panel__header h1 {
-  margin: 0;
-  font-size: 1.125rem;
-  letter-spacing: 0.04em;
-}
-
-.panel__hands {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.hand {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.hand__label {
-  font-size: 0.75rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-}
-
-.hand__cards {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  min-height: 2.5rem;
-  align-items: center;
-}
-
-.hand__empty {
-  color: var(--color-text-muted);
-}
-
-.card {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 2.25rem;
-  padding: var(--space-2);
-  background: #f4f6ff;
-  color: #12141f;
-  border-radius: 0.25rem;
-  font-family: var(--font-numeric);
-  font-weight: 600;
-  font-size: 0.9375rem;
-}
-
-.card--red {
-  color: #c02037;
-}
-
-.card--back {
-  background: repeating-linear-gradient(45deg, #2a3160, #2a3160 4px, #1d2247 4px, #1d2247 8px);
-  color: var(--color-text-muted);
-}
-
-.panel__outcome {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--color-loss);
-}
-
-.panel__outcome--win {
-  color: var(--color-win);
-}
-
-.panel__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.panel__prompt {
-  margin-right: auto;
+.table-ui__prompt {
   font-size: 0.8125rem;
   color: var(--color-text-muted);
+}
+
+.table-ui__leave {
+  margin-left: var(--space-4);
+  font-size: 0.8125rem;
+}
+
+/* Bet buttons echo the 3D chip colours so the denominations read at a glance. */
+.button--chip {
+  font-family: var(--font-numeric);
+  font-weight: 600;
+  border-width: 2px;
+}
+
+.button--chip-10 {
+  border-color: #1e4f9c;
+}
+
+.button--chip-25 {
+  border-color: #12693f;
+}
+
+.button--chip-100 {
+  border-color: #c9ccdd;
 }
 
 .button {
