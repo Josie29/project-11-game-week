@@ -17,7 +17,9 @@ export function Hud() {
       </div>
 
       {location === Location.Strip && (
-        <div className="hud__hint">WASD to walk &middot; Q and E to look around</div>
+        <div className="hud__hint">
+          WASD to walk &middot; drag to look &middot; scroll to zoom &middot; R to reset
+        </div>
       )}
 
       {location === Location.Interior && (

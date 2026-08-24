@@ -1,17 +1,13 @@
 import { PerspectiveCamera } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
-import { useEffect, useRef } from 'react'
-import {
-  DoubleSide,
-  MathUtils,
-  PerspectiveCamera as PerspectiveCameraImpl,
-  Vector3,
-} from 'three'
+import { useRef } from 'react'
+import { DoubleSide, PerspectiveCamera as PerspectiveCameraImpl, Vector3 } from 'three'
 import { getCasino, type CasinoId } from '../world/casinos'
 import { BlackjackTable } from './components/BlackjackTable'
 import { CasinoCharacter, Outfit } from './components/CasinoCharacter'
 import { CasinoFloor } from './components/CasinoFloor'
 import { Stool } from './components/Stool'
+import { useOrbitInput } from './useOrbitInput'
 
 interface CasinoInteriorProps {
   casinoId: CasinoId
@@ -68,110 +64,29 @@ const MIN_PITCH = 0.3
 const MAX_PITCH = 1.25
 const YAW_RANGE = 1.4
 
-const DRAG_SENSITIVITY = 0.0055
-const ZOOM_SENSITIVITY = 0.0035
-
 /** Higher is snappier; keeps the camera from snapping between frames. */
 const ORBIT_DAMPING = 12
-
-interface OrbitState {
-  yaw: number
-  pitch: number
-  distance: number
-}
 
 /**
  * Orbit camera over the table: drag to look, scroll to zoom, R to reset.
  *
- * Listeners go on the WebGL canvas rather than the window, so dragging across
- * the control bar or the HUD does not swing the view.
+ * Input handling is shared with the strip camera via `useOrbitInput`; only the
+ * limits and what it looks at differ.
  */
 function TableCamera() {
   const cameraRef = useRef<PerspectiveCameraImpl>(null)
   const defaultCamera = useThree((state) => state.camera)
-  const gl = useThree((state) => state.gl)
 
-  const orbit = useRef<OrbitState>({
-    yaw: DEFAULT_YAW,
-    pitch: DEFAULT_PITCH,
-    distance: DEFAULT_DISTANCE,
-  })
-
-  useEffect(() => {
-    const element = gl.domElement
-    let pointerId: number | null = null
-    let lastX = 0
-    let lastY = 0
-
-    function onPointerDown(event: PointerEvent): void {
-      pointerId = event.pointerId
-      lastX = event.clientX
-      lastY = event.clientY
-      element.setPointerCapture(event.pointerId)
-    }
-
-    function onPointerMove(event: PointerEvent): void {
-      if (pointerId !== event.pointerId) return
-
-      const deltaX = event.clientX - lastX
-      const deltaY = event.clientY - lastY
-      lastX = event.clientX
-      lastY = event.clientY
-
-      const next = orbit.current
-      next.yaw = MathUtils.clamp(
-        next.yaw - deltaX * DRAG_SENSITIVITY,
-        DEFAULT_YAW - YAW_RANGE,
-        DEFAULT_YAW + YAW_RANGE,
-      )
-      next.pitch = MathUtils.clamp(
-        next.pitch + deltaY * DRAG_SENSITIVITY,
-        MIN_PITCH,
-        MAX_PITCH,
-      )
-    }
-
-    function onPointerUp(event: PointerEvent): void {
-      if (pointerId !== event.pointerId) return
-      element.releasePointerCapture(event.pointerId)
-      pointerId = null
-    }
-
-    function onWheel(event: WheelEvent): void {
-      // Otherwise the page scrolls behind the canvas.
-      event.preventDefault()
-      orbit.current.distance = MathUtils.clamp(
-        orbit.current.distance + event.deltaY * ZOOM_SENSITIVITY,
-        MIN_DISTANCE,
-        MAX_DISTANCE,
-      )
-    }
-
-    function onKeyDown(event: KeyboardEvent): void {
-      if (event.key.toLowerCase() !== 'r' || event.metaKey || event.ctrlKey) return
-      orbit.current = {
-        yaw: DEFAULT_YAW,
-        pitch: DEFAULT_PITCH,
-        distance: DEFAULT_DISTANCE,
-      }
-    }
-
-    element.addEventListener('pointerdown', onPointerDown)
-    element.addEventListener('pointermove', onPointerMove)
-    element.addEventListener('pointerup', onPointerUp)
-    element.addEventListener('pointercancel', onPointerUp)
-    element.addEventListener('wheel', onWheel, { passive: false })
-    window.addEventListener('keydown', onKeyDown)
-
-    return () => {
-      element.removeEventListener('pointerdown', onPointerDown)
-      element.removeEventListener('pointermove', onPointerMove)
-      element.removeEventListener('pointerup', onPointerUp)
-      element.removeEventListener('pointercancel', onPointerUp)
-      element.removeEventListener('wheel', onWheel)
-      window.removeEventListener('keydown', onKeyDown)
-    }
-  }, [gl])
+  const { orbit } = useOrbitInput(
+    { yaw: DEFAULT_YAW, pitch: DEFAULT_PITCH, distance: DEFAULT_DISTANCE },
+    {
+      minPitch: MIN_PITCH,
+      maxPitch: MAX_PITCH,
+      minDistance: MIN_DISTANCE,
+      maxDistance: MAX_DISTANCE,
+      yawRange: YAW_RANGE,
+    },
+  )
 
   useFrame((_state, delta) => {
     const camera = cameraRef.current ?? defaultCamera

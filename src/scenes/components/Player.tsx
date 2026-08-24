@@ -5,20 +5,38 @@ import { Group, MathUtils, Vector3 } from 'three'
 import { useGameStore } from '../../store/useGameStore'
 import { CASINOS, DOOR_TRIGGER_RADIUS, STREET_BOUNDS } from '../../world/casinos'
 import { Control } from '../../world/controls'
+import { useOrbitInput } from '../useOrbitInput'
 import { CasinoCharacter, Outfit } from './CasinoCharacter'
 
 const WALK_SPEED = 7.5
 
 /**
- * Camera seat relative to the player: behind and just above head height.
+ * Camera seat relative to the player, as an orbit.
  *
  * Kept close to level on purpose. A higher, steeper seat fills most of the
  * frame with roadway; the near-horizontal view puts the towers, their signage
  * and the sky on screen, which is what the strip is worth looking at.
  */
-const CAMERA_DISTANCE = 7
-const CAMERA_HEIGHT = 3.4
+const DEFAULT_DISTANCE = 7.1
+const DEFAULT_PITCH = 0.17
 const CAMERA_LOOK_HEIGHT = 2.2
+
+/*
+ * Pitch limits. The floor is negative so the view can tilt up at the blade
+ * signs overhead — they tower above the street and were previously out of
+ * shot — but only just: any lower and the camera drops through the road.
+ */
+const MIN_PITCH = -0.1
+const MAX_PITCH = 0.9
+const MIN_DISTANCE = 4
+const MAX_DISTANCE = 12
+
+/**
+ * How long a deliberate look-around is respected before the camera drifts back
+ * behind the player. Without it, the view snaps out of your hands the moment
+ * you let go of the mouse.
+ */
+const MANUAL_HOLD_MS = 1600
 
 /** Exponential damping rates; higher is snappier. Frame-rate independent. */
 const CAMERA_DAMPING = 6
@@ -56,8 +74,20 @@ export function Player() {
   const [, getKeys] = useKeyboardControls<Control>()
   const spawnPosition = useGameStore((state) => state.spawnPosition)
 
-  /** Direction the camera looks, as a yaw about Y. Zero looks down -Z. */
-  const cameraYaw = useRef(0)
+  // Drag to look, scroll to zoom, R to reset — the same control as the table,
+  // sharing its implementation.
+  const { orbit, lastInputAt } = useOrbitInput(
+    { yaw: 0, pitch: DEFAULT_PITCH, distance: DEFAULT_DISTANCE },
+    {
+      minPitch: MIN_PITCH,
+      maxPitch: MAX_PITCH,
+      minDistance: MIN_DISTANCE,
+      maxDistance: MAX_DISTANCE,
+      // Unbounded outdoors: the player can turn to face any direction, so the
+      // camera has to be able to follow them all the way round.
+      yawRange: null,
+    },
+  )
 
   // Current speed, handed to the avatar so its walk cycle can react without
   // re-rendering the figure every frame.
@@ -76,10 +106,12 @@ export function Player() {
 
     const orbitInput = (orbitLeft ? 1 : 0) - (orbitRight ? 1 : 0)
     if (orbitInput !== 0) {
-      cameraYaw.current += orbitInput * ORBIT_SPEED * delta
+      orbit.current.yaw += orbitInput * ORBIT_SPEED * delta
+      lastInputAt.current = performance.now()
     }
 
-    const yaw = cameraYaw.current
+    const heldManually = performance.now() - lastInputAt.current < MANUAL_HOLD_MS
+    const yaw = orbit.current.yaw
     const sinYaw = Math.sin(yaw)
     const cosYaw = Math.cos(yaw)
 
@@ -109,25 +141,28 @@ export function Player() {
       const turn = wrapAngle(targetAngle - group.rotation.y)
       group.rotation.y += turn * (1 - Math.exp(-TURN_DAMPING * delta))
 
-      // Swing back behind the player, but only past the dead zone and only
-      // while walking, so standing still never drifts the view.
-      if (orbitInput === 0) {
+      // Swing back behind the player, but only past the dead zone, only while
+      // walking, and only once a deliberate look-around has had its moment.
+      if (!heldManually) {
         const desiredYaw = group.rotation.y + Math.PI
-        const offBy = wrapAngle(desiredYaw - cameraYaw.current)
+        const offBy = wrapAngle(desiredYaw - orbit.current.yaw)
         const excess = Math.abs(offBy) - FOLLOW_DEAD_ZONE
 
         if (excess > 0) {
           const correction = Math.sign(offBy) * excess
-          cameraYaw.current += correction * (1 - Math.exp(-CAMERA_YAW_DAMPING * delta))
+          orbit.current.yaw += correction * (1 - Math.exp(-CAMERA_YAW_DAMPING * delta))
         }
       }
     }
 
-    // Trailing camera, seated on the orbit circle at the current yaw.
+    // Trailing camera, seated on the orbit sphere around the player.
+    const { pitch, distance } = orbit.current
+    const horizontal = Math.cos(pitch) * distance
+
     const desired = desiredCameraPos.current.set(
-      group.position.x + Math.sin(cameraYaw.current) * CAMERA_DISTANCE,
-      group.position.y + CAMERA_HEIGHT,
-      group.position.z + Math.cos(cameraYaw.current) * CAMERA_DISTANCE,
+      group.position.x + Math.sin(orbit.current.yaw) * horizontal,
+      group.position.y + CAMERA_LOOK_HEIGHT + Math.sin(pitch) * distance,
+      group.position.z + Math.cos(orbit.current.yaw) * horizontal,
     )
     state.camera.position.lerp(desired, 1 - Math.exp(-CAMERA_DAMPING * delta))
     state.camera.lookAt(
