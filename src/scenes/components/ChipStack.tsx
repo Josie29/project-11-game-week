@@ -1,12 +1,17 @@
-const CHIP_RADIUS = 0.17
-const CHIP_THICKNESS = 0.032
+const CHIP_RADIUS = 0.15
+const CHIP_THICKNESS = 0.045
 
-/** Chip colours by denomination, following common casino convention. */
+/**
+ * Chip colours by denomination, following common casino convention.
+ *
+ * Brighter than the tray chips on purpose: the wager sits under the lamp and
+ * needs to read as a distinct object against the felt rather than a dark disc.
+ */
 const CHIP_COLORS: readonly { value: number; color: string; edge: string }[] = [
-  { value: 100, color: '#1b1d2e', edge: '#c9ccdd' },
-  { value: 25, color: '#12693f', edge: '#eaf3ec' },
-  { value: 10, color: '#1e4f9c', edge: '#dce6f7' },
-  { value: 5, color: '#a3182f', edge: '#f6dade' },
+  { value: 100, color: '#2b2e45', edge: '#e6e9f5' },
+  { value: 25, color: '#1a9159', edge: '#eaf3ec' },
+  { value: 10, color: '#2f6ecb', edge: '#dce6f7' },
+  { value: 5, color: '#cc2440', edge: '#f6dade' },
 ]
 
 /**
@@ -54,9 +59,13 @@ export function ChipStack({ amount, position }: ChipStackProps) {
             <cylinderGeometry args={[CHIP_RADIUS, CHIP_RADIUS, CHIP_THICKNESS, 24]} />
             <meshStandardMaterial color={chip.color} roughness={0.55} />
           </mesh>
-          {/* Thin lighter band around the rim, the way real chips are inlaid. */}
-          <mesh scale={[1.02, 0.45, 1.02]}>
-            <cylinderGeometry args={[CHIP_RADIUS, CHIP_RADIUS, CHIP_THICKNESS, 24, 1, true]} />
+          {/*
+            Inlay disc on the top face rather than a band around the rim: a
+            vertical rim only ever catches grazing light from the overhead
+            lamp, so it read as a dark ring instead of a highlight.
+          */}
+          <mesh position={[0, CHIP_THICKNESS / 2 + 0.001, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[CHIP_RADIUS * 0.58, CHIP_RADIUS * 0.74, 24]} />
             <meshStandardMaterial color={chip.edge} roughness={0.6} />
           </mesh>
         </group>

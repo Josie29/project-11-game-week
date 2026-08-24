@@ -24,16 +24,17 @@ export const TABLE_TOP_Y = 1
 const CARD_Y = TABLE_TOP_Y + 0.016
 
 /*
- * Row spacing is set by what physically fits between the dealer's kit and the
- * printed spots. The tray occupies z -0.83..-0.43 and a card is 0.59 deep, so
- * the dealer's row has to start clear of -0.43.
+ * Row spacing is set by what physically fits. The chip rack occupies
+ * z -0.83..-0.43 and the printed headline starts around z 0.44, so the dealer's
+ * row has to sit in the gap between them without covering either.
  */
-const DEALER_ROW_Z = 0.02
-const PLAYER_ROW_Z = 1.05
+const DEALER_ROW_Z = -0.18
+/** Clear of the printed INSURANCE line, which sits around z 0.71..0.84. */
+const PLAYER_ROW_Z = 1.15
 /** Sits on the centre betting spot printed in the felt. */
-const CHIP_ROW_Z = 1.52
+const CHIP_ROW_Z = 1.6
 
-const CARD_SPACING = CARD_WIDTH * 0.66
+const CARD_SPACING = CARD_WIDTH * 0.82
 const DEAL_STAGGER = 0.18
 const HIT_DELAY = 0.06
 
@@ -134,6 +135,7 @@ export function BlackjackTable() {
         geometry={slabGeometry}
         position={[0, TABLE_TOP_Y - SLAB_THICKNESS, 0]}
         rotation={[-Math.PI / 2, 0, 0]}
+        castShadow
         receiveShadow
       >
         <meshStandardMaterial attach="material-0" map={felt} roughness={0.95} />
@@ -142,13 +144,13 @@ export function BlackjackTable() {
 
       {/* Padded leather rail. */}
       <mesh geometry={railGeometry} position={[0, TABLE_TOP_Y - 0.02, 0]} castShadow receiveShadow>
-        <meshStandardMaterial color="#6d3427" roughness={0.42} metalness={0.08} />
+        <meshStandardMaterial color="#5a2a20" roughness={0.5} metalness={0.05} />
       </mesh>
 
       {/* Pedestal. */}
       <mesh position={[0, 0.44, 0.1]} castShadow>
         <cylinderGeometry args={[0.8, 1.15, 0.88, 28]} />
-        <meshStandardMaterial color="#241528" roughness={0.85} />
+        <meshStandardMaterial color="#150c18" roughness={0.9} />
       </mesh>
 
       <ChipTray />

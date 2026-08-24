@@ -1,3 +1,4 @@
+import { PlayerAction } from '../games/blackjack/types'
 import { useBlackjackStore } from '../store/useBlackjackStore'
 import { useGameStore } from '../store/useGameStore'
 import { CasinoId } from '../world/casinos'
@@ -14,16 +15,23 @@ const DEMO_BET = 25
  *
  * - `?boot=casino` opens The Mirage at the betting prompt.
  * - `?boot=table` opens The Mirage with a hand already dealt.
+ * - `?boot=settled` plays that hand out, so the hole card is turned over.
  */
 export function applyBootShortcut(): void {
   const boot = new URLSearchParams(window.location.search).get('boot')
   if (!boot) return
 
-  if (boot === 'casino' || boot === 'table') {
-    useGameStore.getState().enterCasino(CasinoId.Mirage)
+  if (boot !== 'casino' && boot !== 'table' && boot !== 'settled') return
+
+  useGameStore.getState().enterCasino(CasinoId.Mirage)
+
+  if (boot === 'table' || boot === 'settled') {
+    useBlackjackStore.getState().placeWager(DEMO_BET)
   }
 
-  if (boot === 'table') {
-    useBlackjackStore.getState().placeWager(DEMO_BET)
+  if (boot === 'settled') {
+    // Standing hands over to the dealer and resolves the round, which is the
+    // only way to see the hole card flip without playing through by hand.
+    useBlackjackStore.getState().takeAction(PlayerAction.Stand)
   }
 }

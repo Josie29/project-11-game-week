@@ -4,9 +4,9 @@ import { Group, MathUtils } from 'three'
 import { getCardBackTexture, getCardFaceTexture } from '../../games/blackjack/cardTexture'
 import type { Card } from '../../games/blackjack/types'
 
-export const CARD_WIDTH = 0.42
-export const CARD_HEIGHT = 0.59
-const CARD_THICKNESS = 0.012
+export const CARD_WIDTH = 0.34
+export const CARD_HEIGHT = 0.48
+const CARD_THICKNESS = 0.011
 
 /**
  * Where cards fly in from. Must track the shoe mesh in `BlackjackTable`, which

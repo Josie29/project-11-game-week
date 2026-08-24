@@ -23,17 +23,20 @@ export function CasinoInterior({ casinoId }: CasinoInteriorProps) {
       {/* Haze that swallows the far tables and keeps focus on the felt. */}
       <fog attach="fog" args={['#0b0611', 9, 26]} />
 
-      <PerspectiveCamera makeDefault position={[0, 4.15, 6.1]} fov={46} rotation={[-0.5, 0, 0]} />
+      <PerspectiveCamera makeDefault position={[0, 3.95, 5.5]} fov={46} rotation={[-0.53, 0, 0]} />
 
-      <ambientLight intensity={0.32} color="#b9a7d8" />
+      {/* Lifted well above a realistic level: at 0.32 the table's cast shadow
+          went solid black and swallowed the whole foreground. */}
+      <ambientLight intensity={0.5} color="#b9a7d8" />
 
-      {/* Overhead lamp — the warm pool of light does most of the work. */}
+      {/* Overhead lamp — the warm pool of light does most of the work. Hung
+          high so the table's shadow stays close to its own footprint. */}
       <spotLight
-        position={[0, 5.4, 0.5]}
-        angle={0.82}
-        penumbra={0.75}
-        intensity={210}
-        distance={17}
+        position={[0, 7.2, 0.5]}
+        angle={0.68}
+        penumbra={0.85}
+        intensity={330}
+        distance={20}
         color="#ffe4b5"
         castShadow
         shadow-mapSize={[2048, 2048]}

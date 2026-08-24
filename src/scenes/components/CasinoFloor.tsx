@@ -31,7 +31,9 @@ function DistantTable({ x, z, scale }: { x: number; z: number; scale: number }) 
         <cylinderGeometry args={[1.5, 1.5, 0.14, 24]} />
         <meshStandardMaterial color="#0f4a33" roughness={0.95} />
       </mesh>
-      <mesh position={[0, 0.92, 0]}>
+      {/* Laid flat — a torus defaults to the XY plane and would otherwise
+          stand up like a hoop, reading as a chair back rather than a rail. */}
+      <mesh position={[0, 0.92, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <torusGeometry args={[1.5, 0.09, 8, 32]} />
         <meshStandardMaterial color="#3d2117" roughness={0.6} />
       </mesh>
