@@ -4,21 +4,36 @@ import { Bloom, EffectComposer, Vignette } from '@react-three/postprocessing'
 import { DevBridge } from './dev/DevBridge'
 import { CasinoInterior } from './scenes/CasinoInterior'
 import { TimeDriver } from './scenes/components/TimeDriver'
+import { DesignerStage } from './scenes/DesignerStage'
+import { ShopInterior } from './scenes/ShopInterior'
 import { Strip } from './scenes/Strip'
+import { useAppearanceStore } from './store/useAppearanceStore'
 import { Location, useGameStore } from './store/useGameStore'
 import { useTimeStore } from './store/useTimeStore'
 import { BlackjackPanel } from './ui/BlackjackPanel'
+import { CharacterDesigner } from './ui/CharacterDesigner'
 import { CrapsPanel } from './ui/CrapsPanel'
 import { Hud } from './ui/Hud'
-import { GameKind, getCasino } from './world/casinos'
+import { ShopPanel } from './ui/ShopPanel'
+import { GameKind, getVenue, VenueKind } from './world/venues'
 import { KEYBOARD_MAP } from './world/controls'
 import { bloomAt, INTERIOR_BLOOM } from './world/timeOfDay'
 
 export function App() {
   const location = useGameStore((state) => state.location)
-  const activeCasino = useGameStore((state) => state.activeCasino)
+  const activeVenue = useGameStore((state) => state.activeVenue)
+  const hasDesigned = useAppearanceStore((state) => state.hasDesigned)
 
-  const isIndoors = location === Location.Interior && activeCasino !== null
+  /*
+   * A player who has never designed a character gets the designer instead of
+   * the street, without the store having to be seeded across two persisted
+   * slices at boot — `location` is never persisted, so it always starts on the
+   * strip and this derives the first run from the wardrobe save instead.
+   */
+  const isDesigning = location === Location.Designer || (!hasDesigned && location === Location.Strip)
+  const isIndoors = !isDesigning && location === Location.Interior && activeVenue !== null
+  const indoorVenue = isIndoors && activeVenue ? getVenue(activeVenue) : null
+  const isShopping = indoorVenue?.kind === VenueKind.Shop
 
   /*
     The composer is global, so the hour has to be resolved here rather than
@@ -26,7 +41,8 @@ export function App() {
     values; only the strip follows the clock.
   */
   const minuteOfDay = useTimeStore((state) => state.minuteOfDay)
-  const bloom = isIndoors ? INTERIOR_BLOOM : bloomAt(minuteOfDay)
+  // The designer stage is lit like an interior — its own rig, no sky.
+  const bloom = isIndoors || isDesigning ? INTERIOR_BLOOM : bloomAt(minuteOfDay)
 
   return (
     // KeyboardControls sits outside the Canvas and provides context to the
@@ -35,7 +51,17 @@ export function App() {
       <Canvas shadows camera={{ position: [0, 5.2, 17.5], fov: 55 }}>
         {import.meta.env.DEV && <DevBridge />}
         <TimeDriver />
-        {isIndoors && activeCasino ? <CasinoInterior casinoId={activeCasino} /> : <Strip />}
+        {isDesigning ? (
+          <DesignerStage />
+        ) : indoorVenue && activeVenue ? (
+          isShopping ? (
+            <ShopInterior venueId={activeVenue} />
+          ) : (
+            <CasinoInterior venueId={activeVenue} />
+          )
+        ) : (
+          <Strip />
+        )}
 
         {/*
           Bloom is what turns emissive planes into neon. The materials are all
@@ -57,12 +83,17 @@ export function App() {
         </EffectComposer>
       </Canvas>
 
-      <Hud />
-      {isIndoors && activeCasino && (
-        getCasino(activeCasino).game === GameKind.Craps ? (
-          <CrapsPanel casinoId={activeCasino} />
+      {/* The designer is a menu, not a place — the world HUD has no business there. */}
+      {!isDesigning && <Hud />}
+      {isDesigning && <CharacterDesigner />}
+
+      {indoorVenue && activeVenue && (
+        isShopping ? (
+          <ShopPanel venueId={activeVenue} />
+        ) : indoorVenue.game === GameKind.Craps ? (
+          <CrapsPanel venueId={activeVenue} />
         ) : (
-          <BlackjackPanel casinoId={activeCasino} />
+          <BlackjackPanel venueId={activeVenue} />
         )
       )}
     </KeyboardControls>

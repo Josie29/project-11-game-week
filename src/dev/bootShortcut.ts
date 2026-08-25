@@ -1,14 +1,72 @@
 import { createGameFromShoe, createShoe, placeBet } from '../games/blackjack/engine'
 import { PlayerAction, Rank, Suit } from '../games/blackjack/types'
+import { Garment, HairStyle } from '../character/appearance'
+import { Silhouette } from '../character/proportions'
+import { useAppearanceStore } from '../store/useAppearanceStore'
 import { useBlackjackStore } from '../store/useBlackjackStore'
 import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
 import { CrapsBet } from '../scenes/crapsFeltLayout'
-import { CasinoId } from '../world/casinos'
+import { VenueId } from '../world/venues'
 
 /** Wager staked automatically when deep-linking to a dealt table. */
 const DEMO_BET = 50
+
+/** Bankroll handed to `?boot=shop`, enough to afford anything on the rails. */
+const SHOPPING_SPREE = 5000
+
+/**
+ * A fully accessorised character, for `?dressed`.
+ *
+ * Deliberately covers every slot at once. Each item is anchored separately, and
+ * the combinations that clip — a wide-brim hat against tall hair, a cane
+ * against the walk cycle, a gown against a stool — only show up when they are
+ * all worn together.
+ */
+const FULL_OUTFIT: readonly string[] = [
+  'sequin-jacket',
+  'felt-fedora',
+  'blackout-shades',
+  'solitaire-pendant',
+  'bracelet-watch',
+  'signet-ring',
+  'oxblood-oxfords',
+  'lacquer-cane',
+]
+
+/**
+ * Honours `?dressed` by putting the whole wardrobe on the player.
+ *
+ * A modifier rather than a `?boot=` of its own, and for the same reason
+ * `?time=` is: what needs checking is the outfit *in each scene*. The gown's
+ * hem only misbehaves on a stool, and the cane only meets the walk cycle
+ * outdoors, so `?boot=settled&dressed` and `?boot=strip&dressed` are the two
+ * captures that matter and neither is reachable from a single fixed link.
+ */
+function applyWardrobeShortcut(): void {
+  if (!new URLSearchParams(window.location.search).has('dressed')) return
+
+  const wardrobe = useAppearanceStore.getState()
+
+  wardrobe.completeDesign()
+  wardrobe.setAppearance({
+    ...wardrobe.appearance,
+    silhouette: Silhouette.Feminine,
+    hairStyle: HairStyle.Long,
+    hairColor: 'magenta',
+    skinTone: 'bronze',
+    garment: Garment.CocktailDress,
+    garmentColor: 'crimson',
+  })
+
+  // Granted rather than bought: the point is to look at the geometry, not to
+  // exercise the bankroll, and `equip` refuses anything unowned.
+  useAppearanceStore.setState({ owned: [...FULL_OUTFIT] })
+  for (const id of FULL_OUTFIT) {
+    wardrobe.equip(id)
+  }
+}
 
 /** Matches a 24-hour `HH:MM`, rejecting impossible hours and minutes. */
 const CLOCK_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/
@@ -56,27 +114,70 @@ function applyTimeShortcut(): void {
  * - `?boot=draw` forces the dealer to draw twice, which is the case the staged
  *   reveal exists for and which a random shoe rarely produces on demand.
  * - `?boot=craps` opens the Lucky Viper with a pass-line bet already down.
+ * - `?boot=designer` opens the dressing-room stage.
+ * - `?boot=shop` opens The Gilded Hanger with the catalogue affordable.
+ * - `?dressed` puts the whole wardrobe on the player. A modifier, not a scene:
+ *   compose it with any `?boot=` to check the outfit where it has to survive —
+ *   `?boot=shop&dressed` for the anchors up close, `?boot=settled&dressed` for
+ *   the gown on a stool, `?boot=strip&dressed` for the cane and the walk cycle.
+ * - `?boot=strip` marks the character as designed and stands on the street.
  * - `?time=HH:MM` opens at that hour, with the clock still running.
  * - `?freeze` holds the clock wherever it is, so a capture is reproducible.
  *
- * All three compose, e.g. `?boot=craps&time=06:00&freeze`.
+ * All of them compose, e.g. `?boot=settled&dressed&time=06:00&freeze`.
  */
 export function applyBootShortcut(): void {
   applyTimeShortcut()
+  applyWardrobeShortcut()
 
   const boot = new URLSearchParams(window.location.search).get('boot')
   if (!boot) return
 
-  const known = ['casino', 'table', 'settled', 'split', 'draw', 'craps']
+  const known = [
+    'casino',
+    'table',
+    'settled',
+    'split',
+    'draw',
+    'craps',
+    'designer',
+    'shop',
+    'strip',
+  ]
   if (!known.includes(boot)) return
 
+  if (boot === 'designer') {
+    useGameStore.getState().openDesigner()
+    return
+  }
+
+  if (boot === 'strip') {
+    /*
+     * Every capture runs in a fresh browser profile, so `hasDesigned` is false
+     * and the app would otherwise open on the designer rather than the street.
+     * This is the switch that keeps the strip regression shots showing the
+     * strip.
+     */
+    useAppearanceStore.getState().completeDesign()
+    return
+  }
+
+  if (boot === 'shop') {
+    // Topped up so every row in the catalogue is buyable, including the $900
+    // pendant. Compose with `?dressed` to see the owned-and-worn rows instead.
+    useAppearanceStore.getState().completeDesign()
+    useGameStore.getState().adjustBankroll(SHOPPING_SPREE - useGameStore.getState().bankroll)
+    useGameStore.getState().enterVenue(VenueId.GildedHanger)
+    return
+  }
+
   if (boot === 'craps') {
-    useGameStore.getState().enterCasino(CasinoId.LuckyViper)
+    useGameStore.getState().enterVenue(VenueId.LuckyViper)
     useCrapsStore.getState().wager(CrapsBet.PassLine, DEMO_BET)
     return
   }
 
-  useGameStore.getState().enterCasino(CasinoId.GoldenAce)
+  useGameStore.getState().enterVenue(VenueId.GoldenAce)
 
   if (boot === 'split') {
     // Stack a pair of eights against a dealer sixteen, then let the rest of the

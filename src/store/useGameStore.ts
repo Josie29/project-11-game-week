@@ -1,10 +1,12 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { CasinoId, getCasino, PLAYER_SPAWN } from '../world/casinos'
+import { VenueId, getVenue, PLAYER_SPAWN } from '../world/venues'
 
 export enum Location {
   Strip = 'strip',
   Interior = 'interior',
+  /** The dressing-room stage: no world, just the character on a plinth. */
+  Designer = 'designer',
 }
 
 export const STARTING_BANKROLL = 500
@@ -15,15 +17,25 @@ const EXIT_OFFSET = 3.5
 interface GameStore {
   bankroll: number
   location: Location
-  activeCasino: CasinoId | null
+  activeVenue: VenueId | null
   /** Casino the player is standing next to, for the HUD prompt. */
-  nearbyCasino: CasinoId | null
+  nearbyVenue: VenueId | null
   /** Where the player should appear when the strip mounts. */
   spawnPosition: readonly [number, number, number]
+  /**
+   * Where closing the designer returns to.
+   *
+   * The mirror can be reached from inside the shop as well as on first run, and
+   * dumping a player back onto the street because they changed their hair would
+   * make the shop's mirror feel like an exit.
+   */
+  designerReturnTo: Location
 
-  enterCasino: (id: CasinoId) => void
-  leaveCasino: () => void
-  setNearbyCasino: (id: CasinoId | null) => void
+  enterVenue: (id: VenueId) => void
+  leaveVenue: () => void
+  openDesigner: () => void
+  closeDesigner: () => void
+  setNearbyVenue: (id: VenueId | null) => void
   /** Adds `amount` to the bankroll. Negative values debit. */
   adjustBankroll: (amount: number) => void
   resetBankroll: () => void
@@ -34,35 +46,45 @@ export const useGameStore = create<GameStore>()(
     (set, get) => ({
       bankroll: STARTING_BANKROLL,
       location: Location.Strip,
-      activeCasino: null,
-      nearbyCasino: null,
+      activeVenue: null,
+      nearbyVenue: null,
       spawnPosition: PLAYER_SPAWN,
+      designerReturnTo: Location.Strip,
 
-      enterCasino: (id) => set({ location: Location.Interior, activeCasino: id, nearbyCasino: null }),
+      enterVenue: (id) => set({ location: Location.Interior, activeVenue: id, nearbyVenue: null }),
 
-      leaveCasino: () => {
-        const { activeCasino } = get()
-        if (activeCasino === null) {
+      openDesigner: () => {
+        const { location } = get()
+        if (location === Location.Designer) return
+
+        set({ location: Location.Designer, designerReturnTo: location })
+      },
+
+      closeDesigner: () => set({ location: get().designerReturnTo }),
+
+      leaveVenue: () => {
+        const { activeVenue } = get()
+        if (activeVenue === null) {
           set({ location: Location.Strip })
           return
         }
 
-        const [x, y, z] = getCasino(activeCasino).doorPosition
+        const [x, y, z] = getVenue(activeVenue).doorPosition
         // Step back toward the centre of the street, away from the facade.
         const offsetX = x < 0 ? EXIT_OFFSET : -EXIT_OFFSET
 
         set({
           location: Location.Strip,
-          activeCasino: null,
-          nearbyCasino: null,
+          activeVenue: null,
+          nearbyVenue: null,
           spawnPosition: [x + offsetX, y, z],
         })
       },
 
-      setNearbyCasino: (id) => {
+      setNearbyVenue: (id) => {
         // Called from the render loop, so bail out unless the value actually changed.
-        if (get().nearbyCasino === id) return
-        set({ nearbyCasino: id })
+        if (get().nearbyVenue === id) return
+        set({ nearbyVenue: id })
       },
 
       adjustBankroll: (amount) => set({ bankroll: Math.max(0, get().bankroll + amount) }),

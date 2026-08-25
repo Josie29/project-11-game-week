@@ -28,10 +28,23 @@ const SCENES = [
   // and, since the HUD clock is on screen indoors too, on different digits in
   // the corner. Either way the comparison this file exists for stops meaning
   // anything.
-  { name: 'strip', path: '/?time=21:00&freeze', settleMs: 2400 },
-  { name: 'strip-dawn', path: '/?time=05:30&freeze', settleMs: 2400 },
-  { name: 'strip-noon', path: '/?time=12:00&freeze', settleMs: 2400 },
-  { name: 'strip-dusk', path: '/?time=19:00&freeze', settleMs: 2400 },
+  //
+  // The strip captures pass `?boot=strip`. Each run gets a fresh browser
+  // profile, so `hasDesigned` is false and a bare `/` opens the character
+  // designer instead of the street — every strip regression shot would have
+  // come back as a picture of a menu.
+  { name: 'strip', path: '/?boot=strip&time=21:00&freeze', settleMs: 2400 },
+  { name: 'strip-dawn', path: '/?boot=strip&time=05:30&freeze', settleMs: 2400 },
+  { name: 'strip-noon', path: '/?boot=strip&time=12:00&freeze', settleMs: 2400 },
+  { name: 'strip-dusk', path: '/?boot=strip&time=19:00&freeze', settleMs: 2400 },
+  { name: 'designer', path: '/?boot=designer&time=21:00&freeze', settleMs: 2000 },
+  { name: 'shop', path: '/?boot=shop&time=21:00&freeze', settleMs: 2400 },
+  { name: 'shop-dressed', path: '/?boot=shop&dressed&time=21:00&freeze', settleMs: 2400 },
+  // The two places the wardrobe has to survive a pose rather than just stand
+  // in it: a stool folds the legs under a floor-length hem, and the walk cycle
+  // swings an arm holding a cane.
+  { name: 'strip-dressed', path: '/?boot=strip&dressed&time=21:00&freeze', settleMs: 2400 },
+  { name: 'blackjack-dressed', path: '/?boot=settled&dressed&time=21:00&freeze', settleMs: 2600 },
   { name: 'blackjack-bet', path: '/?boot=casino&time=21:00&freeze', settleMs: 1800 },
   { name: 'blackjack-dealt', path: '/?boot=table&time=21:00&freeze', settleMs: 1800 },
   { name: 'blackjack-settled', path: '/?boot=settled&time=21:00&freeze', settleMs: 2600 },

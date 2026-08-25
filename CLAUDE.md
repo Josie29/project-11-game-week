@@ -17,6 +17,13 @@ This is the decision the project rests on. Adding split touched five files and
 stayed correct because the rules were isolated. Craps went from nothing to
 playable in one sitting for the same reason.
 
+**`src/character/` follows the same rule.** Body measurements, the appearance
+model, the wardrobe catalogue and every accessory attachment point are pure and
+tested; `CasinoCharacter` decides nothing about where things go and only draws
+them. Three silhouettes times eight hairstyles times four garments times twelve
+items is far more figures than anyone would check by hand, so the placement has
+to be assertable rather than eyeballed.
+
 Corollary: **do not make an engine time-dependent to serve an animation.** When
 the dealer needed to reveal cards slowly, the fix was a presentation-only
 reveal clock in the store, not a slower engine. Same for the dice: the engine
@@ -34,6 +41,18 @@ Concretely, the three categories that have caught real bugs here:
   against `isOnFelt` in `src/scenes/tableLayout.ts` before it is rendered. This
   has caught a stash overhanging the rail, a split payout falling off the table
   edge, and a chip tray corner clipping a split hand.
+
+  There are now three of these predicates and they all exist for the same
+  reason: `isOnFelt`, `isOnBody` in `src/character/anchors.ts`, and
+  `isOnShopFloor` in `src/scenes/shopLayout.ts`. Each one is paired with a test
+  that feeds it a point it must *reject* — a predicate that returned true
+  everywhere would leave its whole suite passing while proving nothing.
+
+  Not everything geometric is reachable this way. The arms hung inside the
+  torso on every silhouette because `shoulderX` was set inside `torsoWidth / 2`;
+  every anchor was legitimately on the body and the figure still rendered
+  armless. That one was found by looking at a capture, and only then pinned with
+  a test.
 - **Money invariants.** Every offered stake must pay whole dollars on every
   outcome. A $25 blackjack stake pays $62.50 on a natural, and 6:5 odds held as
   the decimal `1.2` pay `22.000000000000004`. Both shipped past review and were
@@ -74,16 +93,29 @@ Dev-only deep links, stripped from production builds:
 | `?boot=split` | a stacked pair, ready to split |
 | `?boot=draw` | a dealer who must draw twice |
 | `?boot=craps` | Lucky Viper with a pass line down |
+| `?boot=designer` | the dressing-room stage |
+| `?boot=shop` | The Gilded Hanger, bankroll topped up |
+| `?boot=dressed` | the shop, every wardrobe slot filled |
+| `?boot=strip` | the street, with the first-run designer skipped |
 | `?time=HH:MM` | opens at that hour, clock still running |
 | `?freeze` | holds the clock, so a capture is reproducible |
 
 `?time=` and `?freeze` compose with any `?boot=`. Every scene in
 `npm run shots` pins both — the clock runs during the settle delay, so an
 unpinned capture lands on a different sky and different HUD digits each run.
+`?freeze` also holds the two turntables, for the same reason.
+
+`?boot=strip` exists because captures run in a fresh browser profile, so
+`hasDesigned` is false and a bare `/` opens the character designer. Without it
+every strip regression shot is a picture of a menu.
 
 **When something is invisible, build the diagnostic before the fix.** A missing
 die looked identical to a die that had tunnelled out of the world;
-`window.devRender.locate()` found it at `y = -18` in one run.
+`window.devRender.locate()` found it at `y = -18` in one run. `npm run locate
+<url> [prefix]` is that call from the command line — it printed all nine
+`worn:<slot>` anchors sitting exactly where `anchorFor` said they should be,
+which turned "the cane is not rendering" into "the cane is too dark to see" and
+changed the fix from geometry to a hex value.
 
 ## Timers
 
@@ -114,8 +146,23 @@ the first 420 ms of a round.
   keyframed separately from the facades and neon, and for a while 07:00 showed
   daylit buildings under a night sky.
 - **Table geometry lives in `src/scenes/tableLayout.ts`**, not in components.
+  Shop geometry lives in `src/scenes/shopLayout.ts` and body geometry in
+  `src/character/proportions.ts`, on the same principle.
 - **Characters are procedural primitives** with named joint groups, so gestures
-  can be authored directly.
+  can be authored directly, and now so the player can be built at runtime from a
+  saved appearance.
+- **Anything read out of a save is coerced, never trusted.** `localStorage` is
+  user-writable and the wardrobe save feeds geometry directly, so
+  `sanitizeAppearance`, `sanitizeOwned` and `sanitizeEquipped` are total: they
+  never throw and always return something drawable. A save naming a
+  since-removed hairstyle must produce a character with hair, not a hole.
+- **Comfy is reference, never assets** — see `SPEC.md`. `art/refs/` gained a
+  character sheet, a hairstyle grid and a wardrobe flat-lay; every palette in
+  `src/character/palette.ts` and every colour in the catalogue was read off
+  them, and nothing generated ships. New sheets are made by copying an existing
+  workflow in `workflows/` and changing only the positive prompt, the
+  `SaveImage` prefix and the seed — the sampler and the negative prompt are
+  tuned and should be left alone.
 - Physics (`@react-three/rapier`) is scoped to the craps scene alone. The strip
   character and the blackjack table are transform-driven and never touch it.
 - Use a **fixed physics timestep**. `timeStep="vary"` ties the simulation to
@@ -131,6 +178,7 @@ npm test            # vitest
 npm run typecheck   # tsc --noEmit, strict + exactOptionalPropertyTypes
 npm run build
 npm run shot <url> <out.png> [settleMs] [keys]
+npm run locate <url> [prefix]   # world positions of named objects
 ```
 
 TypeScript is pinned to **^6**, not 7.x — R3F's JSX namespace augmentation plus

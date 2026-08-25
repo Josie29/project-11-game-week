@@ -2,16 +2,18 @@ import { PerspectiveCamera } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useRef } from 'react'
 import { DoubleSide, PerspectiveCamera as PerspectiveCameraImpl, Vector3 } from 'three'
-import { GameKind, getCasino, type CasinoId } from '../world/casinos'
+import { DEALER_APPEARANCE } from '../character/appearance'
+import { useAppearanceStore } from '../store/useAppearanceStore'
+import { gameAt, GameKind, getVenue, type VenueId } from '../world/venues'
 import { BlackjackTable } from './components/BlackjackTable'
-import { CasinoCharacter, Outfit } from './components/CasinoCharacter'
+import { CasinoCharacter } from './components/CasinoCharacter'
 import { CasinoFloor } from './components/CasinoFloor'
 import { CrapsTable } from './components/CrapsTable'
 import { Stool } from './components/Stool'
 import { useOrbitInput } from './useOrbitInput'
 
 interface CasinoInteriorProps {
-  casinoId: CasinoId
+  venueId: VenueId
 }
 
 /**
@@ -131,8 +133,11 @@ const DESIRED = new Vector3()
  * signalling right arm on the near side rather than hidden behind their own
  * body. From there the player can orbit and zoom freely — see `TableCamera`.
  */
-export function CasinoInterior({ casinoId }: CasinoInteriorProps) {
-  const casino = getCasino(casinoId)
+export function CasinoInterior({ venueId }: CasinoInteriorProps) {
+  const venue = getVenue(venueId)
+  const game = gameAt(venueId)
+  const appearance = useAppearanceStore((state) => state.appearance)
+  const equipped = useAppearanceStore((state) => state.equipped)
 
   return (
     <>
@@ -140,7 +145,7 @@ export function CasinoInterior({ casinoId }: CasinoInteriorProps) {
       {/* Haze that swallows the far tables and keeps focus on the felt. */}
       <fog attach="fog" args={['#0b0611', 9, 26]} />
 
-      <TableCamera game={casino.game} />
+      <TableCamera game={game} />
 
       {/* Lifted well above a realistic level: at 0.32 the table's cast shadow
           went solid black and swallowed the whole foreground. */}
@@ -163,7 +168,7 @@ export function CasinoInterior({ casinoId }: CasinoInteriorProps) {
       />
 
       {/* House-colour rim from behind the dealer, separating table from room. */}
-      <pointLight position={[0, 3, -3.6]} color={casino.neonColor} intensity={30} distance={11} />
+      <pointLight position={[0, 3, -3.6]} color={venue.neonColor} intensity={30} distance={11} />
       {/* Cool fill from the player's side so the near rail is not solid black. */}
       <pointLight position={[0, 2.4, 5]} color="#6f7ae0" intensity={14} distance={12} />
 
@@ -180,7 +185,7 @@ export function CasinoInterior({ casinoId }: CasinoInteriorProps) {
       </mesh>
       <mesh position={[0, 3.1, -16.9]}>
         <planeGeometry args={[26, 0.18]} />
-        <meshBasicMaterial color={casino.neonColor} toneMapped={false} />
+        <meshBasicMaterial color={venue.neonColor} toneMapped={false} />
       </mesh>
 
       {/* Brass pendant over the table, per art/refs/blackjack_floor.png. It
@@ -212,16 +217,26 @@ export function CasinoInterior({ casinoId }: CasinoInteriorProps) {
 
       {/* The dealer, standing behind the table facing the player. */}
       <group position={[0, 0, -1.35]}>
-        <CasinoCharacter outfit={Outfit.Dealer} dealerPose gestureSource="dealer" />
+        <CasinoCharacter
+          appearance={DEALER_APPEARANCE}
+          dealerPose
+          staff
+          gestureSource="dealer"
+        />
       </group>
 
       {/* The player, seated at the centre spot with their back to the camera. */}
       <group position={[PLAYER_SEAT.x, 0, PLAYER_SEAT.z]} rotation={[0, Math.PI, 0]}>
-        <CasinoCharacter outfit={Outfit.Player} seated gestureSource="player" />
+        <CasinoCharacter
+          appearance={appearance}
+          equipped={equipped}
+          seated
+          gestureSource="player"
+        />
       </group>
 
       <CasinoFloor />
-      {casino.game === GameKind.Craps ? <CrapsTable /> : <BlackjackTable />}
+      {game === GameKind.Craps ? <CrapsTable /> : <BlackjackTable />}
     </>
   )
 }

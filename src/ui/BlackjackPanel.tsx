@@ -2,7 +2,7 @@ import { activeHand, canDouble, canSplit, handValue } from '../games/blackjack/e
 import { type Hand, PlayerAction, RoundOutcome, RoundPhase } from '../games/blackjack/types'
 import { useBlackjackStore } from '../store/useBlackjackStore'
 import { useGameStore } from '../store/useGameStore'
-import { getCasino, type CasinoId } from '../world/casinos'
+import { getVenue, type VenueId } from '../world/venues'
 import { useTableHotkeys } from './useTableHotkeys'
 
 /*
@@ -36,7 +36,7 @@ function shortOutcome(hand: Hand): string {
 }
 
 interface BlackjackPanelProps {
-  casinoId: CasinoId
+  venueId: VenueId
 }
 
 /**
@@ -46,7 +46,7 @@ interface BlackjackPanelProps {
  * hand totals, the result, and the actions. Keyboard shortcuts are the primary
  * input; the buttons exist so a first-time player can find them.
  */
-export function BlackjackPanel({ casinoId }: BlackjackPanelProps) {
+export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
   const game = useBlackjackStore((state) => state.game)
   const placeWager = useBlackjackStore((state) => state.placeWager)
   const takeAction = useBlackjackStore((state) => state.takeAction)
@@ -54,14 +54,14 @@ export function BlackjackPanel({ casinoId }: BlackjackPanelProps) {
   const resetRound = useBlackjackStore((state) => state.reset)
 
   const bankroll = useGameStore((state) => state.bankroll)
-  const leaveCasino = useGameStore((state) => state.leaveCasino)
+  const leaveVenue = useGameStore((state) => state.leaveVenue)
   const resetBankroll = useGameStore((state) => state.resetBankroll)
 
   const dealerCardsShown = useBlackjackStore((state) => state.dealerCardsShown)
   const holeCardUp = useBlackjackStore((state) => state.holeCardUp)
   const revealComplete = useBlackjackStore((state) => state.revealComplete)
 
-  const casino = getCasino(casinoId)
+  const casino = getVenue(venueId)
 
   /*
    * The dealer's total is read off the cards currently on the table, not off
@@ -87,7 +87,7 @@ export function BlackjackPanel({ casinoId }: BlackjackPanelProps) {
   function handleLeave(): void {
     // Walking out abandons the hand, so clear the table for next time.
     resetRound()
-    leaveCasino()
+    leaveVenue()
   }
 
   useTableHotkeys({

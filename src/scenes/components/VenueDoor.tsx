@@ -1,8 +1,8 @@
-import type { CasinoConfig } from '../../world/casinos'
+import type { VenueConfig } from '../../world/venues'
 import { dimHex } from '../../world/timeOfDay'
 
 interface CasinoDoorProps {
-  casino: CasinoConfig
+  casino: VenueConfig
   /** How brightly the entrance burns, 0 to 1. Washes out in daylight. */
   neonLevel?: number
 }
@@ -22,7 +22,7 @@ const SPILL_DAYLIGHT_FLOOR = 0.22
  * Purely decorative — the actual entry is a proximity check in `Player`, so the
  * door never needs collision or interaction handlers.
  */
-export function CasinoDoor({ casino, neonLevel = 1 }: CasinoDoorProps) {
+export function VenueDoor({ casino, neonLevel = 1 }: CasinoDoorProps) {
   const [x, y, z] = casino.doorPosition
   // Doors on the left of the street face +X; those on the right face -X.
   const facing = x < 0 ? 1 : -1

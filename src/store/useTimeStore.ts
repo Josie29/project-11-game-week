@@ -24,7 +24,7 @@ interface TimeStore {
  * minute actually changes — once a real second rather than sixty times. Keeping
  * the fraction here is what makes that possible; putting it in the store would
  * reintroduce the per-frame write it exists to avoid. Same reasoning as the
- * identity bail-out in `useGameStore.setNearbyCasino`.
+ * identity bail-out in `useGameStore.setNearbyVenue`.
  */
 let carry = 0
 

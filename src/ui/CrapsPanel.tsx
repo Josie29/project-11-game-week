@@ -4,7 +4,7 @@ import { CrapsPhase, RollOutcome } from '../games/craps/types'
 import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
 import { CRAPS_BET_LABELS, CrapsBet } from '../scenes/crapsFeltLayout'
-import { getCasino, type CasinoId } from '../world/casinos'
+import { getVenue, type VenueId } from '../world/venues'
 
 /** Same stakes the blackjack table offers; all pay whole dollars at true odds. */
 const STAKES = [10, 50, 100] as const
@@ -22,7 +22,7 @@ const WINNING_OUTCOMES = new Set([RollOutcome.Natural, RollOutcome.PointMade])
 const LOSING_OUTCOMES = new Set([RollOutcome.Craps, RollOutcome.SevenOut])
 
 interface CrapsPanelProps {
-  casinoId: CasinoId
+  venueId: VenueId
 }
 
 /**
@@ -31,7 +31,7 @@ interface CrapsPanelProps {
  * Deliberately the same shape as the blackjack bar: the felt is the thing to
  * look at, so this stays a slim strip of stakes, bets and the roll control.
  */
-export function CrapsPanel({ casinoId }: CrapsPanelProps) {
+export function CrapsPanel({ venueId }: CrapsPanelProps) {
   const game = useCrapsStore((state) => state.game)
   const isRolling = useCrapsStore((state) => state.isRolling)
   const wager = useCrapsStore((state) => state.wager)
@@ -39,9 +39,9 @@ export function CrapsPanel({ casinoId }: CrapsPanelProps) {
   const resetTable = useCrapsStore((state) => state.reset)
 
   const bankroll = useGameStore((state) => state.bankroll)
-  const leaveCasino = useGameStore((state) => state.leaveCasino)
+  const leaveVenue = useGameStore((state) => state.leaveVenue)
 
-  const casino = getCasino(casinoId)
+  const casino = getVenue(venueId)
   const staked = Object.values(game.bets).reduce((sum, amount) => sum + amount, 0)
   const payout = totalCrapsPayout(game)
 
@@ -50,7 +50,7 @@ export function CrapsPanel({ casinoId }: CrapsPanelProps) {
 
   function handleLeave(): void {
     resetTable()
-    leaveCasino()
+    leaveVenue()
   }
 
   useEffect(() => {

@@ -121,10 +121,28 @@ export function getMarqueeTexture(name: string, color: string): Texture {
 
   drawBulbBorder(ctx, 26, 26, MARQUEE_WIDTH - 52, MARQUEE_HEIGHT - 52)
 
-  // Shrink the type for longer names so they always fit the panel.
-  const fontSize = name.length > 11 ? 96 : 120
+  /*
+   * Fit the type to the panel by measuring it.
+   *
+   * This was a two-step guess on `name.length`, which held for as long as every
+   * venue was a two-word casino and then put "GOLDED HANGE" over the shop's
+   * door — the ends of the name ran off both sides of the sign. Measuring costs
+   * one extra `measureText` per sign, and signs are cached.
+   */
+  const text = name.toUpperCase()
+  /** Panel width less the bulb border and a little breathing room. */
+  const usableWidth = MARQUEE_WIDTH - 120
+
+  let fontSize = 120
   ctx.font = `700 ${fontSize}px Georgia, "Times New Roman", serif`
-  drawNeonText(ctx, name.toUpperCase(), MARQUEE_WIDTH / 2, MARQUEE_HEIGHT / 2 + 4, color)
+  const measured = ctx.measureText(text).width
+
+  if (measured > usableWidth) {
+    fontSize = Math.floor(fontSize * (usableWidth / measured))
+    ctx.font = `700 ${fontSize}px Georgia, "Times New Roman", serif`
+  }
+
+  drawNeonText(ctx, text, MARQUEE_WIDTH / 2, MARQUEE_HEIGHT / 2 + 4, color)
 
   const texture = finish(ctx)
   marqueeCache.set(key, texture)

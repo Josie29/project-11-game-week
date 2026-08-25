@@ -1,16 +1,16 @@
 import { Location, useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
-import { getCasino } from '../world/casinos'
+import { getVenue } from '../world/venues'
 import { daylightAt, formatClock } from '../world/timeOfDay'
 
 /** Persistent overlay: bankroll, clock, movement hint, and the door prompt. */
 export function Hud() {
   const bankroll = useGameStore((state) => state.bankroll)
   const location = useGameStore((state) => state.location)
-  const nearbyCasino = useGameStore((state) => state.nearbyCasino)
+  const nearbyVenue = useGameStore((state) => state.nearbyVenue)
   const minuteOfDay = useTimeStore((state) => state.minuteOfDay)
 
-  const nearby = nearbyCasino ? getCasino(nearbyCasino) : null
+  const nearby = nearbyVenue ? getVenue(nearbyVenue) : null
 
   return (
     <div className="hud">
@@ -42,7 +42,7 @@ export function Hud() {
           */}
           <span>
             {nearby.available
-              ? 'Walk in to play'
+              ? nearby.invitation
               : daylightAt(minuteOfDay) > 0.5
                 ? 'Closed today'
                 : 'Closed tonight'}

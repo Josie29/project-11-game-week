@@ -2,11 +2,12 @@ import { useKeyboardControls } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useRef } from 'react'
 import { Group, MathUtils, Vector3 } from 'three'
+import { useAppearanceStore } from '../../store/useAppearanceStore'
 import { useGameStore } from '../../store/useGameStore'
-import { CASINOS, DOOR_TRIGGER_RADIUS, STREET_BOUNDS } from '../../world/casinos'
+import { VENUES, DOOR_TRIGGER_RADIUS, STREET_BOUNDS } from '../../world/venues'
 import { Control } from '../../world/controls'
 import { useOrbitInput } from '../useOrbitInput'
-import { CasinoCharacter, Outfit } from './CasinoCharacter'
+import { CasinoCharacter } from './CasinoCharacter'
 
 const WALK_SPEED = 7.5
 
@@ -73,6 +74,8 @@ export function Player() {
   const groupRef = useRef<Group>(null)
   const [, getKeys] = useKeyboardControls<Control>()
   const spawnPosition = useGameStore((state) => state.spawnPosition)
+  const appearance = useAppearanceStore((state) => state.appearance)
+  const equipped = useAppearanceStore((state) => state.equipped)
 
   // Drag to look, scroll to zoom, R to reset — the same control as the table,
   // sharing its implementation.
@@ -178,7 +181,7 @@ export function Player() {
     const store = useGameStore.getState()
     let nearest = null
 
-    for (const casino of CASINOS) {
+    for (const casino of VENUES) {
       const [doorX, , doorZ] = casino.doorPosition
       const dx = group.position.x - doorX
       const dz = group.position.z - doorZ
@@ -189,10 +192,10 @@ export function Player() {
       }
     }
 
-    store.setNearbyCasino(nearest?.id ?? null)
+    store.setNearbyVenue(nearest?.id ?? null)
 
     if (nearest?.available) {
-      store.enterCasino(nearest.id)
+      store.enterVenue(nearest.id)
     }
   })
 
@@ -203,7 +206,7 @@ export function Player() {
       // Start facing down the street (-Z) rather than back at the camera.
       rotation={[0, Math.PI, 0]}
     >
-      <CasinoCharacter outfit={Outfit.Player} speedRef={speedRef} />
+      <CasinoCharacter appearance={appearance} equipped={equipped} speedRef={speedRef} />
     </group>
   )
 }

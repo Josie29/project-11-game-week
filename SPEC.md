@@ -128,7 +128,9 @@ the checkpoint passed
 Explicitly not this week — listing them so they stop being tempting.
 **Splitting pairs was on this list and shipped anyway**: the pure-engine split
 meant it cost a day rather than the week that was feared, and it is covered by
-tests. **The day/night cycle was too**, after the week — see below.
+tests. **The day/night cycle was too**, after the week — see below. **So did
+the character designer and the wardrobe shop**, also after the week — see
+"After the week" below.
 
 - Native iOS build, App Store submission, TestFlight
 - Multiplayer, accounts, backend, leaderboards
@@ -178,6 +180,38 @@ Worth recording, because the misses were more instructive than the hits.
 - **Hand-derived 3D coordinates were wrong more often than the game rules
   were.** Unit-testing anchors against the felt outline caught three placement
   bugs that no amount of squinting had.
+
+## After the week
+
+Two features landed after the deadline and are worth recording because both
+leaned on decisions made during it.
+
+**A character designer** — silhouette, hairstyle, hair colour, skin tone and a
+starter garment, chosen before the first spawn and reopenable at the shop's
+mirror. **A wardrobe shop**, The Gilded Hanger, a third venue on the strip
+selling twelve cosmetic items for whole-dollar prices out of the same persisted
+bankroll the tables use.
+
+- **The pure-module rule paid out again.** `src/character/` — appearance,
+  proportions, anchors, catalogue — has zero rendering imports and is tested,
+  exactly as `src/games/` is. The rig became a function of a saved appearance
+  rather than a hardcoded colour record, and the dealer stayed put because they
+  are a frozen preset rather than a special case.
+- **`casinos.ts` became `venues.ts`.** Every field a door needed was already
+  there and none of it was casino-specific; only `game` was, so it became
+  optional behind a `VenueKind` discriminant rather than the shop growing a
+  parallel list.
+- **Comfy came back, and again as reference only.** Three sheets — a
+  six-figure character line-up, an eight-style hairstyle grid, and a knolled
+  wardrobe flat-lay — direct every palette and every item colour. Nothing
+  generated ships, which is the same conclusion the week reached.
+- **The item economy is cosmetic by construction.** The engines never import
+  the catalogue, so no purchase can touch odds or payouts, and the whole-dollar
+  money invariant is unchanged.
+- **The worst bug was invisible to the tests that should have caught it.** The
+  arms hung inside the torso on all three silhouettes: every accessory anchor
+  was legitimately on the body, and the figure still rendered armless. A
+  capture found it. `npm run shot` earning its place a second time.
 
 ## Risks
 

@@ -3,11 +3,11 @@ import { useLayoutEffect } from 'react'
 import { BackSide } from 'three'
 import { useTimeStore } from '../store/useTimeStore'
 import {
-  CASINOS,
+  VENUES,
   FACADE_X,
   ROAD_HALF_WIDTH,
   SIDEWALK_HEIGHT,
-} from '../world/casinos'
+} from '../world/venues'
 import {
   daylightAt,
   lightingAt,
@@ -19,7 +19,7 @@ import {
 } from '../world/timeOfDay'
 import { setFacadeDaylight } from './facadeTexture'
 import { Building } from './components/Building'
-import { CasinoDoor } from './components/CasinoDoor'
+import { VenueDoor } from './components/VenueDoor'
 import { Player } from './components/Player'
 import { PalmTree, StreetLamp } from './components/StreetProps'
 import { getSkyTexture } from './skyTexture'
@@ -60,7 +60,7 @@ function neonFor(index: number): string {
 
 /** Returns the casino whose entrance sits on this row and side, if any. */
 function signFor(z: number, side: 1 | -1): string | undefined {
-  const casino = CASINOS.find(
+  const casino = VENUES.find(
     (entry) => entry.doorPosition[2] === z && Math.sign(entry.doorPosition[0]) === side,
   )
   if (casino) return casino.name
@@ -69,7 +69,7 @@ function signFor(z: number, side: 1 | -1): string | undefined {
 }
 
 function signColor(z: number, side: 1 | -1, fallback: string): string {
-  const casino = CASINOS.find(
+  const casino = VENUES.find(
     (entry) => entry.doorPosition[2] === z && Math.sign(entry.doorPosition[0]) === side,
   )
   if (casino) return casino.neonColor
@@ -277,8 +277,8 @@ export function Strip() {
         </group>
       ))}
 
-      {CASINOS.map((casino) => (
-        <CasinoDoor key={casino.id} casino={casino} neonLevel={neonLevel} />
+      {VENUES.map((casino) => (
+        <VenueDoor key={casino.id} casino={casino} neonLevel={neonLevel} />
       ))}
 
       <Player />

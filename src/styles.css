@@ -306,3 +306,228 @@ kbd {
 .table-ui__outcome--neutral {
   color: var(--color-text);
 }
+
+/* ---------- Character designer ---------- */
+
+/*
+ * Anchored left, because the turntable in DesignerStage is framed right of
+ * centre. Scrolls on its own so a short window cannot cut off the Done button —
+ * which is the only way out of the designer on first run.
+ */
+.designer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(23rem, 100vw);
+  padding: var(--space-6) var(--space-6) var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  overflow-y: auto;
+  background: linear-gradient(
+    to right,
+    rgba(8, 6, 18, 0.94) 0%,
+    rgba(8, 6, 18, 0.88) 70%,
+    rgba(8, 6, 18, 0) 100%
+  );
+  color: var(--color-text);
+  font-family: var(--font-ui);
+}
+
+.designer__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.designer__title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.designer__subtitle {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+.designer__field {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.designer__legend {
+  padding: 0 0 var(--space-2);
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.designer__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.button--choice {
+  padding: var(--space-1) var(--space-3);
+  font-size: 0.75rem;
+}
+
+.button--choice-on {
+  border-color: var(--color-neon-cyan);
+  background: rgba(34, 224, 255, 0.18);
+  color: #eaffff;
+}
+
+.designer__swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.designer__swatch {
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  /* Dark swatches vanish against a dark panel without their own outline. */
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+  cursor: pointer;
+}
+
+.designer__swatch--on {
+  border-color: var(--color-neon-cyan);
+}
+
+.designer__done {
+  margin-top: auto;
+  padding: var(--space-3);
+  font-size: 0.9375rem;
+}
+
+/* ---------- Shop ---------- */
+
+.shop {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(26rem, 100vw);
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  overflow-y: auto;
+  background: linear-gradient(
+    to left,
+    rgba(8, 6, 18, 0.94) 0%,
+    rgba(8, 6, 18, 0.88) 70%,
+    rgba(8, 6, 18, 0) 100%
+  );
+  color: var(--color-text);
+  font-family: var(--font-ui);
+}
+
+.shop__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.shop__title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-neon-pink);
+}
+
+.shop__subtitle {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+.shop__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.shop__group-label {
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.shop__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.shop__item--worn {
+  border-color: var(--color-neon-pink);
+}
+
+.shop__item-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.shop__item-name {
+  font-size: 0.875rem;
+}
+
+.shop__item-blurb {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.shop__price {
+  font-family: var(--font-numeric);
+  font-size: 0.8125rem;
+  color: var(--color-neon-gold);
+}
+
+/* An unaffordable price should read as the reason, not as decoration. */
+.shop__price--short {
+  color: var(--color-loss);
+}
+
+.shop__actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.shop__swatch {
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: none;
+  border-radius: 0.25rem;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+}
+
+.shop__leave {
+  margin-top: auto;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.shop__leave .button {
+  flex: 1;
+}
