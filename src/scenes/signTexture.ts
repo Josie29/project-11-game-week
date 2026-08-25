@@ -19,8 +19,12 @@ const BULB_COLOR = '#ffdf9a'
 const BULB_SPACING = 34
 const BULB_RADIUS = 5
 
+const SHOP_SIGN_WIDTH = 1024
+const SHOP_SIGN_HEIGHT = 192
+
 const marqueeCache = new Map<string, Texture>()
 const bladeCache = new Map<string, Texture>()
+const shopSignCache = new Map<string, Texture>()
 
 function createContext(width: number, height: number): CanvasRenderingContext2D {
   const canvas = document.createElement('canvas')
@@ -146,6 +150,55 @@ export function getMarqueeTexture(name: string, color: string): Texture {
 
   const texture = finish(ctx)
   marqueeCache.set(key, texture)
+  return texture
+}
+
+/**
+ * Shop fascia sign: a neon tube in a plain box, no bulbs.
+ *
+ * A deliberately different sign language from `getMarqueeTexture`. The bulb
+ * border is the strip's casino vocabulary, and a boutique wearing it was most
+ * of why the shop read as a third casino from the street — see
+ * `art/refs/shop_exterior_wide.png`, where the shop is the only frontage on the
+ * block without chasing bulbs.
+ */
+export function getShopSignTexture(name: string, color: string): Texture {
+  const key = `${name}|${color}`
+  const cached = shopSignCache.get(key)
+  if (cached) return cached
+
+  const ctx = createContext(SHOP_SIGN_WIDTH, SHOP_SIGN_HEIGHT)
+
+  // A dark box, so the tube inside it is the only thing that glows.
+  ctx.fillStyle = '#140a18'
+  ctx.fillRect(0, 0, SHOP_SIGN_WIDTH, SHOP_SIGN_HEIGHT)
+
+  // A single neon rule inset from the edge, standing in for the tube that
+  // outlines the panel on the reference.
+  ctx.strokeStyle = color
+  ctx.shadowColor = color
+  ctx.shadowBlur = 26
+  ctx.lineWidth = 5
+  ctx.strokeRect(20, 20, SHOP_SIGN_WIDTH - 40, SHOP_SIGN_HEIGHT - 40)
+  ctx.shadowBlur = 0
+
+  const text = name.toUpperCase()
+  /** Panel width less the neon rule and a little breathing room. */
+  const usableWidth = SHOP_SIGN_WIDTH - 130
+
+  let fontSize = 96
+  ctx.font = `700 ${fontSize}px Georgia, "Times New Roman", serif`
+  const measured = ctx.measureText(text).width
+
+  if (measured > usableWidth) {
+    fontSize = Math.floor(fontSize * (usableWidth / measured))
+    ctx.font = `700 ${fontSize}px Georgia, "Times New Roman", serif`
+  }
+
+  drawNeonText(ctx, text, SHOP_SIGN_WIDTH / 2, SHOP_SIGN_HEIGHT / 2 + 2, color)
+
+  const texture = finish(ctx)
+  shopSignCache.set(key, texture)
   return texture
 }
 

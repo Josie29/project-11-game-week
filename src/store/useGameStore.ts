@@ -23,6 +23,15 @@ interface GameStore {
   /** Where the player should appear when the strip mounts. */
   spawnPosition: readonly [number, number, number]
   /**
+   * Yaw the strip camera starts at, in radians.
+   *
+   * Zero puts it behind the player looking down the street, which is the play
+   * position. The dev deep links move it so a facade can be captured face-on —
+   * the storefronts are all seen at a glancing angle from the play camera, and
+   * a sliver of shop window is not enough to tell a built one from a broken one.
+   */
+  initialCameraYaw: number
+  /**
    * Where closing the designer returns to.
    *
    * The mirror can be reached from inside the shop as well as on first run, and
@@ -50,6 +59,7 @@ export const useGameStore = create<GameStore>()(
       nearbyVenue: null,
       spawnPosition: PLAYER_SPAWN,
       designerReturnTo: Location.Strip,
+      initialCameraYaw: 0,
 
       enterVenue: (id) => set({ location: Location.Interior, activeVenue: id, nearbyVenue: null }),
 

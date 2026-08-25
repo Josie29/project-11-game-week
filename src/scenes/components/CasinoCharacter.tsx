@@ -10,6 +10,9 @@ import { GESTURES, REST_POSE } from '../gestures'
 import { Accessory } from './character/Accessory'
 import { Hair } from './character/Hair'
 
+/** Moulded ivory, as the dummies in `art/refs/shop_exterior_wide.png` are. */
+const MANNEQUIN_FORM = '#ded5c8'
+
 /** Arms rest slightly out from the body rather than clipping through it. */
 const IDLE_ARM_SPLAY = 0.12
 
@@ -42,6 +45,14 @@ interface CasinoCharacterProps {
   seated?: boolean | undefined
   /** Adds the house name badge. House employees only. */
   staff?: boolean | undefined
+  /**
+   * Renders the figure as a shop-window dummy: one neutral form colour, no
+   * face, no hair.
+   *
+   * The clothes are the point in a display window, and a mannequin with eyes
+   * and a haircut reads as a person standing very still behind the glass.
+   */
+  mannequin?: boolean | undefined
   /**
    * Which signal stream drives the right arm.
    *
@@ -76,6 +87,7 @@ export function CasinoCharacter({
   dealerPose = false,
   seated = false,
   staff = false,
+  mannequin = false,
   gestureSource,
 }: CasinoCharacterProps) {
   const { silhouette, hairStyle, hair, skin, garment, colors } = resolveAppearance(appearance)
@@ -214,7 +226,9 @@ export function CasinoCharacter({
   const legColor = colors.hasSkirt ? skin : colors.secondary
 
   const jacketMaterial = <meshStandardMaterial color={colors.primary} roughness={0.75} />
-  const skinMaterial = <meshStandardMaterial color={skin} roughness={0.8} />
+  // Shop dummies are one moulded colour throughout, hands and head included.
+  const formColor = mannequin ? MANNEQUIN_FORM : skin
+  const skinMaterial = <meshStandardMaterial color={formColor} roughness={0.8} />
 
   /** One arm, from shoulder to fingertips. Refs are only wired to the right. */
   const renderArm = (side: 1 | -1) => {
@@ -454,8 +468,10 @@ export function CasinoCharacter({
         </mesh>
 
         {/* Eyes and brows. Small, but they are what stop the head reading as a
-            featureless block at this distance. */}
-        {[-1, 1].map((side) => {
+            featureless block at this distance. A dummy wants exactly that
+            featureless block, so it skips the whole face. */}
+        {!mannequin &&
+          [-1, 1].map((side) => {
           const eyeY = body.torsoHeight + body.neckHeight + body.headHeight * 0.62
           const faceZ = body.headDepth / 2 + 0.001
 
@@ -473,33 +489,37 @@ export function CasinoCharacter({
                 <boxGeometry args={[0.05, 0.014, 0.01]} />
                 <meshStandardMaterial color={hair} roughness={0.9} />
               </mesh>
-            </group>
-          )
-        })}
+              </group>
+            )
+          })}
 
-        {/* Nose and mouth. */}
-        <mesh
-          position={[
-            0,
-            body.torsoHeight + body.neckHeight + body.headHeight * 0.5,
-            body.headDepth / 2 + 0.007,
-          ]}
-        >
-          <boxGeometry args={[0.026, 0.045, 0.022]} />
-          {skinMaterial}
-        </mesh>
-        <mesh
-          position={[
-            0,
-            body.torsoHeight + body.neckHeight + body.headHeight * 0.28,
-            body.headDepth / 2 + 0.001,
-          ]}
-        >
-          <boxGeometry args={[0.05, 0.011, 0.008]} />
-          <meshStandardMaterial color="#8a4f45" roughness={0.6} />
-        </mesh>
+        {/* Nose, mouth and hair — all of it skipped on a dummy. */}
+        {!mannequin && (
+          <>
+            <mesh
+              position={[
+                0,
+                body.torsoHeight + body.neckHeight + body.headHeight * 0.5,
+                body.headDepth / 2 + 0.007,
+              ]}
+            >
+              <boxGeometry args={[0.026, 0.045, 0.022]} />
+              {skinMaterial}
+            </mesh>
+            <mesh
+              position={[
+                0,
+                body.torsoHeight + body.neckHeight + body.headHeight * 0.28,
+                body.headDepth / 2 + 0.001,
+              ]}
+            >
+              <boxGeometry args={[0.05, 0.011, 0.008]} />
+              <meshStandardMaterial color="#8a4f45" roughness={0.6} />
+            </mesh>
 
-        <Hair style={hairStyle} color={hair} body={body} />
+            <Hair style={hairStyle} color={hair} body={body} />
+          </>
+        )}
 
         {/* Worn items that hang off the torso and head. */}
         {worn.outerwear && (

@@ -95,8 +95,10 @@ Dev-only deep links, stripped from production builds:
 | `?boot=craps` | Lucky Viper with a pass line down |
 | `?boot=designer` | the dressing-room stage |
 | `?boot=shop` | The Gilded Hanger, bankroll topped up |
+| `?boot=shopfront` | on the street outside the shop, to look at the storefront |
 | `?boot=dressed` | the shop, every wardrobe slot filled |
 | `?boot=strip` | the street, with the first-run designer skipped |
+| `?look=DEGREES` | swings the strip camera round before it settles |
 | `?time=HH:MM` | opens at that hour, clock still running |
 | `?freeze` | holds the clock, so a capture is reproducible |
 
@@ -108,6 +110,11 @@ unpinned capture lands on a different sky and different HUD digits each run.
 `?boot=strip` exists because captures run in a fresh browser profile, so
 `hasDesigned` is false and a bare `/` opens the character designer. Without it
 every strip regression shot is a picture of a menu.
+
+`?look=` exists because the play camera trails the player down the street, so
+every facade is seen at a glancing angle. A shop window is a bright sliver from
+there whether it is built correctly or not — `?boot=shopfront&look=-90` is what
+turned "the window is dark" into three separately diagnosable bugs.
 
 **When something is invisible, build the diagnostic before the fix.** A missing
 die looked identical to a die that had tunnelled out of the world;

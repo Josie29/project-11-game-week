@@ -37,6 +37,9 @@ const SCENES = [
   { name: 'strip-dawn', path: '/?boot=strip&time=05:30&freeze', settleMs: 2400 },
   { name: 'strip-noon', path: '/?boot=strip&time=12:00&freeze', settleMs: 2400 },
   { name: 'strip-dusk', path: '/?boot=strip&time=19:00&freeze', settleMs: 2400 },
+  // Face-on, because the play camera sees every facade at a glancing angle and
+  // a sliver of shop window cannot tell a built storefront from a broken one.
+  { name: 'shopfront', path: '/?boot=shopfront&look=-90&time=21:00&freeze', settleMs: 2600 },
   { name: 'designer', path: '/?boot=designer&time=21:00&freeze', settleMs: 2000 },
   { name: 'shop', path: '/?boot=shop&time=21:00&freeze', settleMs: 2400 },
   { name: 'shop-dressed', path: '/?boot=shop&dressed&time=21:00&freeze', settleMs: 2400 },

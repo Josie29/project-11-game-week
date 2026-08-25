@@ -16,6 +16,9 @@ const DEMO_BET = 50
 /** Bankroll handed to `?boot=shop`, enough to afford anything on the rails. */
 const SHOPPING_SPREE = 5000
 
+/** Where `?boot=shopfront` stands the player. Clear of the door trigger. */
+const SHOPFRONT_VIEWPOINT: readonly [number, number, number] = [4.2, 0, -6]
+
 /**
  * A fully accessorised character, for `?dressed`.
  *
@@ -66,6 +69,17 @@ function applyWardrobeShortcut(): void {
   for (const id of FULL_OUTFIT) {
     wardrobe.equip(id)
   }
+}
+
+/** Honours `?look=DEGREES` by seeding the strip camera's orbit yaw. */
+function applyLookShortcut(): void {
+  const look = new URLSearchParams(window.location.search).get('look')
+  if (look === null) return
+
+  const degrees = Number(look)
+  if (!Number.isFinite(degrees)) return
+
+  useGameStore.setState({ initialCameraYaw: (degrees * Math.PI) / 180 })
 }
 
 /** Matches a 24-hour `HH:MM`, rejecting impossible hours and minutes. */
@@ -121,6 +135,11 @@ function applyTimeShortcut(): void {
  *   `?boot=shop&dressed` for the anchors up close, `?boot=settled&dressed` for
  *   the gown on a stool, `?boot=strip&dressed` for the cane and the walk cycle.
  * - `?boot=strip` marks the character as designed and stands on the street.
+ * - `?boot=shopfront` stands on the street a few paces from The Gilded Hanger,
+ *   which is the only way to look at the storefront without walking there.
+ * - `?look=DEGREES` swings the strip camera round the player before it settles,
+ *   so a facade can be captured face-on instead of at the glancing angle the
+ *   play camera gives. Positive swings toward the left of the street.
  * - `?time=HH:MM` opens at that hour, with the clock still running.
  * - `?freeze` holds the clock wherever it is, so a capture is reproducible.
  *
@@ -129,6 +148,7 @@ function applyTimeShortcut(): void {
 export function applyBootShortcut(): void {
   applyTimeShortcut()
   applyWardrobeShortcut()
+  applyLookShortcut()
 
   const boot = new URLSearchParams(window.location.search).get('boot')
   if (!boot) return
@@ -142,12 +162,25 @@ export function applyBootShortcut(): void {
     'craps',
     'designer',
     'shop',
+    'shopfront',
     'strip',
   ]
   if (!known.includes(boot)) return
 
   if (boot === 'designer') {
     useGameStore.getState().openDesigner()
+    return
+  }
+
+  if (boot === 'shopfront') {
+    /*
+     * Out on the road level with the shop's door, and just outside its trigger
+     * radius. Compose with `?look=-90` to swing the camera round and put the
+     * storefront face-on; without it the play camera looks down the street and
+     * the frontage is edge-on.
+     */
+    useAppearanceStore.getState().completeDesign()
+    useGameStore.setState({ spawnPosition: SHOPFRONT_VIEWPOINT })
     return
   }
 

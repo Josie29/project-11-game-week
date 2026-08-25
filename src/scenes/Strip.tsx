@@ -4,6 +4,7 @@ import { BackSide } from 'three'
 import { useTimeStore } from '../store/useTimeStore'
 import {
   VENUES,
+  VenueKind,
   FACADE_X,
   ROAD_HALF_WIDTH,
   SIDEWALK_HEIGHT,
@@ -19,6 +20,7 @@ import {
 } from '../world/timeOfDay'
 import { setFacadeDaylight } from './facadeTexture'
 import { Building } from './components/Building'
+import { ShopFront } from './components/ShopFront'
 import { VenueDoor } from './components/VenueDoor'
 import { Player } from './components/Player'
 import { PalmTree, StreetLamp } from './components/StreetProps'
@@ -58,21 +60,37 @@ function neonFor(index: number): string {
   return NEON_PALETTE[index % NEON_PALETTE.length] ?? NEON_PALETTE[0]
 }
 
-/** Returns the casino whose entrance sits on this row and side, if any. */
-function signFor(z: number, side: 1 | -1): string | undefined {
-  const casino = VENUES.find(
+/** Returns the venue whose entrance sits on this row and side, if any. */
+function venueAt(z: number, side: 1 | -1) {
+  return VENUES.find(
     (entry) => entry.doorPosition[2] === z && Math.sign(entry.doorPosition[0]) === side,
   )
-  if (casino) return casino.name
+}
+
+/**
+ * The name to put on the tower's marquee above this row, if any.
+ *
+ * Shops are skipped on purpose. The bulb marquee is the strip's casino
+ * vocabulary, and the shop wearing it was most of why it read as a third
+ * casino from the street — `ShopFront` gives it a neon fascia sign instead.
+ */
+function signFor(z: number, side: 1 | -1): string | undefined {
+  const venue = venueAt(z, side)
+  if (venue) return venue.kind === VenueKind.Shop ? undefined : venue.name
   if (SCENERY_SIGN.z === z && SCENERY_SIGN.side === side) return SCENERY_SIGN.name
   return undefined
 }
 
+/**
+ * The tower's neon colour above this row.
+ *
+ * Unlike `signFor`, this does include the shop: the tower it sits under still
+ * glows the shop's pink, which is what ties the low frontage to the building
+ * behind it instead of leaving it looking bolted on.
+ */
 function signColor(z: number, side: 1 | -1, fallback: string): string {
-  const casino = VENUES.find(
-    (entry) => entry.doorPosition[2] === z && Math.sign(entry.doorPosition[0]) === side,
-  )
-  if (casino) return casino.neonColor
+  const venue = venueAt(z, side)
+  if (venue) return venue.neonColor
   if (SCENERY_SIGN.z === z && SCENERY_SIGN.side === side) return SCENERY_SIGN.color
   return fallback
 }
@@ -277,9 +295,13 @@ export function Strip() {
         </group>
       ))}
 
-      {VENUES.map((casino) => (
-        <VenueDoor key={casino.id} casino={casino} neonLevel={neonLevel} />
-      ))}
+      {VENUES.map((venue) =>
+        venue.kind === VenueKind.Shop ? (
+          <ShopFront key={venue.id} venue={venue} neonLevel={neonLevel} />
+        ) : (
+          <VenueDoor key={venue.id} casino={venue} neonLevel={neonLevel} />
+        ),
+      )}
 
       <Player />
     </>

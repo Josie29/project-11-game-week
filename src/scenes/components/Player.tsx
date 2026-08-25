@@ -79,8 +79,12 @@ export function Player() {
 
   // Drag to look, scroll to zoom, R to reset — the same control as the table,
   // sharing its implementation.
+  // Read once, at mount: this seeds the orbit rather than driving it, so it
+  // must not resubscribe when the store changes.
+  const initialYaw = useGameStore.getState().initialCameraYaw
+
   const { orbit, lastInputAt } = useOrbitInput(
-    { yaw: 0, pitch: DEFAULT_PITCH, distance: DEFAULT_DISTANCE },
+    { yaw: initialYaw, pitch: DEFAULT_PITCH, distance: DEFAULT_DISTANCE },
     {
       minPitch: MIN_PITCH,
       maxPitch: MAX_PITCH,
