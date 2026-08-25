@@ -72,52 +72,69 @@ Why: craps becomes cheap to add on day 3 because the hard part is isolated;
 rules are unit-testable instead of hand-played 50 times; and the engines port
 unchanged to a native iOS rewrite later.
 
-## Art pipeline
+## Art pipeline — as built
 
-| Asset | Source |
-| --- | --- |
-| Player character + walk/idle anims | Mixamo (free, rigged, GLB) |
-| Buildings, street props | Kenney.nl / Quaternius low-poly city kits |
-| Night skybox (360° equirect) | **Comfy Cloud** — highest visual impact per hour |
-| Neon marquees / casino signage | **Comfy Cloud** → emissive quads |
-| Table felt, card backs, chip faces, UI frames | **Comfy Cloud** |
-| Audio (chip clinks, neon buzz, crowd ambience) | Kenney audio / Freesound |
+The plan was downloaded assets plus Comfy-generated textures. What shipped is
+almost entirely procedural, and the change was an improvement rather than a
+compromise.
 
-Comfy Cloud produces **2D images only** — it makes textures and UI art, not the
-character or the geometry. Image-to-3D tools (Meshy, Tripo) are out of scope
-this week: too unpredictable for a 3.5-day build.
+| Asset | Planned | Shipped |
+| --- | --- | --- |
+| Card faces and backs | Comfy textures | drawn to canvas at runtime |
+| Table felt, both games | Comfy textures | drawn to canvas at runtime |
+| Casino marquees and blade signs | Comfy → emissive quads | drawn to canvas at runtime |
+| Building facades, night sky, dice pips | Comfy / Kenney | drawn to canvas at runtime |
+| Player and dealer | Mixamo rigged GLB | procedural primitives with named joints |
+| Buildings and street props | Kenney / Quaternius kits | procedural primitives |
+| Audio | Kenney / Freesound | **cut** |
 
-## Acceptance criteria
+Drawing textures at runtime turned out to beat generating them: no asset
+pipeline, no download, crisp at any resolution, and the text on a card or a
+felt is guaranteed correct rather than whatever a diffusion model produced.
+Building the characters from jointed primitives is what made the casino hand
+signals possible at all — they are authored by rotating named joints, which no
+imported rig would have allowed on this timescale.
 
-**Blackjack** (must ship)
+**Comfy earned its place as reference, not as assets.** The renders in
+`art/refs/` are what the dealer's suit, the D-shaped felt, the printed rules
+and the neon strip were matched against. They were the most efficient
+direction given on the project; they simply were not shipped.
+
+## Acceptance criteria — all met
+
+**Blackjack** (must ship) — **shipped**, plus splitting, which was a non-goal
 - Hit, stand, double down, bust, dealer stands on soft 17, blackjack pays 3:2
 - Ace counts as 1 or 11 correctly, including multi-ace hands
 - Chip bet placed before deal; bankroll debits on bet, credits on win
 - Engine is deterministic under a fixed seed and covered by tests
 
-**Craps, simplified** (ships if the Tuesday checkpoint passes)
+**Craps, simplified** (ships if the Tuesday checkpoint passes) — **shipped**;
+the checkpoint passed
 - Pass line, don't pass, free odds, field — no come/place/prop bets
 - Come-out roll → point established → point or seven-out resolution
 - Physics dice roll visibly on the table (rapier)
 
-**World**
+**World** — **shipped**
 - Third-person character walks a single street loop at 60fps on a laptop
 - Two enterable casino doors with a camera transition
 - Bankroll persists across a page reload (localStorage)
 
-**Ship**
+**Ship** — **shipped**
 - Deployed to Vercel on **day one** and on every subsequent day
 - Full demo script runs start to finish without a crash or a reload
 
 ## Non-goals
 
-Explicitly not this week — listing them so they stop being tempting:
+Explicitly not this week — listing them so they stop being tempting.
+**Splitting pairs was on this list and shipped anyway**: the pure-engine split
+meant it cost a day rather than the week that was feared, and it is covered by
+tests.
 
 - Native iOS build, App Store submission, TestFlight
 - Multiplayer, accounts, backend, leaderboards
 - Real money or in-app purchases of any kind
 - Open-world town, interior NPCs, traffic, day/night cycle
-- Card counting, side bets, insurance, splitting pairs
+- Card counting, side bets, insurance
 - Craps: come bets, place bets, hardways, any prop bet
 - Mobile touch controls (desktop keyboard/mouse only)
 
@@ -130,6 +147,29 @@ Explicitly not this week — listing them so they stop being tempting:
 | **Tue 9pm** | **CHECKPOINT — is blackjack demo-quality?** No → craps is cut, Wednesday goes to slots (2-3h) or town polish. |
 | **Wed 08-26** | Craps: simplified bet layout + rapier dice. Second casino interior. |
 | **Thu 08-27** | **Feature freeze at noon.** Audio, lighting polish, rehearse the demo, submit. |
+
+Delivered on schedule. Audio was cut by choice rather than by time.
+
+## What the plan got wrong
+
+Worth recording, because the misses were more instructive than the hits.
+
+- **The art pipeline was the biggest miss** and the happiest one. Every texture
+  is drawn to canvas at runtime instead of generated or downloaded. See the
+  pipeline table above.
+- **Splitting pairs was listed as a non-goal and shipped anyway.** The
+  pure-engine rule made it affordable. The non-goals that held were the ones
+  about scope of *world*, not scope of *rules*.
+- **Physics arrived only in craps**, exactly as scoped, and the boundary held:
+  the strip character and the blackjack table never touch rapier.
+- **The riskiest thing was not any feature — it was working without seeing the
+  result.** A whole session of table work shipped with four visible bugs
+  because it was written blind. The headless capture loop that fixed it
+  (`npm run shot`, `npm run shots`) should have existed on day one, and is now
+  the first thing `CLAUDE.md` asks for.
+- **Hand-derived 3D coordinates were wrong more often than the game rules
+  were.** Unit-testing anchors against the felt outline caught three placement
+  bugs that no amount of squinting had.
 
 ## Risks
 

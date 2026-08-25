@@ -8,6 +8,7 @@ import {
 } from '../games/craps/engine'
 import type { CrapsState } from '../games/craps/types'
 import type { CrapsBet } from '../scenes/crapsFeltLayout'
+import { type RunningSequence, runSequence } from './sequence'
 import { useGameStore } from './useGameStore'
 
 /**
@@ -45,13 +46,11 @@ function freshSeed(): number {
  * one cancellable timer gates the reveal.
  */
 export const useCrapsStore = create<CrapsStore>()((set, get) => {
-  let settleTimer: ReturnType<typeof setTimeout> | null = null
+  let settle: RunningSequence | null = null
 
   function cancelSettle(): void {
-    if (settleTimer !== null) {
-      clearTimeout(settleTimer)
-      settleTimer = null
-    }
+    settle?.cancel()
+    settle = null
   }
 
   return {
@@ -83,15 +82,20 @@ export const useCrapsStore = create<CrapsStore>()((set, get) => {
 
       set({ game: next, rollId: get().rollId + 1, isRolling: true })
 
-      settleTimer = setTimeout(() => {
-        settleTimer = null
-        if (get().game !== next) return
-
-        const payout = totalCrapsPayout(next)
-        if (payout > 0) useGameStore.getState().adjustBankroll(payout)
-
-        set({ isRolling: false })
-      }, DICE_SETTLE_MS)
+      settle = runSequence(
+        [
+          {
+            at: DICE_SETTLE_MS,
+            run: () => {
+              const payout = totalCrapsPayout(next)
+              if (payout > 0) useGameStore.getState().adjustBankroll(payout)
+              set({ isRolling: false })
+            },
+          },
+        ],
+        // Leaving the table mid-roll must not credit into the next session.
+        { isStillValid: () => get().game === next },
+      )
     },
 
     reset: () => {

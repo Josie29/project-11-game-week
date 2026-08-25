@@ -10,6 +10,7 @@ import {
 import { type GameState, PlayerAction, RoundPhase } from '../games/blackjack/types'
 import { Gesture } from '../scenes/gestures'
 import { revealTimeline } from '../scenes/revealTimeline'
+import { type RunningSequence, runSequence } from './sequence'
 import { useGameStore } from './useGameStore'
 
 /** What the chips on the felt are doing. */
@@ -114,104 +115,93 @@ function freshSeed(): number {
  */
 export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
   /**
-   * Timer for whatever transition is waiting behind an animation.
+   * The action waiting behind the player's hand signal.
    *
-   * Deliberately one timer for every delayed transition — betting, acting and
-   * clearing are mutually exclusive, and a single handle means a single place
-   * to cancel when the player walks away.
+   * This one — and only this one — gates player input: while it is running, a
+   * second action is ignored so mashing keys cannot queue two hits against the
+   * same hand. Animation beats get their own handles for exactly that reason.
    */
-  let pending: ReturnType<typeof setTimeout> | null = null
+  let pending: RunningSequence | null = null
+
+  /** Cosmetic beat while a wager travels from the stash to the spot. */
+  let wagerBeat: RunningSequence | null = null
 
   function cancelPending(): void {
-    if (pending !== null) {
-      clearTimeout(pending)
-      pending = null
-    }
+    pending?.cancel()
+    pending = null
+  }
+
+  /** True while an action is mid-flight and further input should be ignored. */
+  function isBusy(): boolean {
+    return pending?.isRunning() === true
   }
 
   /**
-   * Timer stepping through the dealer's reveal.
+   * The dealer's reveal, as a cancellable sequence.
    *
    * Deliberately separate from `pending`, which gates player input. Parking an
    * animation on that handle is what previously swallowed every hit and stand
    * for the first 420ms of a round.
    */
-  let revealTimer: ReturnType<typeof setTimeout> | null = null
+  let reveal: RunningSequence | null = null
 
   function cancelReveal(): void {
-    if (revealTimer !== null) {
-      clearTimeout(revealTimer)
-      revealTimer = null
-    }
+    reveal?.cancel()
+    reveal = null
   }
 
   /**
    * Plays the dealer's hand out over time: a beat, the hole card turning, then
    * each drawn card in turn.
-   *
-   * One self-re-arming timer rather than a fistful of them, so there is a
-   * single handle to cancel if the player walks away mid-reveal.
    */
   function startReveal(settled: GameState): void {
     cancelReveal()
 
     const timeline = revealTimeline(settled.dealerHand.length)
-    const steps: readonly { at: number; apply: () => void }[] = [
-      { at: timeline.holeFlipAt, apply: () => set({ holeCardUp: true }) },
-      ...timeline.drawAt.map((at, index) => ({
-        at,
-        // Index 0 is the third card, since two are already on the table.
-        apply: () => set({ dealerCardsShown: index + 3 }),
-      })),
-      {
-        at: timeline.completeAt,
-        apply: () => {
-          set({ revealComplete: true })
 
-          // The dealer pays only once the hand is finished. Paying at
-          // settlement put chips on the felt while they were still turning
-          // cards over, which reads as the result being decided in advance.
-          if (settled.totalPayout > 0) {
-            set({
-              chipPhase: ChipPhase.Paying,
-              dealerGesture: Gesture.DealerPay,
-              gestureStartedAtDealer: performance.now(),
-            })
+    reveal = runSequence(
+      [
+        { at: timeline.holeFlipAt, run: () => set({ holeCardUp: true }) },
+        ...timeline.drawAt.map((at, index) => ({
+          at,
+          // Index 0 is the third card, since two are already on the table.
+          run: () => set({ dealerCardsShown: index + 3 }),
+        })),
+        {
+          at: timeline.completeAt,
+          run: () => {
+            set({ revealComplete: true })
 
-            setTimeout(() => {
-              if (get().chipPhase === ChipPhase.Paying) set({ chipPhase: ChipPhase.Idle })
-            }, PAYOUT_TRAVEL_MS)
-          }
+            // The dealer pays only once the hand is finished. Paying at
+            // settlement put chips on the felt while they were still turning
+            // cards over, which reads as the result being decided in advance.
+            if (settled.totalPayout > 0) {
+              set({
+                chipPhase: ChipPhase.Paying,
+                dealerGesture: Gesture.DealerPay,
+                gestureStartedAtDealer: performance.now(),
+              })
+
+              payoutBeat?.cancel()
+              payoutBeat = runSequence([
+                {
+                  at: PAYOUT_TRAVEL_MS,
+                  run: () => {
+                    if (get().chipPhase === ChipPhase.Paying) set({ chipPhase: ChipPhase.Idle })
+                  },
+                },
+              ])
+            }
+          },
         },
-      },
-    ]
-
-    let stepIndex = 0
-    let elapsed = 0
-
-    function runNextStep(): void {
-      const step = steps[stepIndex]
-      if (!step) {
-        revealTimer = null
-        return
-      }
-
-      revealTimer = setTimeout(() => {
-        // The round may have been abandoned while the dealer was playing.
-        if (get().game !== settled) {
-          revealTimer = null
-          return
-        }
-
-        step.apply()
-        elapsed = step.at
-        stepIndex++
-        runNextStep()
-      }, step.at - elapsed)
-    }
-
-    runNextStep()
+      ],
+      // The round may have been abandoned while the dealer was playing.
+      { isStillValid: () => get().game === settled },
+    )
   }
+
+  /** Clears the Paying highlight once the chips have been placed. */
+  let payoutBeat: RunningSequence | null = null
 
   /** Credits winnings the moment a round settles, and starts the payout beat. */
   function creditIfSettled(next: GameState): void {
@@ -248,7 +238,7 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
       const { bankroll } = useGameStore.getState()
 
       if (game.phase !== RoundPhase.Betting || amount <= 0 || amount > bankroll) return
-      if (pending !== null) return
+      if (isBusy()) return
 
       // Push the chips out first; the cards follow once they land.
       useGameStore.getState().adjustBankroll(-amount)
@@ -264,15 +254,23 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
       creditIfSettled(dealt)
 
       /*
-       * Deliberately NOT the shared `pending` handle. That one gates player
-       * input, and parking the wager's travel time on it meant any hit or
-       * stand inside the first 420ms was silently swallowed. Clearing the
-       * phase is cosmetic, so it must never block an action.
+       * Deliberately NOT the `pending` handle. That one gates player input, and
+       * parking the wager's travel time on it meant any hit or stand inside the
+       * first 420ms was silently swallowed. Clearing the phase is cosmetic, so
+       * it must never block an action.
        */
-      setTimeout(() => {
-        if (get().game !== dealt) return
-        if (get().chipPhase === ChipPhase.Wagering) set({ chipPhase: ChipPhase.Idle })
-      }, WAGER_TRAVEL_MS)
+      wagerBeat?.cancel()
+      wagerBeat = runSequence(
+        [
+          {
+            at: WAGER_TRAVEL_MS,
+            run: () => {
+              if (get().chipPhase === ChipPhase.Wagering) set({ chipPhase: ChipPhase.Idle })
+            },
+          },
+        ],
+        { isStillValid: () => get().game === dealt },
+      )
     },
 
     takeAction: (action) => {
@@ -289,28 +287,30 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
 
       // Ignore a second action while one is still resolving, so mashing keys
       // cannot queue up two hits against the same hand.
-      if (pending !== null) return
+      if (isBusy()) return
 
       set({ activeGesture: ACTION_GESTURES[action], gestureStartedAt: performance.now() })
 
-      pending = setTimeout(() => {
-        pending = null
+      pending = runSequence(
+        [
+          {
+            at: GESTURE_LEAD_IN_MS,
+            run: () => {
+              const next = act(game, action)
 
+              // One rule covers both double and split: charge whatever the
+              // total staked went up by.
+              const extraStake = totalStaked(next) - totalStaked(game)
+              if (extraStake > 0) useGameStore.getState().adjustBankroll(-extraStake)
+
+              set({ game: next })
+              creditIfSettled(next)
+            },
+          },
+        ],
         // The round may have been reset or abandoned while the hand was moving.
-        // Identity-comparing against the captured state is an exact guard: any
-        // change at all, from any source, cancels this.
-        if (get().game !== game) return
-
-        const next = act(game, action)
-
-        // One rule covers both double and split: charge whatever the total
-        // staked went up by.
-        const extraStake = totalStaked(next) - totalStaked(game)
-        if (extraStake > 0) useGameStore.getState().adjustBankroll(-extraStake)
-
-        set({ game: next })
-        creditIfSettled(next)
-      }, GESTURE_LEAD_IN_MS)
+        { isStillValid: () => get().game === game },
+      )
     },
 
     nextRound: () => {
@@ -318,7 +318,7 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
       if (game.phase !== RoundPhase.Settled) return
       // Never clear the table while the dealer is still turning cards over.
       if (!revealComplete) return
-      if (pending !== null) return
+      if (isBusy()) return
 
       cancelPending()
       cancelReveal()
@@ -337,21 +337,25 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
         gestureStartedAtDealer: now,
       })
 
-      pending = setTimeout(() => {
-        pending = null
-        if (get().game !== game) return
-
-        set({
-          game: startNextRound(game, freshSeed()),
-          chipPhase: ChipPhase.Idle,
-          uncollectedPayout: 0,
-          activeGesture: null,
-          dealerGesture: null,
-          dealerCardsShown: 2,
-          holeCardUp: false,
-          revealComplete: false,
-        })
-      }, SETTLE_TRAVEL_MS)
+      pending = runSequence(
+        [
+          {
+            at: SETTLE_TRAVEL_MS,
+            run: () =>
+              set({
+                game: startNextRound(game, freshSeed()),
+                chipPhase: ChipPhase.Idle,
+                uncollectedPayout: 0,
+                activeGesture: null,
+                dealerGesture: null,
+                dealerCardsShown: 2,
+                holeCardUp: false,
+                revealComplete: false,
+              }),
+          },
+        ],
+        { isStillValid: () => get().game === game },
+      )
     },
 
     reset: () => {
@@ -359,6 +363,8 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
       // which no longer exists.
       cancelPending()
       cancelReveal()
+      wagerBeat?.cancel()
+      payoutBeat?.cancel()
       set({
         game: createGame(freshSeed()),
         roundId: 0,
