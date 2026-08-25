@@ -22,16 +22,35 @@ const DEALER_STANDS_AT = 17
 
 const BLACKJACK = 21
 
-/** Natural blackjack pays 3:2, so the player gets their stake back plus 1.5x. */
-const BLACKJACK_PAYOUT_MULTIPLIER = 2.5
+/**
+ * Natural blackjack pays 3:2, held as numerator and denominator.
+ *
+ * Never as the decimal 2.5. The same shortcut on 6:5 shipped a payout of
+ * `22.000000000000004`, and a ratio that only happens to divide evenly for the
+ * stakes currently on offer is one denomination away from doing it again.
+ */
+const BLACKJACK_ODDS = { numerator: 3, denominator: 2 } as const
 
 /**
- * Hands a player may hold at once.
+ * Chips returned on a natural: the stake back plus 3:2 on it.
  *
- * Capped at one split. Resplitting multiplies the felt layout and the betting
- * UI for a case that almost never comes up in a five-minute session.
+ * Floors the winnings rather than the whole return, so the stake always comes
+ * back whole. The house rounds down, which is what a real table does with a
+ * half-dollar it has no chip for.
  */
-export const MAX_HANDS = 2
+function blackjackPayout(bet: number): number {
+  return bet + Math.floor((bet * BLACKJACK_ODDS.numerator) / BLACKJACK_ODDS.denominator)
+}
+
+/**
+ * Hands a player may hold at once, so the pair split off a split hand can be
+ * split again.
+ *
+ * Three, not the four some houses allow, and the limit is the felt rather than
+ * the rules: `handAnchorX` has to keep every hand's chips on the table and
+ * clear of the player's stash, and a fourth betting spot lands on top of it.
+ */
+export const MAX_HANDS = 3
 
 /**
  * Returns the base point value of a rank, counting aces high.
@@ -247,7 +266,7 @@ export function placeBet(state: GameState, amount: number): GameState {
       withHand(
         dealt,
         0,
-        finishHand(hand, RoundOutcome.PlayerBlackjack, amount * BLACKJACK_PAYOUT_MULTIPLIER),
+        finishHand(hand, RoundOutcome.PlayerBlackjack, blackjackPayout(amount)),
       ),
     )
   }
@@ -331,8 +350,16 @@ export function canSplit(state: GameState): boolean {
 /**
  * Splits the active hand into two, dealing one card onto each.
  *
+ * The two new hands replace the split hand *in place* rather than becoming the
+ * whole hand list, which is what lets a resplit work: splitting the pair sitting
+ * at index 1 must leave the finished hand at index 0 alone. Rebuilding the list
+ * from scratch also reset `activeHandIndex` to 0, sending the player back to a
+ * hand they had already stood on.
+ *
  * Split aces receive exactly one card each and then stand, which is the
- * standard restriction; without it a pair of aces would be far too strong.
+ * standard restriction; without it a pair of aces would be far too strong. It
+ * also means split aces can never be resplit, since a finished hand is never
+ * the active one.
  */
 function splitActiveHand(state: GameState): GameState {
   const hand = activeHand(state)
@@ -363,14 +390,17 @@ function splitActiveHand(state: GameState): GameState {
     isFinished: wereAces,
   })
 
-  const split: GameState = {
-    ...state,
-    shoeIndex: index,
-    hands: [makeHand(first, firstDraw.card), makeHand(second, secondDraw.card)],
-    activeHandIndex: 0,
-  }
+  const at = state.activeHandIndex
+  const hands = [
+    ...state.hands.slice(0, at),
+    makeHand(first, firstDraw.card),
+    makeHand(second, secondDraw.card),
+    ...state.hands.slice(at + 1),
+  ]
 
-  return wereAces ? resolveDealer(split) : split
+  // The player carries on with the left half of what they just split, unless
+  // aces finished it for them.
+  return advanceOrResolve({ ...state, shoeIndex: index, hands, activeHandIndex: at })
 }
 
 /**

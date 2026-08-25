@@ -1,4 +1,4 @@
-import { activeHand, canDouble, canSplit, handValue } from '../games/blackjack/engine'
+import { activeHand, canDouble, canSplit, handValue, totalStaked } from '../games/blackjack/engine'
 import { type Hand, PlayerAction, RoundOutcome, RoundPhase } from '../games/blackjack/types'
 import { useBlackjackStore } from '../store/useBlackjackStore'
 import { useGameStore } from '../store/useGameStore'
@@ -34,6 +34,34 @@ function shortOutcome(hand: Hand): string {
   if (WINNING_OUTCOMES.has(hand.outcome)) return 'won'
   if (hand.outcome === RoundOutcome.Push) return 'push'
   return 'lost'
+}
+
+/**
+ * The round's result in money, as a change to the bankroll.
+ *
+ * Deliberately *net*, not the payout. Payouts include the stake, so a $20 push
+ * pays $20 back and printing that as "+$20" reads as a $20 win when nothing was
+ * won at all. Anything with a sign in front of it here has to be a number the
+ * player is actually up or down.
+ *
+ * @param net Chips returned less chips staked.
+ */
+function netLabel(net: number): string {
+  if (net > 0) return `+$${net}`
+  if (net < 0) return `-$${Math.abs(net)}`
+  return 'even'
+}
+
+/**
+ * How the round went across every hand, once a split means "you win" no longer
+ * covers it.
+ */
+function handsSummary(hands: readonly Hand[]): string {
+  const lost = hands.filter((hand) => hand.payout <= 0).length
+  if (lost === hands.length) return `All ${hands.length} hands lost`
+
+  const won = hands.filter((hand) => hand.payout > hand.bet).length
+  return `${won} of ${hands.length} hands won`
 }
 
 interface BlackjackPanelProps {
@@ -80,6 +108,10 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
   const isSettled = game.phase === RoundPhase.Settled
   /** The round is over *and* the dealer has finished showing their hand. */
   const isResolved = isSettled && revealComplete
+
+  const staked = totalStaked(game)
+  /** What the round did to the bankroll, stake excluded. See `netLabel`. */
+  const net = game.totalPayout - staked
 
   const current = activeHand(game)
   const canDoubleNow = isPlayerTurn && canDouble(game) && bankroll >= (current?.bet ?? 0)
@@ -154,14 +186,15 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
           }`}
         >
           {OUTCOME_LABEL[game.hands[0].outcome]}
-          {game.totalPayout > 0 && <span className="table-ui__payout">+${game.totalPayout}</span>}
+          {/* A push is already named by the label; "even" beside it just nags. */}
+          {net !== 0 && <span className="table-ui__payout">{netLabel(net)}</span>}
         </p>
       )}
 
       {isResolved && game.hands.length > 1 && (
-        <p className={`table-ui__outcome ${game.totalPayout > 0 ? 'table-ui__outcome--win' : ''}`}>
-          {game.totalPayout > 0 ? 'Hands settled' : 'Both hands lost'}
-          {game.totalPayout > 0 && <span className="table-ui__payout">+${game.totalPayout}</span>}
+        <p className={`table-ui__outcome ${net > 0 ? 'table-ui__outcome--win' : ''}`}>
+          {handsSummary(game.hands)}
+          <span className="table-ui__payout">{netLabel(net)}</span>
         </p>
       )}
 
@@ -205,9 +238,18 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
 
         {isPlayerTurn && (
           <>
+            {/*
+              * Once there is more than one hand the active hand's bet is no
+              * longer what is at risk, so both figures are named. Reading
+              * "$10 in play" with $30 on the felt is how a player talks
+              * themselves into a split they cannot afford.
+              */}
             <span className="table-ui__prompt">
-              ${current?.bet ?? 0} in play
-              {game.hands.length > 1 && ` · hand ${game.activeHandIndex + 1}`}
+              {game.hands.length > 1
+                ? `$${current?.bet ?? 0} on hand ${game.activeHandIndex + 1} of ${
+                    game.hands.length
+                  } · $${staked} in play`
+                : `$${current?.bet ?? 0} in play`}
             </span>
             <button
               type="button"

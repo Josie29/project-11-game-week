@@ -147,6 +147,47 @@ describe('settlement', () => {
   })
 })
 
+/*
+ * Money on this table has to land on whole dollars, because there is no
+ * half-dollar chip to put on the felt for the remainder. 3:2 held as the
+ * decimal 2.5 divides evenly for the three stakes currently offered and stops
+ * doing so the moment a fourth is added, which is the same shape as the 6:5
+ * bug that paid 22.000000000000004.
+ */
+describe('payout arithmetic', () => {
+  it('pays a whole number of dollars on a natural, at every stake', () => {
+    const shoe = stackedShoe(
+      [card(Rank.Ace), card(Rank.King)],
+      [card(Rank.Nine), card(Rank.Six)],
+    )
+
+    for (let bet = 1; bet <= 200; bet++) {
+      const { payout } = handAt(placeBet(createGameFromShoe(shoe), bet), 0)
+
+      expect(Number.isInteger(payout)).toBe(true)
+      // The stake always comes back whole; only the winnings round, and they
+      // round the house's way.
+      expect(payout).toBe(bet + Math.floor((bet * 3) / 2))
+    }
+  })
+
+  it('pays a whole number of dollars on every ordinary outcome', () => {
+    // Player 20 against a dealer 19: an even-money win, doubled and split too.
+    const shoe = stackedShoe(
+      [card(Rank.Ten), card(Rank.Ten, Suit.Hearts)],
+      [card(Rank.Ten, Suit.Clubs), card(Rank.Nine)],
+      [card(Rank.Nine, Suit.Hearts), card(Rank.Nine, Suit.Clubs)],
+    )
+
+    for (const bet of [1, 3, 5, 7, 25, 33, 99]) {
+      const settled = act(placeBet(createGameFromShoe(shoe), bet), PlayerAction.Stand)
+
+      expect(Number.isInteger(settled.totalPayout)).toBe(true)
+      expect(settled.totalPayout).toBe(bet * 2)
+    }
+  })
+})
+
 describe('double down', () => {
   // Doubling must take exactly one card and then stop. Allowing further hits
   // would let the player draw unlimited cards at double stakes.
@@ -284,18 +325,100 @@ describe('split', () => {
     expect(settled.totalPayout).toBe(20)
   })
 
-  // One split only. Without the cap the felt layout and betting UI have to
-  // handle an unbounded number of hands.
-  it('refuses a second split', () => {
+  /*
+   * Resplitting, which the table refused outright for a long time: a player
+   * dealt 8,8, splitting, and catching a third eight was told no. It is the
+   * single most standard resplit in the game and the reason this block exists.
+   */
+
+  // Splitting the pair that a split just dealt. Without this the player is
+  // stuck playing a hard 16 they were entitled to break up.
+  it('splits a pair dealt onto a split hand', () => {
     const shoe = stackedShoe(
       [card(Rank.Eight), card(Rank.Eight, Suit.Hearts)],
-      [card(Rank.Ten), card(Rank.Six)],
-      [card(Rank.Eight, Suit.Clubs), card(Rank.Eight, Suit.Diamonds)],
+      [card(Rank.Ten), card(Rank.Six)], // Dealer 16, must draw.
+      [
+        card(Rank.Eight, Suit.Clubs), // Hand one -> 8,8 again.
+        card(Rank.Three), // Hand two -> 8,3.
+        card(Rank.Two), // Resplit: hand one -> 8,2.
+        card(Rank.Ten, Suit.Hearts), // Resplit: hand two -> 8,10.
+        card(Rank.Ten, Suit.Diamonds), // Dealer draws to 26, bust.
+      ],
     )
 
     const split = act(placeBet(createGameFromShoe(shoe), 10), PlayerAction.Split)
+    expect(canSplit(split)).toBe(true)
 
-    expect(canSplit(split)).toBe(false)
+    const resplit = act(split, PlayerAction.Split)
+
+    expect(resplit.hands).toHaveLength(3)
+    expect(totalStaked(resplit)).toBe(30)
+    expect(resplit.activeHandIndex).toBe(0)
+
+    // The hand that was not being split must come through untouched. Rebuilding
+    // the hand list from the split instead of splicing into it destroyed it.
+    expect(handAt(resplit, 2).cards.map((c) => c.rank)).toEqual([Rank.Eight, Rank.Three])
+
+    const settled = [PlayerAction.Stand, PlayerAction.Stand, PlayerAction.Stand].reduce(
+      act,
+      resplit,
+    )
+
+    expect(settled.phase).toBe(RoundPhase.Settled)
+    // Three hands, three dealer busts, even money on each.
+    expect(settled.totalPayout).toBe(60)
+  })
+
+  // Splitting a hand that is not the first one. This is where rebuilding the
+  // hand list sent the player back to a hand they had already stood on, and
+  // silently discarded the result of it.
+  it('splits the second hand without disturbing the first', () => {
+    const shoe = stackedShoe(
+      [card(Rank.Eight), card(Rank.Eight, Suit.Hearts)],
+      [card(Rank.Ten), card(Rank.Six)],
+      [
+        card(Rank.Ten, Suit.Diamonds), // Hand one -> 18, stood on.
+        card(Rank.Eight, Suit.Clubs), // Hand two -> 8,8, splittable.
+        card(Rank.Nine), // Resplit: hand two -> 17.
+        card(Rank.Two), // Resplit: hand three -> 10.
+      ],
+    )
+
+    const split = act(placeBet(createGameFromShoe(shoe), 10), PlayerAction.Split)
+    const onSecond = act(split, PlayerAction.Stand)
+
+    expect(onSecond.activeHandIndex).toBe(1)
+    expect(canSplit(onSecond)).toBe(true)
+
+    const resplit = act(onSecond, PlayerAction.Split)
+
+    expect(resplit.hands).toHaveLength(3)
+    // The stood-on hand keeps its cards and stays finished.
+    expect(handAt(resplit, 0).cards.map((c) => c.rank)).toEqual([Rank.Eight, Rank.Ten])
+    expect(handAt(resplit, 0).isFinished).toBe(true)
+    // And play resumes on the split, not back at the top of the list.
+    expect(resplit.activeHandIndex).toBe(1)
+  })
+
+  // Three hands, not four: the fourth betting spot lands on the player's stash.
+  // The cap has to hold somewhere or `handAnchorX` starts stacking chips.
+  it('refuses a third split', () => {
+    const shoe = stackedShoe(
+      [card(Rank.Eight), card(Rank.Eight, Suit.Hearts)],
+      [card(Rank.Ten), card(Rank.Six)],
+      [
+        card(Rank.Eight, Suit.Clubs),
+        card(Rank.Three),
+        card(Rank.Eight, Suit.Diamonds), // A fourth eight, and still no split.
+        card(Rank.Ten, Suit.Hearts),
+      ],
+    )
+
+    const resplit = act(act(placeBet(createGameFromShoe(shoe), 10), PlayerAction.Split), PlayerAction.Split)
+
+    expect(resplit.hands).toHaveLength(3)
+    expect(handValue(handAt(resplit, 0).cards).total).toBe(16) // 8,8 — a pair.
+    expect(canSplit(resplit)).toBe(false)
   })
 })
 

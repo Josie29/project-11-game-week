@@ -153,8 +153,21 @@ export function isOnFelt(x: number, z: number, margin = 0): boolean {
   return (x / halfWidth) ** 2 + (z / halfDepth) ** 2 <= 1
 }
 
-/** Where a hand's cards and chips sit, given how many hands are in play. */
+/**
+ * Where a hand's cards and chips sit, given how many hands are in play.
+ *
+ * Spread evenly about the centre line, so two hands sit at ±`SPLIT_OFFSET` and
+ * three add one back on the centre spot. The centre is deliberately the *last*
+ * position filled: it is the only other spot on this felt that is both clear of
+ * the player's stash and inside the edge at `CHIP_ROW_Z`, which is why a fourth
+ * hand is not offered — see `MAX_HANDS`.
+ *
+ * @param handIndex Which hand, left to right as the player sees them.
+ * @param handCount How many hands are in play.
+ */
 export function handAnchorX(handIndex: number, handCount: number): number {
   if (handCount <= 1) return 0
-  return handIndex === 0 ? -SPLIT_OFFSET : SPLIT_OFFSET
+
+  const step = (SPLIT_OFFSET * 2) / (handCount - 1)
+  return -SPLIT_OFFSET + handIndex * step
 }

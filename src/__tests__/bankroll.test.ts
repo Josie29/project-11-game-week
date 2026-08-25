@@ -51,14 +51,64 @@ describe('markers', () => {
     useGameStore.getState().takeMarker()
 
     for (let win = 0; win < 40 && useGameStore.getState().debt > 0; win++) {
-      useGameStore.getState().creditWinnings(100)
+      useGameStore.getState().creditWinnings(100, 0)
     }
 
     expect(useGameStore.getState().debt).toBe(0)
 
     const before = useGameStore.getState().bankroll
-    useGameStore.getState().creditWinnings(100)
+    useGameStore.getState().creditWinnings(100, 0)
     expect(useGameStore.getState().bankroll).toBe(before + 100)
+  })
+
+  /*
+   * The marker takes half of what is *won*, never a cut of the stake coming
+   * home. Payouts include the stake, so splitting the gross made the round-trip
+   * of a bet look like a win: a $20 push handed the house $10 of the player's
+   * own money, and an even-money win paid the player nothing at all. Being
+   * charged to break even is the fastest way to make the marker unescapable,
+   * which is exactly what it must not be.
+   */
+  it('leaves a pushed stake alone while a marker is outstanding', () => {
+    useGameStore.setState({ bankroll: 0 })
+    useGameStore.getState().takeMarker()
+    const { bankroll, debt } = useGameStore.getState()
+
+    // A $20 push pays $20 back, all of it stake.
+    useGameStore.getState().creditWinnings(20, 20)
+
+    expect(useGameStore.getState().bankroll).toBe(bankroll + 20)
+    expect(useGameStore.getState().debt).toBe(debt)
+  })
+
+  it('splits only the winnings, not the returned stake', () => {
+    useGameStore.setState({ bankroll: 0 })
+    useGameStore.getState().takeMarker()
+    const { bankroll, debt } = useGameStore.getState()
+
+    // $100 wagered, won at even money: $200 back, of which $100 is winnings.
+    const credited = useGameStore.getState().creditWinnings(200, 100)
+
+    expect(credited).toBe(150) // Stake back in full, half the profit.
+    expect(useGameStore.getState().bankroll).toBe(bankroll + 150)
+    expect(useGameStore.getState().debt).toBe(debt - 50)
+  })
+
+  // A losing round still pays out on the hands that survived, and the stake
+  // figure the caller passes covers every hand including the dead ones. The
+  // credit has to be clamped to what was actually returned or the marker's cut
+  // goes negative and starts inventing money.
+  it('never credits more than was paid out when hands were lost', () => {
+    useGameStore.setState({ bankroll: 0 })
+    useGameStore.getState().takeMarker()
+    const { bankroll, debt } = useGameStore.getState()
+
+    // Two hands of $10: one pushed, one lost. $10 back against $20 staked.
+    const credited = useGameStore.getState().creditWinnings(10, 20)
+
+    expect(credited).toBe(10)
+    expect(useGameStore.getState().bankroll).toBe(bankroll + 10)
+    expect(useGameStore.getState().debt).toBe(debt)
   })
 })
 
