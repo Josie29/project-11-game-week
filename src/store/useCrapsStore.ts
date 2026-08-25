@@ -6,6 +6,7 @@ import {
   rollCraps,
   stakeReturnedByRoll,
   totalCrapsPayout,
+  totalCrapsStake,
 } from '../games/craps/engine'
 import type { CrapsState } from '../games/craps/types'
 import type { CrapsBet } from '../scenes/crapsFeltLayout'
@@ -104,6 +105,19 @@ export const useCrapsStore = create<CrapsStore>()((set, get) => {
 
     reset: () => {
       cancelSettle()
+
+      /*
+       * Hand back whatever is still on the felt. Place bets ride until a seven
+       * takes them, so a player can walk away from the table with real money
+       * standing on four numbers — and clearing the game without returning it
+       * quietly confiscated the lot. `adjustBankroll` rather than
+       * `creditWinnings`: a returned stake is the player's own money coming
+       * home, already debited when the bet went out, and the marker has no
+       * claim on it.
+       */
+      const staked = totalCrapsStake(get().game)
+      if (staked > 0) useGameStore.getState().adjustBankroll(staked)
+
       set({ game: createCrapsGame(freshSeed()), rollId: 0, isRolling: false })
     },
   }

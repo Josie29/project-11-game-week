@@ -74,6 +74,9 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
   /** The dice cannot be thrown with nothing at risk. */
   const canRoll = !isRolling && staked > 0
 
+  /** No point yet, so the line bets are live and the numbers are not. */
+  const comeOut = game.phase === CrapsPhase.ComeOut
+
   /*
    * Craps has never had a broke state — it just left the player looking at
    * stake buttons they could not press, with no explanation and no way out.
@@ -191,13 +194,18 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
       </div>
 
       {/*
-        The six numbers. Off on the come-out, like a real table, which is worth
-        saying rather than leaving the player to notice that nothing happened:
-        without the note, a seven on the come-out paying the pass line while the
-        place bets sit untouched looks like a bug.
+        The six numbers, which need a point before they can be laid. Six rows of
+        dead buttons with no reason given reads as broken, so the reason is
+        printed where the stakes would be.
       */}
       <div className="table-ui__actions">
-        {PLACE_TIER_LABELS.map((label, tier) => (
+        {comeOut && (
+          <span className="table-ui__prompt">
+            The numbers open once the shooter has a point.
+          </span>
+        )}
+        {!comeOut &&
+          PLACE_TIER_LABELS.map((label, tier) => (
           <span key={label} className="table-ui__stake">
             <span className="table-ui__prompt">{label}</span>
             {POINT_NUMBERS.map((point) => {
@@ -215,9 +223,7 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
                     isRolling || amount > bankroll || !canPlaceCrapsBet(game, bet, amount)
                   }
                   onClick={() => wager(bet, amount)}
-                  title={`Place the ${point} for $${amount} — pays ${numerator} to ${denominator}${
-                    game.phase === CrapsPhase.ComeOut ? ', off until a point is set' : ''
-                  }`}
+                  title={`Place the ${point} for $${amount} — pays ${numerator} to ${denominator}, and stays up until a seven`}
                 >
                   {point} <kbd>${amount}</kbd>
                   {/* What is already on the number, shown once rather than on
@@ -231,7 +237,7 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
             })}
             {tier < PLACE_TIER_LABELS.length - 1 && <span className="table-ui__divider" />}
           </span>
-        ))}
+          ))}
       </div>
       </div>
 

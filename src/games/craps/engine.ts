@@ -110,15 +110,26 @@ export function placeStakes(point: PointNumber): number[] {
 }
 
 /**
- * Chips returned by a winning place bet, stake included.
+ * What a winning place bet pays, not counting the stake.
+ *
+ * Winnings alone, because a place bet is paid and *left up* — it is the bet you
+ * leave working, and taking it down after every hit would have the player
+ * re-making it between throws. That makes it the one bet on this table whose
+ * payout is not chips-returned-including-stake, which is why
+ * `stakeReturnedByRoll` reads what left the felt rather than assuming.
  *
  * @param stake The amount on the number. Expected to be a multiple of that
  *   number's `PLACE_UNITS` entry, which every offered stake is.
  * @param point The number that was rolled.
  */
-export function placePayout(stake: number, point: PointNumber): number {
+export function placeWinnings(stake: number, point: PointNumber): number {
   const { numerator, denominator } = PLACE_ODDS[point]
-  return stake + Math.floor((stake * numerator) / denominator)
+  return Math.floor((stake * numerator) / denominator)
+}
+
+/** The stake plus its winnings, for asserting the ratio divides exactly. */
+export function placePayout(stake: number, point: PointNumber): number {
+  return stake + placeWinnings(stake, point)
 }
 
 /** What a place bet on a number pays, as a ratio, for printing "pays 9 to 5". */
@@ -198,12 +209,20 @@ export function canPlaceCrapsBet(state: CrapsState, bet: CrapsBet, amount: numbe
 
     default: {
       /*
-       * A place bet can be laid at any time — it simply does nothing until
-       * there is a point, because it is off on the come-out. What it cannot be
-       * is an amount that does not pay whole dollars: the ratios are ninths,
-       * sevenths and sixths, so anything but a multiple of the number's unit
-       * would have the table paying out a fraction of a chip.
+       * A place bet needs a point, the same as free odds do.
+       *
+       * A real table takes one on the come-out and simply turns it off, which
+       * is a distinction that needs a crew standing there to explain: the
+       * player buys a bet, the dice roll their number, and nothing happens.
+       * Requiring the point makes the rule visible instead — the buttons are
+       * dead until there is something to bet into.
+       *
+       * The amount is the other half. The ratios are fifths and sixths, so
+       * anything but a multiple of the number's unit would have the table
+       * paying out a fraction of a chip.
        */
+      if (state.phase !== CrapsPhase.Point) return false
+
       const number = placeBetNumber(bet)
       if (number === null) return false
       return amount % PLACE_UNITS[number] === 0
@@ -283,11 +302,9 @@ export function rollCraps(state: CrapsState): CrapsState {
   /**
    * Pays the place bet on a number the shooter has just hit.
    *
-   * Paid and taken down rather than paid and left up, which is the house
-   * default. It is the money convention that decides it: a payout on this
-   * table is chips returned *including* the stake, so a bet that stayed up
-   * would have to credit winnings alone and the debit-on-wager,
-   * credit-on-settlement pairing would stop netting out.
+   * Paid and left up, which is how the bet works: you place the six and it
+   * keeps earning until a seven takes it. Only the winnings are credited —
+   * the stake never leaves the felt.
    *
    * Only ever called while a point is on. On the come-out the place bets are
    * off, so a number rolling there neither pays nor takes.
@@ -296,10 +313,10 @@ export function rollCraps(state: CrapsState): CrapsState {
     if (!isPointNumber(rolled)) return
 
     const bet = PLACE_BETS[rolled]
-    if (bets[bet] === 0) return
+    const stake = bets[bet]
+    if (stake === 0) return
 
-    payouts[bet] = placePayout(bets[bet], rolled)
-    bets[bet] = 0
+    payouts[bet] = placeWinnings(stake, rolled)
   }
 
   if (state.phase === CrapsPhase.ComeOut) {
@@ -312,11 +329,17 @@ export function rollCraps(state: CrapsState): CrapsState {
       settle(CrapsBet.PassLine, 0)
       settle(CrapsBet.DontPass, 2)
     } else if (total === 12) {
-      // Twelve is barred: don't pass neither wins nor loses, it pushes. Without
-      // the bar, betting against the shooter would carry a player edge.
+      /*
+       * Twelve is barred: don't pass neither wins nor loses, it pushes. Without
+       * the bar, betting against the shooter would carry a player edge.
+       *
+       * A push leaves the bet standing rather than handing it back. The
+       * come-out has not been resolved — twelve is a craps number, so the
+       * shooter comes out again — and a bet that came down would have to be
+       * re-made to carry on the wager it never lost.
+       */
       outcome = RollOutcome.Craps
       settle(CrapsBet.PassLine, 0)
-      settle(CrapsBet.DontPass, 1)
     } else if (isPointNumber(total)) {
       outcome = RollOutcome.PointEstablished
       phase = CrapsPhase.Point
@@ -387,7 +410,16 @@ export function totalCrapsPayout(state: CrapsState): number {
 export function stakeReturnedByRoll(before: CrapsState, after: CrapsState): number {
   return Object.entries(after.lastPayouts).reduce((sum, [bet, payout]) => {
     if (payout <= 0) return sum
-    return sum + Math.min(payout, before.bets[bet as CrapsBet])
+
+    /*
+     * What actually left the felt, rather than what the payout looks like it
+     * contains. A place bet is paid and left standing, so its payout is
+     * winnings alone and no stake came home — reading the payout would have
+     * counted those winnings as the player's own money and let the marker's
+     * share slip past on the one bet designed to be left working.
+     */
+    const key = bet as CrapsBet
+    return sum + (before.bets[key] - after.bets[key])
   }, 0)
 }
 

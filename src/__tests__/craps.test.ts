@@ -8,6 +8,8 @@ import {
   placeCrapsBet,
   placePayout,
   placeRatio,
+  placeWinnings,
+  stakeReturnedByRoll,
   placeStakes,
   PLACE_UNITS,
   rollCraps,
@@ -113,14 +115,22 @@ describe('come-out roll', () => {
    * player edge — this single rule is what makes don't pass a house bet, and
    * paying it out would quietly hand the player the best wager on the table.
    */
-  it('pushes the don’t pass on a barred twelve', () => {
+  /*
+   * A push leaves the bet standing. Twelve is a craps number, so the come-out
+   * has not been resolved and the shooter comes out again — handing the stake
+   * back would make the player re-make a wager that never lost, and the line
+   * bet cannot be re-made once it has been taken down.
+   */
+  it('pushes the don’t pass on a barred twelve, leaving it up', () => {
     let state = placeCrapsBet(createCrapsGame(1), CrapsBet.PassLine, 10)
     state = placeCrapsBet(state, CrapsBet.DontPass, 10)
     state = rollUntil(state, 12)
 
     expect(state.lastPayouts[CrapsBet.PassLine]).toBe(0)
-    // Stake back, nothing won.
-    expect(state.lastPayouts[CrapsBet.DontPass]).toBe(10)
+    // Neither won nor lost, and still on the felt for the next come-out.
+    expect(state.lastPayouts[CrapsBet.DontPass]).toBe(0)
+    expect(state.bets[CrapsBet.DontPass]).toBe(10)
+    expect(state.phase).toBe(CrapsPhase.ComeOut)
   })
 
   it('establishes a point on any box number', () => {
@@ -317,12 +327,13 @@ describe('place bets', () => {
   it('pays whole dollars on every stake the table offers', () => {
     for (const point of POINT_NUMBERS) {
       for (const stake of placeStakes(point)) {
-        const payout = placePayout(stake, point)
-        expect(Number.isInteger(payout)).toBe(true)
+        const winnings = placeWinnings(stake, point)
+        expect(Number.isInteger(winnings)).toBe(true)
 
         // And exactly the ratio, not merely a whole number near it.
         const { numerator, denominator } = placeRatio(point)
-        expect(payout).toBe(stake + (stake * numerator) / denominator)
+        expect(winnings).toBe((stake * numerator) / denominator)
+        expect(placePayout(stake, point)).toBe(stake + winnings)
       }
     }
   })
@@ -345,18 +356,33 @@ describe('place bets', () => {
     expect(PLACE_UNITS[5]).toBe(5)
   })
 
-  it('pays and comes down when its number is rolled', () => {
-    let state = rollUntil(createCrapsGame(5), 4)
-    expect(state.phase).toBe(CrapsPhase.Point)
-    expect(state.point).toBe(4)
+  /*
+   * Paid and left standing, which is the whole character of the bet: you place
+   * the six and it keeps earning until a seven takes it. Taken down on every
+   * hit, the player would be re-making it between throws — and the winnings
+   * would be wrong too, because the stake never came home to be re-credited.
+   */
+  it('pays its winnings and stays up when its number is rolled', () => {
+    let before = rollUntil(createCrapsGame(5), 4)
+    expect(before.phase).toBe(CrapsPhase.Point)
+    expect(before.point).toBe(4)
 
-    state = placeCrapsBet(state, CrapsBet.Place6, 6)
-    state = rollUntil(state, 6)
+    before = placeCrapsBet(before, CrapsBet.Place6, 6)
+    const state = rollUntil(before, 6)
 
-    expect(state.lastPayouts[CrapsBet.Place6]).toBe(13)
-    expect(state.bets[CrapsBet.Place6]).toBe(0)
+    // 7 to 6 on a six-dollar bet: seven dollars, and the six stays on the felt.
+    expect(state.lastPayouts[CrapsBet.Place6]).toBe(7)
+    expect(state.bets[CrapsBet.Place6]).toBe(6)
     // A six that is not the point leaves the point alone.
     expect(state.point).toBe(4)
+
+    /*
+     * And the marker takes its cut of all of it. The stake never left the
+     * felt, so none of that seven dollars is the player's own money coming
+     * home — reading the payout as though it contained the stake would let the
+     * winnings past the marker on the one bet meant to be left working.
+     */
+    expect(stakeReturnedByRoll(before, state)).toBe(0)
   })
 
   /*
@@ -373,7 +399,7 @@ describe('place bets', () => {
     state = rollUntil(state, 6)
 
     expect(state.lastOutcome).toBe(RollOutcome.PointMade)
-    expect(state.lastPayouts[CrapsBet.Place6]).toBe(13)
+    expect(state.lastPayouts[CrapsBet.Place6]).toBe(7)
     expect(state.lastPayouts[CrapsBet.PassLine]).toBe(20)
   })
 
@@ -397,9 +423,33 @@ describe('place bets', () => {
    * asserting: without it a natural seven would pay the pass line and wipe
    * every place bet in the same roll, which reads as the table cheating.
    */
-  it('neither wins nor loses on a come-out roll', () => {
-    let state = placeCrapsBet(createCrapsGame(5), CrapsBet.Place6, 6)
+  /*
+   * Cannot be laid until there is a point. A real table takes one on the
+   * come-out and turns it off, which needs a crew standing there to explain:
+   * the player buys a bet, the dice roll their number, and nothing happens.
+   */
+  it('cannot be laid before a point is established', () => {
+    const state = createCrapsGame(5)
     expect(state.phase).toBe(CrapsPhase.ComeOut)
+
+    expect(canPlaceCrapsBet(state, CrapsBet.Place6, 6)).toBe(false)
+    expect(() => placeCrapsBet(state, CrapsBet.Place6, 6)).toThrow(/Cannot place/)
+  })
+
+  /*
+   * A bet already standing rides through the next come-out without acting —
+   * off, as the house has it. Without this a natural seven would pay the pass
+   * line and take every place bet in the same roll, which reads as the table
+   * helping itself.
+   */
+  it('neither wins nor loses on a come-out roll', () => {
+    let state = placeCrapsBet(rollUntil(createCrapsGame(5), 4), CrapsBet.Place6, 6)
+
+    // Make the point, which hands the dice back to a come-out with the six
+    // still standing on the felt.
+    state = rollUntil(state, 4)
+    expect(state.phase).toBe(CrapsPhase.ComeOut)
+    expect(state.bets[CrapsBet.Place6]).toBe(6)
 
     const afterSix = rollUntil(state, 6)
     expect(afterSix.bets[CrapsBet.Place6]).toBe(6)
