@@ -214,6 +214,14 @@ try {
   await capture('6-clinic')
 
   // 6. Sell a pint. Ten seconds of nurse, and the bankroll is the proof.
+  /*
+   *    Walking in usually lands beside a recliner, but not always: which chair
+   *    is nearest depends on where the door was crossed, and against a deployed
+   *    URL this arrived one chair short often enough to fail a deploy check
+   *    that had otherwise passed. So it walks up to one rather than assuming it
+   *    is already standing at it. Costs nothing when the prompt is already up.
+   */
+  await walkAtMost(['KeyW'], 'Donation chair', { bursts: 8 })
   await expectText('Donation chair', 'arriving in the clinic')
   await page.keyboard.press('KeyF')
   await page.waitForTimeout(700)
