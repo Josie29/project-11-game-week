@@ -466,3 +466,17 @@ export const INTERIOR_BLOOM: BloomSettings = {
   luminanceThreshold: 0.8,
   vignetteDarkness: 0.62,
 }
+
+/**
+ * The clinic, which is the one bright room in a game tuned for dark ones.
+ *
+ * Every other interior is near-black with a few hot sources, so the threshold
+ * sits low enough to catch a neon tube. A white room under flat fluorescent
+ * light clears that threshold with its *walls*, and the first capture of the
+ * donation room came back with a white sun burned across the far wall.
+ */
+export const CLINIC_BLOOM: BloomSettings = {
+  intensity: 0.45,
+  luminanceThreshold: 1.05,
+  vignetteDarkness: 0.4,
+}

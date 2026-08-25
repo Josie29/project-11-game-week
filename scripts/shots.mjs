@@ -40,6 +40,12 @@ const SCENES = [
   // Face-on, because the play camera sees every facade at a glancing angle and
   // a sliver of shop window cannot tell a built storefront from a broken one.
   { name: 'shopfront', path: '/?boot=shopfront&look=-90&time=21:00&freeze', settleMs: 2600 },
+  { name: 'clinicfront', path: '/?boot=clinicfront&look=-90&time=21:00&freeze', settleMs: 2600 },
+  { name: 'clinic', path: '/?boot=clinic&time=21:00&freeze', settleMs: 2600 },
+  // The two halves of being broke: a marker on offer, and a marker already
+  // taken. Neither is reachable without actually losing everything.
+  { name: 'broke', path: '/?boot=broke&time=21:00&freeze', settleMs: 1800 },
+  { name: 'in-debt', path: '/?boot=debt&time=21:00&freeze', settleMs: 1800 },
   { name: 'designer', path: '/?boot=designer&time=21:00&freeze', settleMs: 2000 },
   { name: 'shop', path: '/?boot=shop&time=21:00&freeze', settleMs: 2400 },
   { name: 'shop-dressed', path: '/?boot=shop&dressed&time=21:00&freeze', settleMs: 2400 },
@@ -93,21 +99,6 @@ try {
     await page.goto(`${BASE}${scene.path}`, { waitUntil: 'networkidle' })
     await page.waitForSelector('canvas', { timeout: 15000 })
 
-    // Confirm the renderer produced frames rather than capturing a blank canvas.
-    const frames = await page.evaluate(
-      () =>
-        new Promise((resolveFrames) => {
-          let count = 0
-          const tick = () => {
-            count++
-            if (count < 12) requestAnimationFrame(tick)
-            else resolveFrames(count)
-          }
-          requestAnimationFrame(tick)
-          setTimeout(() => resolveFrames(count), 2000)
-        }),
-    )
-
     // Let any ?boot= shortcut finish before typing; those go through the same
     // gesture lead-in as a real action.
     if (scene.keys?.length) {
@@ -119,6 +110,31 @@ try {
     }
 
     await page.waitForTimeout(scene.settleMs)
+
+    /*
+     * Confirm the renderer is producing frames, measured here rather than on
+     * arrival.
+     *
+     * This used to run immediately after `goto`, which measured a scene still
+     * compiling its shaders — under the load of twenty-odd captures in one
+     * browser it reported four different scenes blank on two consecutive runs
+     * while every image on disk was fine. A blank check that cries wolf is
+     * worse than none, because it teaches you to ignore it.
+     */
+    const frames = await page.evaluate(
+      () =>
+        new Promise((resolveFrames) => {
+          let count = 0
+          const tick = () => {
+            count++
+            if (count < 12) requestAnimationFrame(tick)
+            else resolveFrames(count)
+          }
+          requestAnimationFrame(tick)
+          setTimeout(() => resolveFrames(count), 4000)
+        }),
+    )
+
     await page.screenshot({ path: `${outDir}/${scene.name}.png` })
     await page.close()
 

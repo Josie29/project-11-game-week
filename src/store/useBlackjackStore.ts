@@ -213,7 +213,7 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
 
     if (next.totalPayout <= 0) return
 
-    useGameStore.getState().adjustBankroll(next.totalPayout)
+    useGameStore.getState().creditWinnings(next.totalPayout)
 
     // Held back from the stash until the chips are raked in. The chips
     // themselves are placed by the dealer at the end of the reveal, not here.

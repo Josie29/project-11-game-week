@@ -1,7 +1,10 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { ENTRANCE, SIT_SPOTS, TableId } from '../scenes/casinoFloorLayout'
+import { ENTRANCE as CLINIC_ENTRANCE, chairSitSpot } from '../scenes/clinicLayout'
+import { DONATION_FEE, MARKER_AMOUNT, splitWinnings } from '../world/money'
 import { VenueId, getVenue, PLAYER_SPAWN } from '../world/venues'
+import { useTimeStore } from './useTimeStore'
 
 export enum Location {
   Strip = 'strip',
@@ -17,6 +20,16 @@ const EXIT_OFFSET = 3.5
 
 interface GameStore {
   bankroll: number
+  /**
+   * What is owed on an outstanding marker.
+   *
+   * Persisted with the bankroll. A debt you could clear by reloading the page
+   * would not be a debt, and the whole point of replacing the free reset is
+   * that losing has to cost something.
+   */
+  debt: number
+  /** The game day of the last plasma donation, or `null` for never. */
+  lastDonationDay: number | null
   location: Location
   activeVenue: VenueId | null
   /** Casino the player is standing next to, for the HUD prompt. */
@@ -33,6 +46,19 @@ interface GameStore {
   nearbyTable: TableId | null
   /** Where the player should appear when the casino floor mounts. */
   floorPosition: readonly [number, number, number]
+  /**
+   * The clinic recliner the player is in, or `null` while walking its floor.
+   *
+   * Separate from `activeTable` rather than a shared "seat": the two rooms have
+   * different panels, different cameras and different rules about standing up,
+   * and collapsing them would mean every reader having to work out which
+   * building a seat belongs to.
+   */
+  atChair: number | null
+  /** The recliner F would put them in, for the floor prompt. */
+  nearbyChair: number | null
+  /** Where the player should appear when the clinic floor mounts. */
+  clinicPosition: readonly [number, number, number]
   /** Where the player should appear when the strip mounts. */
   spawnPosition: readonly [number, number, number]
   /**
@@ -58,11 +84,32 @@ interface GameStore {
   sitAt: (table: TableId) => void
   standUp: () => void
   setNearbyTable: (table: TableId | null) => void
+  sitInChair: (index: number) => void
+  leaveChair: () => void
+  setNearbyChair: (index: number | null) => void
   openDesigner: () => void
   closeDesigner: () => void
   setNearbyVenue: (id: VenueId | null) => void
-  /** Adds `amount` to the bankroll. Negative values debit. */
+  /**
+   * Adds `amount` to the bankroll. Negative values debit.
+   *
+   * The raw mover: wagers, shop purchases and the clinic's payout. Table
+   * winnings go through `creditWinnings` instead.
+   */
   adjustBankroll: (amount: number) => void
+  /**
+   * Credits a win, paying down any marker first.
+   *
+   * Deliberately separate from `adjustBankroll` rather than a branch inside it.
+   * The clinic's payout is also a positive amount, and skimming that would mean
+   * a player in debt earns nothing from donating — a trap rather than a
+   * mechanic, and the one thing that must always work when you are broke.
+   */
+  creditWinnings: (amount: number) => void
+  /** Borrows `MARKER_AMOUNT` from the house. Refused if one is outstanding. */
+  takeMarker: () => void
+  /** Sells a pint. Refused if one has already been given today. */
+  donate: () => void
   resetBankroll: () => void
 }
 
@@ -70,12 +117,17 @@ export const useGameStore = create<GameStore>()(
   persist(
     (set, get) => ({
       bankroll: STARTING_BANKROLL,
+      debt: 0,
+      lastDonationDay: null,
       location: Location.Strip,
       activeVenue: null,
       nearbyVenue: null,
       activeTable: null,
       nearbyTable: null,
       floorPosition: ENTRANCE,
+      atChair: null,
+      nearbyChair: null,
+      clinicPosition: CLINIC_ENTRANCE,
       spawnPosition: PLAYER_SPAWN,
       designerReturnTo: Location.Strip,
       initialCameraYaw: 0,
@@ -89,6 +141,9 @@ export const useGameStore = create<GameStore>()(
           activeTable: null,
           nearbyTable: null,
           floorPosition: ENTRANCE,
+          atChair: null,
+          nearbyChair: null,
+          clinicPosition: CLINIC_ENTRANCE,
         }),
 
       sitAt: (table) => set({ activeTable: table, nearbyTable: null }),
@@ -113,6 +168,23 @@ export const useGameStore = create<GameStore>()(
         // Called from the render loop, so bail out unless it actually changed.
         if (get().nearbyTable === table) return
         set({ nearbyTable: table })
+      },
+
+      sitInChair: (index) => set({ atChair: index, nearbyChair: null }),
+
+      /** Stands the player up beside the chair they were in. */
+      leaveChair: () => {
+        const { atChair } = get()
+        set({
+          atChair: null,
+          nearbyChair: null,
+          clinicPosition: atChair === null ? CLINIC_ENTRANCE : chairSitSpot(atChair),
+        })
+      },
+
+      setNearbyChair: (index) => {
+        if (get().nearbyChair === index) return
+        set({ nearbyChair: index })
       },
 
       openDesigner: () => {
@@ -141,6 +213,8 @@ export const useGameStore = create<GameStore>()(
           nearbyVenue: null,
           activeTable: null,
           nearbyTable: null,
+          atChair: null,
+          nearbyChair: null,
           spawnPosition: [x + offsetX, y, z],
         })
       },
@@ -153,12 +227,39 @@ export const useGameStore = create<GameStore>()(
 
       adjustBankroll: (amount) => set({ bankroll: Math.max(0, get().bankroll + amount) }),
 
-      resetBankroll: () => set({ bankroll: STARTING_BANKROLL }),
+      creditWinnings: (amount) => {
+        const { bankroll, debt } = get()
+        const { toBankroll, toDebt } = splitWinnings(amount, debt)
+
+        set({ bankroll: Math.max(0, bankroll + toBankroll), debt: debt - toDebt })
+      },
+
+      takeMarker: () => {
+        // One marker at a time. Easy to state, easy to test, and it stops the
+        // player burying themselves somewhere the clinic cannot dig them out of.
+        if (get().debt > 0) return
+        set({ bankroll: get().bankroll + MARKER_AMOUNT, debt: MARKER_AMOUNT })
+      },
+
+      donate: () => {
+        const today = useTimeStore.getState().day
+        if (get().lastDonationDay === today) return
+
+        // Straight to the bankroll, not through `creditWinnings`: see the note
+        // there. A donation has to reach the player whatever they owe.
+        set({ bankroll: get().bankroll + DONATION_FEE, lastDonationDay: today })
+      },
+
+      resetBankroll: () => set({ bankroll: STARTING_BANKROLL, debt: 0, lastDonationDay: null }),
     }),
     {
       name: 'neon-strip-save',
       // Only the bankroll survives a reload; the player always respawns on the strip.
-      partialize: (state) => ({ bankroll: state.bankroll }),
+      partialize: (state) => ({
+        bankroll: state.bankroll,
+        debt: state.debt,
+        lastDonationDay: state.lastDonationDay,
+      }),
     },
   ),
 )

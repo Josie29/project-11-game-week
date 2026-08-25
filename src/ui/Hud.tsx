@@ -1,25 +1,39 @@
 import { TABLE_LABELS } from '../scenes/casinoFloorLayout'
 import { Location, useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
-import { getVenue } from '../world/venues'
+import { getVenue, VenueKind } from '../world/venues'
 import { daylightAt, formatClock } from '../world/timeOfDay'
 
 /** Persistent overlay: bankroll, clock, movement hint, and the door prompt. */
 export function Hud() {
   const bankroll = useGameStore((state) => state.bankroll)
+  const debt = useGameStore((state) => state.debt)
   const location = useGameStore((state) => state.location)
   const nearbyVenue = useGameStore((state) => state.nearbyVenue)
   const nearbyTable = useGameStore((state) => state.nearbyTable)
   const activeTable = useGameStore((state) => state.activeTable)
+  const atChair = useGameStore((state) => state.atChair)
+  const nearbyChair = useGameStore((state) => state.nearbyChair)
+  const activeVenue = useGameStore((state) => state.activeVenue)
   const minuteOfDay = useTimeStore((state) => state.minuteOfDay)
 
   const nearby = nearbyVenue ? getVenue(nearbyVenue) : null
+  const atClinic = activeVenue !== null && getVenue(activeVenue).kind === VenueKind.Clinic
+  const seated = activeTable !== null || atChair !== null
 
   return (
     <div className="hud">
       <div className="hud__bankroll">
         <span className="hud__label">Bankroll</span>
         <span className="hud__amount">${bankroll.toLocaleString()}</span>
+        {/*
+          A debt the player cannot see is a bug report waiting to happen: half
+          of every win goes somewhere, and this is the only thing that says
+          where.
+        */}
+        {debt > 0 && (
+          <span className="hud__debt">owes ${debt.toLocaleString()}</span>
+        )}
       </div>
 
       {/* Deliberately still shown indoors, where a real casino would have none. */}
@@ -33,9 +47,11 @@ export function Hud() {
 
       {location === Location.Interior && (
         <div className="hud__hint">
-          {activeTable === null
-            ? 'WASD to walk · F to sit at a table · drag to look · R to reset'
-            : 'Drag to look · scroll to zoom · R to reset'}
+          {seated
+            ? 'Drag to look · scroll to zoom · R to reset'
+            : atClinic
+              ? 'WASD to walk · F to use a chair · drag to look · R to reset'
+              : 'WASD to walk · F to sit at a table · drag to look · R to reset'}
         </div>
       )}
 
@@ -47,6 +63,16 @@ export function Hud() {
       {nearbyTable !== null && activeTable === null && (
         <div className="hud__prompt">
           <strong>{TABLE_LABELS[nearbyTable]}</strong>
+          <span>
+            Press <kbd>F</kbd> to sit
+          </span>
+        </div>
+      )}
+
+      {/* The same offer at a recliner. Without it the chairs look like scenery. */}
+      {nearbyChair !== null && atChair === null && (
+        <div className="hud__prompt">
+          <strong>Donation chair</strong>
           <span>
             Press <kbd>F</kbd> to sit
           </span>

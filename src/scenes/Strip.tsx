@@ -20,6 +20,7 @@ import {
 } from '../world/timeOfDay'
 import { setFacadeDaylight } from './facadeTexture'
 import { Building } from './components/Building'
+import { ClinicFront } from './components/ClinicFront'
 import { ShopFront } from './components/ShopFront'
 import { VenueDoor } from './components/VenueDoor'
 import { Player } from './components/Player'
@@ -88,13 +89,13 @@ function venueAt(z: number, side: 1 | -1) {
 /**
  * The name to put on the tower's marquee above this row, if any.
  *
- * Shops are skipped on purpose. The bulb marquee is the strip's casino
- * vocabulary, and the shop wearing it was most of why it read as a third
- * casino from the street — `ShopFront` gives it a neon fascia sign instead.
+ * Only casinos get one. The bulb marquee is the strip's casino vocabulary, and
+ * the shop wearing it was most of why it read as a third casino from the
+ * street; the storefronts carry their own fascia signs instead.
  */
 function signFor(z: number, side: 1 | -1): string | undefined {
   const venue = venueAt(z, side)
-  if (venue) return venue.kind === VenueKind.Shop ? undefined : venue.name
+  if (venue) return venue.kind === VenueKind.Casino ? venue.name : undefined
   return scenerySignAt(z, side)?.name
 }
 
@@ -311,13 +312,17 @@ export function Strip() {
         </group>
       ))}
 
-      {VENUES.map((venue) =>
-        venue.kind === VenueKind.Shop ? (
-          <ShopFront key={venue.id} venue={venue} neonLevel={neonLevel} />
-        ) : (
-          <VenueDoor key={venue.id} casino={venue} neonLevel={neonLevel} />
-        ),
-      )}
+      {VENUES.map((venue) => {
+        // Storefronts build their own frontage; casinos get a lit doorway in
+        // the tower's face.
+        if (venue.kind === VenueKind.Shop) {
+          return <ShopFront key={venue.id} venue={venue} neonLevel={neonLevel} />
+        }
+        if (venue.kind === VenueKind.Clinic) {
+          return <ClinicFront key={venue.id} venue={venue} neonLevel={neonLevel} />
+        }
+        return <VenueDoor key={venue.id} casino={venue} neonLevel={neonLevel} />
+      })}
 
       <Player />
     </>

@@ -8,6 +8,7 @@ import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
 import { TableId } from '../scenes/casinoFloorLayout'
+import { MARKER_AMOUNT } from '../world/money'
 import { CrapsBet } from '../scenes/crapsFeltLayout'
 import { VenueId } from '../world/venues'
 
@@ -19,6 +20,9 @@ const SHOPPING_SPREE = 5000
 
 /** Where `?boot=shopfront` stands the player. Clear of the door trigger. */
 const SHOPFRONT_VIEWPOINT: readonly [number, number, number] = [4.2, 0, -6]
+
+/** Where `?boot=clinicfront` stands the player. The mirror of the shop's. */
+const CLINICFRONT_VIEWPOINT: readonly [number, number, number] = [4.2, 0, -22]
 
 /**
  * A fully accessorised character, for `?dressed`.
@@ -130,6 +134,10 @@ function applyTimeShortcut(): void {
  *   reveal exists for and which a random shoe rarely produces on demand.
  * - `?boot=craps` sits at the craps table with a pass-line bet already down.
  * - `?boot=floor` stands on the casino floor, between the two tables.
+ * - `?boot=clinic` stands on Red River Plasma's floor.
+ * - `?boot=broke` sits at blackjack with nothing, so the marker is on offer.
+ * - `?boot=debt` sits there with nothing *and* a marker outstanding, which is
+ *   the state that sends the player to the clinic.
  * - `?boot=designer` opens the dressing-room stage.
  * - `?boot=shop` opens The Gilded Hanger with the catalogue affordable.
  * - `?dressed` puts the whole wardrobe on the player. A modifier, not a scene:
@@ -139,6 +147,8 @@ function applyTimeShortcut(): void {
  * - `?boot=strip` marks the character as designed and stands on the street.
  * - `?boot=shopfront` stands on the street a few paces from The Gilded Hanger,
  *   which is the only way to look at the storefront without walking there.
+ * - `?boot=clinicfront` does the same for Red River Plasma, further down the
+ *   same side of the street.
  * - `?look=DEGREES` swings the strip camera round the player before it settles,
  *   so a facade can be captured face-on instead of at the glancing angle the
  *   play camera gives. Positive swings toward the left of the street.
@@ -162,10 +172,14 @@ export function applyBootShortcut(): void {
     'split',
     'draw',
     'craps',
+    'broke',
+    'clinic',
+    'debt',
     'designer',
     'floor',
     'shop',
     'shopfront',
+    'clinicfront',
     'strip',
   ]
   if (!known.includes(boot)) return
@@ -187,6 +201,13 @@ export function applyBootShortcut(): void {
     return
   }
 
+  if (boot === 'clinicfront') {
+    // Same side as the shop, so the same `?look=-90` frames it face-on.
+    useAppearanceStore.getState().completeDesign()
+    useGameStore.setState({ spawnPosition: CLINICFRONT_VIEWPOINT })
+    return
+  }
+
   if (boot === 'strip') {
     /*
      * Every capture runs in a fresh browser profile, so `hasDesigned` is false
@@ -204,6 +225,32 @@ export function applyBootShortcut(): void {
     useAppearanceStore.getState().completeDesign()
     useGameStore.getState().adjustBankroll(SHOPPING_SPREE - useGameStore.getState().bankroll)
     useGameStore.getState().enterVenue(VenueId.GildedHanger)
+    return
+  }
+
+  if (boot === 'clinic') {
+    useAppearanceStore.getState().completeDesign()
+    useGameStore.getState().enterVenue(VenueId.RedRiverPlasma)
+    return
+  }
+
+  if (boot === 'broke') {
+    // At the table with nothing, which is the state the marker and the clinic
+    // exist for and which is otherwise reachable only by actually losing.
+    useAppearanceStore.getState().completeDesign()
+    useGameStore.setState({ bankroll: 0, debt: 0 })
+    useGameStore.getState().enterVenue(VenueId.GoldenAce)
+    useGameStore.getState().sitAt(TableId.Blackjack)
+    return
+  }
+
+  if (boot === 'debt') {
+    // Broke *and* into the house, which is the other half of that state: no
+    // marker on offer, and the panel pointing down the strip instead.
+    useAppearanceStore.getState().completeDesign()
+    useGameStore.setState({ bankroll: 0, debt: MARKER_AMOUNT })
+    useGameStore.getState().enterVenue(VenueId.GoldenAce)
+    useGameStore.getState().sitAt(TableId.Blackjack)
     return
   }
 

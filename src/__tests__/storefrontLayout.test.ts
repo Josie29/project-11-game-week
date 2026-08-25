@@ -20,7 +20,7 @@ import {
   WINDOW_MIN_Z,
   WINDOW_SILL_Y,
   WINDOW_TOP_Y,
-} from '../scenes/shopFrontLayout'
+} from '../scenes/storefrontLayout'
 import {
   DOOR_TRIGGER_RADIUS,
   FACADE_X,

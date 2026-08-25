@@ -8,6 +8,15 @@ import {
 interface TimeStore {
   /** Minutes since midnight, always a whole number in [0, 1440). */
   minuteOfDay: number
+  /**
+   * Days since the session began, counting up and never wrapping.
+   *
+   * `minuteOfDay` wraps at midnight, so "once per day" cannot be derived from
+   * it — a check against the minute would reset every time the clock passed
+   * midnight, which at a game minute per real second is every 24 real minutes.
+   * The clinic's daily donation is the thing that needs this.
+   */
+  day: number
   /** When set, `advance` is inert. Used by `?time=` so captures are stable. */
   paused: boolean
 
@@ -30,6 +39,7 @@ let carry = 0
 
 export const useTimeStore = create<TimeStore>()((set, get) => ({
   minuteOfDay: STARTING_MINUTE,
+  day: 0,
   paused: false,
 
   advance: (deltaSeconds) => {
@@ -43,9 +53,21 @@ export const useTimeStore = create<TimeStore>()((set, get) => ({
 
     const whole = Math.floor(carry)
     carry -= whole
-    set({ minuteOfDay: wrapMinute(get().minuteOfDay + whole) })
+
+    const previous = get().minuteOfDay
+    const next = wrapMinute(previous + whole)
+    // Going backwards means the clock crossed midnight.
+    const rolledOver = next < previous
+
+    set({ minuteOfDay: next, ...(rolledOver ? { day: get().day + 1 } : {}) })
   },
 
+  /**
+   * Jumps the clock without counting a day.
+   *
+   * `?time=` calls this, and a capture opening at 06:00 has not lived through a
+   * night — letting it bump the day would let a single capture donate twice.
+   */
   setMinuteOfDay: (minute) => {
     carry = 0
     set({ minuteOfDay: wrapMinute(minute) })

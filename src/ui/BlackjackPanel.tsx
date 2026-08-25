@@ -2,6 +2,7 @@ import { activeHand, canDouble, canSplit, handValue } from '../games/blackjack/e
 import { type Hand, PlayerAction, RoundOutcome, RoundPhase } from '../games/blackjack/types'
 import { useBlackjackStore } from '../store/useBlackjackStore'
 import { useGameStore } from '../store/useGameStore'
+import { MARKER_AMOUNT } from '../world/money'
 import { getVenue, type VenueId } from '../world/venues'
 import { useTableHotkeys } from './useTableHotkeys'
 
@@ -55,7 +56,8 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
 
   const bankroll = useGameStore((state) => state.bankroll)
   const standUp = useGameStore((state) => state.standUp)
-  const resetBankroll = useGameStore((state) => state.resetBankroll)
+  const takeMarker = useGameStore((state) => state.takeMarker)
+  const debt = useGameStore((state) => state.debt)
 
   const dealerCardsShown = useBlackjackStore((state) => state.dealerCardsShown)
   const holeCardUp = useBlackjackStore((state) => state.holeCardUp)
@@ -184,9 +186,20 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
         {isBroke && (
           <>
             <span className="table-ui__prompt">You&rsquo;re out of chips.</span>
-            <button type="button" className="button button--primary" onClick={resetBankroll}>
-              Take a marker
-            </button>
+            {debt > 0 ? (
+              /*
+               * One marker at a time. The game has to name the way out here —
+               * a broke player in debt with no instructions is a dead end, and
+               * the clinic exists precisely so there is never one.
+               */
+              <span className="table-ui__prompt">
+                Red River Plasma, down the strip, buys blood.
+              </span>
+            ) : (
+              <button type="button" className="button button--primary" onClick={takeMarker}>
+                Take a marker — ${MARKER_AMOUNT}
+              </button>
+            )}
           </>
         )}
 

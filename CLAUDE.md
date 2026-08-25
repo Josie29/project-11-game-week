@@ -66,7 +66,18 @@ protects.
 
 ## Money
 
-Held as whole dollars throughout. Payout values are **chips returned including
+Held as whole dollars throughout. That includes the marker: a debt repaid as a
+*share* of every win is where a percentage sneaks back in, so `splitWinnings` in
+`src/world/money.ts` is integer-only and the odd dollar goes to the player.
+
+There are two credit paths and the difference matters. `adjustBankroll` is the
+raw mover — wagers, shop purchases, and the clinic's payout. `creditWinnings`
+routes a table settlement through the debt split first. The clinic deliberately
+uses the raw one: skimming a donation would mean a broke player in debt earns
+nothing from the one place that exists to get them out, which is a trap rather
+than a mechanic.
+
+ Payout values are **chips returned including
 the stake**, so a caller debits on wager and credits on settlement and the two
 always net out.
 
@@ -116,6 +127,10 @@ Dev-only deep links, stripped from production builds:
 | `?boot=draw` | a dealer who must draw twice |
 | `?boot=craps` | seated at craps with a pass line down |
 | `?boot=floor` | standing on the casino floor, between the tables |
+| `?boot=clinic` | standing on Red River Plasma's floor |
+| `?boot=clinicfront` | on the street outside the clinic |
+| `?boot=broke` | at blackjack with nothing, marker on offer |
+| `?boot=debt` | at blackjack with nothing and a marker outstanding |
 | `?boot=designer` | the dressing-room stage |
 | `?boot=shop` | The Gilded Hanger, bankroll topped up |
 | `?boot=shopfront` | on the street outside the shop, to look at the storefront |

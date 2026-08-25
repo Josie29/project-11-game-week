@@ -88,7 +88,7 @@ export const useCrapsStore = create<CrapsStore>()((set, get) => {
             at: DICE_SETTLE_MS,
             run: () => {
               const payout = totalCrapsPayout(next)
-              if (payout > 0) useGameStore.getState().adjustBankroll(payout)
+              if (payout > 0) useGameStore.getState().creditWinnings(payout)
               set({ isRolling: false })
             },
           },

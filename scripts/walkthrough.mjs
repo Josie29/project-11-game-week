@@ -66,6 +66,17 @@ async function isVisible(text) {
   return page.getByText(text, { exact: false }).first().isVisible()
 }
 
+/** Walks in short bursts until `text` is gone, or gives up. */
+async function walkUntilGone(keys, text, { burstMs = 320, bursts = 30 } = {}) {
+  for (let i = 0; i < bursts; i++) {
+    if (!(await isVisible(text))) return
+    await walk(keys, burstMs)
+    await page.waitForTimeout(120)
+  }
+
+  throw new Error(`walked ${bursts} bursts of ${keys.join('+')} still seeing "${text}"`)
+}
+
 /**
  * Walks in short bursts until `text` appears, or gives up.
  *
@@ -131,32 +142,25 @@ try {
   await wear.click()
   await capture('5-wearing')
 
-  // 5. Out of the shop, across the strip, into the casino, up to a table.
-  //    The strip clamps the player at the kerb, so the A component stops
-  //    mattering once they reach it and W carries them down to the door; inside
-  //    the room the same pair heads for the blackjack table.
-  await page.keyboard.press('Escape')
-  await page.waitForTimeout(600)
-
+  // 5. Out of the shop, across the strip and down to the casino.
+  //
   //    Cross first, then walk down. Doing both at once traces a diagonal that
   //    crosses the casino's row while still out in the middle of the road, five
   //    units from its door and well outside the trigger.
-  //    Deliberately more bursts than the distance needs. Ground covered per
-  //    burst varies with the frame rate — the walk clamps its step at a 10fps
-  //    floor, so a slow headless frame moves the player a quarter of what a
-  //    fast one does — and the kerb clamp makes overshooting free. Eight bursts
-  //    reached the kerb on one run and stopped halfway on the next, which put
-  //    the player seven units from the casino door as they walked past it.
-  for (let i = 0; i < 20; i++) await walk(['KeyA'], 320)
+  //
+  //    Every leg below runs more bursts than the distance needs. Ground covered
+  //    per burst varies with the frame rate — the walk clamps its step at a
+  //    10fps floor, so a slow headless frame moves the player a quarter of what
+  //    a fast one does — and both the kerb and the walls clamp, which makes
+  //    overshooting free. Counts tuned on one run failed on the next.
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(600)
 
-  //    Walk down the kerb until the floor hint says we are inside. A fixed
-  //    number of bursts is not enough here: headless frame times vary by an
-  //    order of magnitude between runs, so the same hold overshot the casino's
-  //    door on one run and stopped short of it on the next.
+  for (let i = 0; i < 20; i++) await walk(['KeyA'], 320)
   await walkUntil(['KeyW'], 'F to sit at a table', { bursts: 28 })
 
-  //    Inside now, and the same pair of keys heads for the blackjack table.
-  await walkUntil(['KeyW', 'KeyA'], 'Press', { bursts: 20 })
+  //    Inside now, and W plus A heads for the blackjack table.
+  await walkUntil(['KeyW', 'KeyA'], 'Blackjack', { bursts: 20 })
   await capture('6-at-the-table')
 
   // 6. Sit down and play a hand. F, not E — E is the camera orbit.
@@ -173,11 +177,35 @@ try {
   await expectText('DEALER', 'dealing a hand')
   await capture('8-hand-dealt')
 
+  // 7. Out of the casino and down to the clinic, which is the answer to having
+  //    lost it all. Leave the table, cross the floor to the exit, then cross
+  //    the street and carry on down — the clinic is past the casino on the
+  //    shop's side, so nothing else is walked through on the way.
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(700)
+  await walkUntilGone(['KeyS', 'KeyD'], 'F to sit at a table', { bursts: 30 })
+
+  for (let i = 0; i < 24; i++) await walk(['KeyD'], 320)
+  await walkUntil(['KeyW'], 'F to use a chair', { bursts: 30 })
+  await capture('9-clinic')
+
+  // 8. Sell a pint. This is the answer to going broke, so it has to work from
+  //    the street and not only from a deep link.
+  await walkUntil(['KeyW', 'KeyA'], 'Donation chair', { bursts: 20 })
+  await page.keyboard.press('KeyF')
+  await page.waitForTimeout(700)
+  await expectText('Donate', 'sitting in the chair')
+
+  await page.getByRole('button', { name: 'Donate' }).click()
+  await page.waitForTimeout(900)
+  await expectText('already given today', 'after donating')
+  await capture('10-donated')
+
   if (failures.length > 0) {
     throw new Error(`page errors: ${failures.join(' | ')}`)
   }
 
-  console.log(`\n8 beats → ${outDir}`)
+  console.log(`\n10 beats → ${outDir}`)
 } catch (error) {
   await page.screenshot({ path: resolve(outDir, 'failure.png') })
   console.error(`\nFAILED: ${error.message}`)

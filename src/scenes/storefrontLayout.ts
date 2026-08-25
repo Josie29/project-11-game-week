@@ -1,11 +1,14 @@
 /*
- * The Gilded Hanger's storefront, as seen from the street.
+ * A storefront on the strip, as seen from the street.
  *
- * Matched to `art/refs/shop_exterior_wide.png`. The brief that reference was
- * generated to answer is the whole reason this file exists: the shop was
- * structurally a casino — the same tower, the same bulb marquee, the same blade
- * sign, the same flat door slab, differing only in hex value — so a player
- * walking past had no way to tell it sells clothes.
+ * Shared by The Gilded Hanger and Red River Plasma — one low frontage with a
+ * window, a door and a fascia sign, dressed differently by each. Matched to
+ * `art/refs/shop_exterior_wide.png` and `art/refs/clinic_exterior.png`.
+ *
+ * The brief those references were generated to answer is the whole reason this
+ * file exists: the shop was structurally a casino — the same tower, the same
+ * bulb marquee, the same blade sign, the same flat door slab, differing only in
+ * hex value — so a player walking past had no way to tell it sells clothes.
  *
  * Every measurement here is hand-derived and therefore asserted, the same rule
  * `tableLayout.ts` and `shopLayout.ts` follow.
@@ -142,6 +145,27 @@ export function isInWindow(z: number, y: number): boolean {
  */
 export function isInDisplayDepth(out: number, margin = 0): boolean {
   return out >= INTERIOR_OUT + margin && out <= FRONT_OUT - margin
+}
+
+/**
+ * The frame a storefront is drawn in, derived from which side of the street it
+ * is on.
+ *
+ * Both storefronts compute their positions through this so the two cannot drift
+ * apart — the `facing` sign convention is easy to get backwards, and getting it
+ * backwards builds the whole frontage inside the building.
+ */
+export function storefrontFrame(doorX: number) {
+  // Venues on the left of the street face +X; those on the right face -X.
+  const facing = doorX < 0 ? 1 : -1
+
+  return {
+    facing,
+    /** Local `out`/`y`/`z` to a position in the venue's own group. */
+    at: (out: number, y: number, z: number): [number, number, number] => [facing * out, y, z],
+    /** Rotation for a plane that should face the street. */
+    facingStreet: [0, facing * Math.PI * 0.5, 0] as [number, number, number],
+  }
 }
 
 /**

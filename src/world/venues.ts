@@ -1,12 +1,15 @@
 export enum VenueId {
   GoldenAce = 'golden-ace',
   GildedHanger = 'gilded-hanger',
+  RedRiverPlasma = 'red-river-plasma',
 }
 
 export enum VenueKind {
   Casino = 'casino',
   /** A shop: no game behind the door, a wardrobe instead. */
   Shop = 'shop',
+  /** A plasma clinic: the floor under a player who has lost everything. */
+  Clinic = 'clinic',
 }
 
 export interface VenueConfig {
@@ -62,6 +65,28 @@ export const VENUES: readonly VenueConfig[] = [
     doorPosition: [-8.5, 0, -14],
     neonColor: '#ffc63f',
     invitation: 'Walk in to play',
+    available: true,
+  },
+  {
+    /*
+     * The one building on the strip that is not selling you a good time.
+     *
+     * Placed past the casino on the walk south on purpose: you reach it after
+     * you have had the chance to lose everything, not before.
+     *
+     * On the shop's side of the street rather than the casino's, so the three
+     * doors alternate — and so walking down to the clinic does not mean walking
+     * through the casino's doorway on the way, which is what the first
+     * placement did.
+     */
+    id: VenueId.RedRiverPlasma,
+    name: 'Red River Plasma',
+    kind: VenueKind.Clinic,
+    doorPosition: [8.5, 0, -22],
+    // Cold, and deliberately not a neon colour. Everything else on this street
+    // glows; the clinic is lit.
+    neonColor: '#cfe9ff',
+    invitation: 'Walk in to donate',
     available: true,
   },
 ]

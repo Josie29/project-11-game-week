@@ -25,6 +25,7 @@ const SHOP_SIGN_HEIGHT = 192
 const marqueeCache = new Map<string, Texture>()
 const bladeCache = new Map<string, Texture>()
 const shopSignCache = new Map<string, Texture>()
+const lightboxCache = new Map<string, Texture>()
 
 function createContext(width: number, height: number): CanvasRenderingContext2D {
   const canvas = document.createElement('canvas')
@@ -199,6 +200,63 @@ export function getShopSignTexture(name: string, color: string): Texture {
 
   const texture = finish(ctx)
   shopSignCache.set(key, texture)
+  return texture
+}
+
+/**
+ * Lightbox sign: dark type on a lit white panel, with a red cross.
+ *
+ * Deliberately the dullest sign on the strip. Every other frontage out there is
+ * a glowing tube selling you a good time; the clinic is a backlit plastic box,
+ * and that difference is the whole reason the exterior reads as somewhere you
+ * only go when you have to. See `art/refs/clinic_exterior.png`.
+ */
+export function getLightboxTexture(name: string, accent: string): Texture {
+  const key = `${name}|${accent}`
+  const cached = lightboxCache.get(key)
+  if (cached) return cached
+
+  const ctx = createContext(SHOP_SIGN_WIDTH, SHOP_SIGN_HEIGHT)
+
+  // The lit panel itself. Slightly off-white so it reads as a fluorescent box
+  // rather than as a hole punched in the frontage.
+  ctx.fillStyle = '#f2f6fa'
+  ctx.fillRect(0, 0, SHOP_SIGN_WIDTH, SHOP_SIGN_HEIGHT)
+  ctx.fillStyle = '#c9d4de'
+  ctx.fillRect(0, SHOP_SIGN_HEIGHT - 12, SHOP_SIGN_WIDTH, 12)
+
+  const text = name.toUpperCase()
+  /** Panel width less the cross and a margin either side. */
+  const usableWidth = SHOP_SIGN_WIDTH - 300
+
+  let fontSize = 92
+  ctx.font = `700 ${fontSize}px Georgia, "Times New Roman", serif`
+  const measured = ctx.measureText(text).width
+
+  if (measured > usableWidth) {
+    fontSize = Math.floor(fontSize * (usableWidth / measured))
+    ctx.font = `700 ${fontSize}px Georgia, "Times New Roman", serif`
+  }
+
+  // Flat fill, no glow. `drawNeonText` would make this a tube, which is exactly
+  // what it must not be.
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = '#1d2733'
+  ctx.fillText(text, SHOP_SIGN_WIDTH / 2 - 90, SHOP_SIGN_HEIGHT / 2)
+
+  // The cross, to the right of the type as on the reference.
+  const armLength = 118
+  const armWidth = 38
+  const crossX = SHOP_SIGN_WIDTH - 150
+  const crossY = SHOP_SIGN_HEIGHT / 2
+
+  ctx.fillStyle = accent
+  ctx.fillRect(crossX - armWidth / 2, crossY - armLength / 2, armWidth, armLength)
+  ctx.fillRect(crossX - armLength / 2, crossY - armWidth / 2, armLength, armWidth)
+
+  const texture = finish(ctx)
+  lightboxCache.set(key, texture)
   return texture
 }
 

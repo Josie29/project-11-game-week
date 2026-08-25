@@ -3,6 +3,7 @@ import { canPlaceCrapsBet, oddsRatio, totalCrapsPayout } from '../games/craps/en
 import { CrapsPhase, RollOutcome } from '../games/craps/types'
 import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
+import { MARKER_AMOUNT } from '../world/money'
 import { CRAPS_BET_LABELS, CrapsBet } from '../scenes/crapsFeltLayout'
 import { getVenue, type VenueId } from '../world/venues'
 
@@ -40,6 +41,8 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
 
   const bankroll = useGameStore((state) => state.bankroll)
   const standUp = useGameStore((state) => state.standUp)
+  const takeMarker = useGameStore((state) => state.takeMarker)
+  const debt = useGameStore((state) => state.debt)
 
   const casino = getVenue(venueId)
   const staked = Object.values(game.bets).reduce((sum, amount) => sum + amount, 0)
@@ -47,6 +50,12 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
 
   /** The dice cannot be thrown with nothing at risk. */
   const canRoll = !isRolling && staked > 0
+
+  /*
+   * Craps has never had a broke state — it just left the player looking at
+   * stake buttons they could not press, with no explanation and no way out.
+   */
+  const isBroke = bankroll <= 0 && staked === 0 && !isRolling
 
   function handleLeave(): void {
     resetTable()
@@ -115,6 +124,21 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
           {OUTCOME_LABEL[game.lastOutcome]}
           {payout > 0 && <span className="table-ui__payout">+${payout}</span>}
         </p>
+      )}
+
+      {isBroke && (
+        <div className="table-ui__actions">
+          <span className="table-ui__prompt">You&rsquo;re out of chips.</span>
+          {debt > 0 ? (
+            <span className="table-ui__prompt">
+              Red River Plasma, down the strip, buys blood.
+            </span>
+          ) : (
+            <button type="button" className="button button--primary" onClick={takeMarker}>
+              Take a marker — ${MARKER_AMOUNT}
+            </button>
+          )}
+        </div>
       )}
 
       <div className="table-ui__actions">

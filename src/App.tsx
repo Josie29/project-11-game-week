@@ -5,6 +5,7 @@ import { DevBridge } from './dev/DevBridge'
 import { CasinoInterior } from './scenes/CasinoInterior'
 import { TimeDriver } from './scenes/components/TimeDriver'
 import { DesignerStage } from './scenes/DesignerStage'
+import { ClinicInterior } from './scenes/ClinicInterior'
 import { ShopInterior } from './scenes/ShopInterior'
 import { Strip } from './scenes/Strip'
 import { useAppearanceStore } from './store/useAppearanceStore'
@@ -15,16 +16,18 @@ import { BlackjackPanel } from './ui/BlackjackPanel'
 import { CharacterDesigner } from './ui/CharacterDesigner'
 import { CrapsPanel } from './ui/CrapsPanel'
 import { Hud } from './ui/Hud'
+import { ClinicPanel } from './ui/ClinicPanel'
 import { ShopPanel } from './ui/ShopPanel'
 import { getVenue, VenueKind } from './world/venues'
 import { KEYBOARD_MAP } from './world/controls'
-import { bloomAt, INTERIOR_BLOOM } from './world/timeOfDay'
+import { bloomAt, CLINIC_BLOOM, INTERIOR_BLOOM } from './world/timeOfDay'
 
 export function App() {
   const location = useGameStore((state) => state.location)
   const activeVenue = useGameStore((state) => state.activeVenue)
   const hasDesigned = useAppearanceStore((state) => state.hasDesigned)
   const activeTable = useGameStore((state) => state.activeTable)
+  const atChair = useGameStore((state) => state.atChair)
 
   /*
    * A player who has never designed a character gets the designer instead of
@@ -36,6 +39,7 @@ export function App() {
   const isIndoors = !isDesigning && location === Location.Interior && activeVenue !== null
   const indoorVenue = isIndoors && activeVenue ? getVenue(activeVenue) : null
   const isShopping = indoorVenue?.kind === VenueKind.Shop
+  const isAtClinic = indoorVenue?.kind === VenueKind.Clinic
 
   /*
     The composer is global, so the hour has to be resolved here rather than
@@ -43,8 +47,13 @@ export function App() {
     values; only the strip follows the clock.
   */
   const minuteOfDay = useTimeStore((state) => state.minuteOfDay)
-  // The designer stage is lit like an interior — its own rig, no sky.
-  const bloom = isIndoors || isDesigning ? INTERIOR_BLOOM : bloomAt(minuteOfDay)
+  // The designer stage is lit like an interior — its own rig, no sky. The
+  // clinic gets its own, because it is the only bright room in the game.
+  const bloom = isAtClinic
+    ? CLINIC_BLOOM
+    : isIndoors || isDesigning
+      ? INTERIOR_BLOOM
+      : bloomAt(minuteOfDay)
 
   return (
     // KeyboardControls sits outside the Canvas and provides context to the
@@ -58,6 +67,8 @@ export function App() {
         ) : indoorVenue && activeVenue ? (
           isShopping ? (
             <ShopInterior venueId={activeVenue} />
+          ) : isAtClinic ? (
+            <ClinicInterior />
           ) : (
             <CasinoInterior venueId={activeVenue} />
           )
@@ -97,6 +108,9 @@ export function App() {
       {indoorVenue && activeVenue && (
         isShopping ? (
           <ShopPanel venueId={activeVenue} />
+        ) : isAtClinic ? (
+          // Only once they are actually in a chair; walking the floor has no panel.
+          atChair !== null ? <ClinicPanel /> : null
         ) : activeTable === TableId.Craps ? (
           <CrapsPanel venueId={activeVenue} />
         ) : activeTable === TableId.Blackjack ? (

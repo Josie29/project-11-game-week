@@ -11,3 +11,6 @@ __pycache__/
 .vercel
 .env*
 shots/
+
+# Agent worktrees, which are their own git repositories.
+.claude/worktrees/
