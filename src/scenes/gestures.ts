@@ -243,11 +243,11 @@ export const GESTURES: Record<Gesture, GestureDefinition> = {
      * Long enough to cover the whole draw, not just the moment of insertion.
      *
      * Every other gesture here is a signal that happens and is over; this one
-     * has to still be happening two seconds later. At a signal's duration her
-     * arm dropped back to her side while the bag was still filling, which read
-     * as her having wandered off mid-procedure.
+     * has to still be happening the best part of seven seconds later. At a
+     * signal's duration her arm dropped back to her side while the bag was
+     * still filling, which read as her having wandered off mid-procedure.
      */
-    durationMs: 3000,
+    durationMs: 7400,
     pose: (t) => {
       // Reaches in over the first third and simply holds for the rest.
       const settle = smoothstep(0, 0.34, t)

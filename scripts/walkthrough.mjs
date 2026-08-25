@@ -20,6 +20,9 @@ import { chromium } from 'playwright-core'
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
+/** Kept in step with `DONATION_FEE` in src/world/money.ts by hand. */
+const DONATION_FEE = 100
+
 const baseUrl = process.argv[2] ?? 'http://localhost:5173'
 const outDir = resolve(process.argv[3] ?? 'shots/walkthrough')
 
@@ -202,14 +205,37 @@ try {
   await page.waitForTimeout(700)
   await expectText('Donate', 'sitting in the chair')
 
-  //    The nurse has to walk over, swab and draw before the money lands, so
-  //    this waits on the result rather than on a fixed delay. Waiting at all is
-  //    the point — an instant payout would mean the sequence was decorative.
+  //    The nurse walks over, swabs and draws before the money lands — ten
+  //    seconds of it — so this waits on the bankroll rather than on a delay.
+  //
+  //    The bankroll is the right thing to assert on: there is no cooldown any
+  //    more, so there is no refusal message to wait for, and "the number went
+  //    up by the fee" is the whole point of sitting through the draw.
+  const bankroll = () =>
+    page
+      .locator('.hud__amount')
+      .first()
+      .innerText()
+      .then((text) => Number(text.replace(/[^0-9]/g, '')))
+
+  const before = await bankroll()
   await page.getByRole('button', { name: 'Donate' }).click()
-  await page
-    .getByText('already given today', { exact: false })
-    .first()
-    .waitFor({ timeout: 30000 })
+
+  await page.waitForFunction(
+    (was) => {
+      const shown = document.querySelector('.hud__amount')?.textContent ?? ''
+      return Number(shown.replace(/[^0-9]/g, '')) > was
+    },
+    before,
+    { timeout: 30000 },
+  )
+
+  const after = await bankroll()
+  if (after - before !== DONATION_FEE) {
+    throw new Error(`donation paid ${after - before}, expected ${DONATION_FEE}`)
+  }
+  console.log(`     the pint paid $${after - before}`)
+
   await capture('10-donated')
 
   if (failures.length > 0) {

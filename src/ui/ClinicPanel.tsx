@@ -1,8 +1,7 @@
 import { useEffect } from 'react'
 import { useGameStore } from '../store/useGameStore'
-import { useTimeStore } from '../store/useTimeStore'
 import { NurseTask } from '../scenes/clinicRoutine'
-import { canDonate, DONATION_FEE, nextDonationClock } from '../world/money'
+import { DONATION_FEE } from '../world/money'
 
 /*
  * What the chair offers.
@@ -14,14 +13,10 @@ import { canDonate, DONATION_FEE, nextDonationClock } from '../world/money'
 
 export function ClinicPanel() {
   const bankroll = useGameStore((state) => state.bankroll)
-  const lastDonationDay = useGameStore((state) => state.lastDonationDay)
   const beginDonation = useGameStore((state) => state.beginDonation)
   const donation = useGameStore((state) => state.donation)
   const nurseTask = useGameStore((state) => state.nurseTask)
   const leaveChair = useGameStore((state) => state.leaveChair)
-  const day = useTimeStore((state) => state.day)
-
-  const accepted = canDonate(day, lastDonationDay)
 
   // Escape stands up, as it leaves a table and leaves the shop.
   useEffect(() => {
@@ -48,24 +43,15 @@ export function ClinicPanel() {
               ? 'She is coming over.'
               : 'Hold still. Nearly there.'}
           </span>
-        ) : accepted ? (
+        ) : (
           <>
             <span className="clinic__line">
-              They will take a pint today. It pays{' '}
+              They will take as much as you can spare. A pint pays{' '}
               <strong className="clinic__fee">${DONATION_FEE}</strong>.
             </span>
             <button type="button" className="button button--primary" onClick={beginDonation}>
               Donate
             </button>
-          </>
-        ) : (
-          <>
-            <span className="clinic__line clinic__line--refused">
-              You have already given today.
-            </span>
-            <span className="clinic__line">
-              Next accepted at <strong>{nextDonationClock()}</strong>.
-            </span>
           </>
         )}
 

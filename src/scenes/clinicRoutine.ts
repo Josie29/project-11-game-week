@@ -95,7 +95,14 @@ export interface DonationTimeline {
 export const NURSE_TRAVEL_MS = 2000
 const SWAB_MS = 700
 const NEEDLE_MS = 600
-const DRAW_MS = 2400
+/*
+ * The draw itself, which is where all the waiting lives.
+ *
+ * The whole procedure runs to ten seconds. Padding the walk over or the swab
+ * would just look like the staff dawdling; the bag filling is the part that is
+ * *supposed* to take a while, so the time goes here.
+ */
+const DRAW_MS = 6700
 
 export function donationTimeline(): DonationTimeline {
   const arriveAt = NURSE_TRAVEL_MS

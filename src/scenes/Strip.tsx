@@ -74,6 +74,25 @@ function scenerySignAt(z: number, side: 1 | -1) {
 const PALM_ROW_Z = [6, -2, -10, -18, -26, -34, -42] as const
 const LAMP_ROW_Z = [4, -8, -20, -32, -44] as const
 
+/**
+ * How much pavement a doorway keeps to itself.
+ *
+ * Palms and lamps are laid out on their own even rhythm, which takes no notice
+ * of where the doors are — and the rhythms happened to collide: a palm stood
+ * squarely in front of both the shop and the clinic, hiding the entrance you
+ * are meant to be walking toward. Wider than the door trigger, so the approach
+ * is clear as well as the door itself.
+ */
+const DOORWAY_CLEARANCE = 3.5
+
+/** Whether a piece of street furniture may stand here. */
+function clearsDoorways(x: number, z: number): boolean {
+  return VENUES.every((venue) => {
+    const [doorX, , doorZ] = venue.doorPosition
+    return Math.hypot(x - doorX, z - doorZ) > DOORWAY_CLEARANCE
+  })
+}
+
 /** Deterministic palette pick so colours are stable across reloads. */
 function neonFor(index: number): string {
   return NEON_PALETTE[index % NEON_PALETTE.length] ?? NEON_PALETTE[0]
@@ -286,29 +305,41 @@ export function Strip() {
 
       {PALM_ROW_Z.map((z, index) => (
         <group key={z}>
-          <PalmTree
-            position={[-7.6, SIDEWALK_HEIGHT, z]}
-            height={6.4}
-            spin={index * 0.8}
-            daylight={daylight}
-          />
-          <PalmTree
-            position={[7.6, SIDEWALK_HEIGHT, z - 4]}
-            height={7.1}
-            spin={index * 1.3}
-            daylight={daylight}
-          />
+          {clearsDoorways(-7.6, z) && (
+            <PalmTree
+              position={[-7.6, SIDEWALK_HEIGHT, z]}
+              height={6.4}
+              spin={index * 0.8}
+              daylight={daylight}
+            />
+          )}
+          {clearsDoorways(7.6, z - 4) && (
+            <PalmTree
+              position={[7.6, SIDEWALK_HEIGHT, z - 4]}
+              height={7.1}
+              spin={index * 1.3}
+              daylight={daylight}
+            />
+          )}
         </group>
       ))}
 
       {LAMP_ROW_Z.map((z) => (
         <group key={z}>
-          <StreetLamp position={[-6.6, SIDEWALK_HEIGHT, z]} neonLevel={neonLevel} daylight={daylight} />
-          <StreetLamp
-            position={[6.6, SIDEWALK_HEIGHT, z - 6]}
-            neonLevel={neonLevel}
-            daylight={daylight}
-          />
+          {clearsDoorways(-6.6, z) && (
+            <StreetLamp
+              position={[-6.6, SIDEWALK_HEIGHT, z]}
+              neonLevel={neonLevel}
+              daylight={daylight}
+            />
+          )}
+          {clearsDoorways(6.6, z - 6) && (
+            <StreetLamp
+              position={[6.6, SIDEWALK_HEIGHT, z - 6]}
+              neonLevel={neonLevel}
+              daylight={daylight}
+            />
+          )}
         </group>
       ))}
 

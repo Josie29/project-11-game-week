@@ -111,12 +111,16 @@ describe('donationTimeline', () => {
     expect(completeAt).toBeGreaterThan(needleAt)
   })
 
-  // Long enough to be worth watching, short enough that nobody walks away.
-  it('takes a few seconds, not a minute', () => {
-    const { completeAt } = donationTimeline()
-
-    expect(completeAt).toBeGreaterThan(3000)
-    expect(completeAt).toBeLessThan(9000)
+  /*
+   * Ten seconds, on the nose.
+   *
+   * This is the price of a donation now that there is no cooldown — the only
+   * thing standing between the player and unlimited money is how long they are
+   * willing to sit still. Tuning any of the four legs has to keep the total
+   * where it is, or the economy quietly changes with it.
+   */
+  it('takes exactly ten seconds', () => {
+    expect(donationTimeline().completeAt).toBe(10_000)
   })
 })
 

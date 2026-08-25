@@ -1,5 +1,3 @@
-import { formatClock, MINUTES_PER_DAY } from './timeOfDay'
-
 /*
  * The two ways back from broke, and the arithmetic behind them.
  *
@@ -12,8 +10,15 @@ import { formatClock, MINUTES_PER_DAY } from './timeOfDay'
 /** What a marker hands over, and therefore what you owe for it. */
 export const MARKER_AMOUNT = 500
 
-/** What a pint pays. Small on purpose: it is a floor, not a living. */
-export const DONATION_FEE = 45
+/**
+ * What a pint pays.
+ *
+ * There is no cooldown: you can give as often as you are willing to sit through
+ * it, and the only cost is the ten seconds it takes. That makes the clinic a
+ * reliable income rather than a floor to fall back on — worth knowing when
+ * tuning the tables against it.
+ */
+export const DONATION_FEE = 100
 
 /**
  * The house's cut of every win while a marker is outstanding.
@@ -22,9 +27,6 @@ export const DONATION_FEE = 45
  * so much that climbing out is hopeless.
  */
 export const REPAY_SHARE = 0.5
-
-/** The hour the clinic starts accepting donations again. */
-export const CLINIC_OPENS_MINUTE = 6 * 60
 
 export interface WinningsSplit {
   /** What actually reaches the player. */
@@ -51,25 +53,4 @@ export function splitWinnings(amount: number, debt: number): WinningsSplit {
 
   const toDebt = Math.min(debt, Math.floor(amount * REPAY_SHARE))
   return { toBankroll: amount - toDebt, toDebt }
-}
-
-/**
- * Whether the clinic will take a donation today.
- *
- * @param today The current game day, from `useTimeStore`.
- * @param lastDonationDay The day of the last donation, or `null` for never.
- */
-export function canDonate(today: number, lastDonationDay: number | null): boolean {
-  return lastDonationDay === null || today > lastDonationDay
-}
-
-/**
- * The clock time the refusal quotes back to the player.
- *
- * Donations reset with the day, so the next one is always accepted at opening.
- * The clock runs at a game minute per real second, which makes this a wait of
- * minutes rather than a wall.
- */
-export function nextDonationClock(): string {
-  return formatClock(CLINIC_OPENS_MINUTE % MINUTES_PER_DAY)
 }

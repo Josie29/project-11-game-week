@@ -6,7 +6,6 @@ import { donationTimeline, NurseTask } from '../scenes/clinicRoutine'
 import { runSequence, type RunningSequence } from './sequence'
 import { DONATION_FEE, MARKER_AMOUNT, splitWinnings } from '../world/money'
 import { VenueId, getVenue, PLAYER_SPAWN } from '../world/venues'
-import { useTimeStore } from './useTimeStore'
 
 export enum Location {
   Strip = 'strip',
@@ -30,8 +29,6 @@ interface GameStore {
    * that losing has to cost something.
    */
   debt: number
-  /** The game day of the last plasma donation, or `null` for never. */
-  lastDonationDay: number | null
   location: Location
   activeVenue: VenueId | null
   /** Casino the player is standing next to, for the HUD prompt. */
@@ -133,7 +130,7 @@ interface GameStore {
   creditWinnings: (amount: number, stakeReturned: number) => number
   /** Borrows `MARKER_AMOUNT` from the house. Refused if one is outstanding. */
   takeMarker: () => void
-  /** Sells a pint. Refused if one has already been given today. */
+  /** Sells a pint. No cooldown — the ten seconds in the chair is the cost. */
   donate: () => void
   resetBankroll: () => void
 }
@@ -151,7 +148,6 @@ export const useGameStore = create<GameStore>()(
     (set, get) => ({
       bankroll: STARTING_BANKROLL,
       debt: 0,
-      lastDonationDay: null,
       location: Location.Strip,
       activeVenue: null,
       nearbyVenue: null,
@@ -339,15 +335,12 @@ export const useGameStore = create<GameStore>()(
       },
 
       donate: () => {
-        const today = useTimeStore.getState().day
-        if (get().lastDonationDay === today) return
-
         // Straight to the bankroll, not through `creditWinnings`: see the note
         // there. A donation has to reach the player whatever they owe.
-        set({ bankroll: get().bankroll + DONATION_FEE, lastDonationDay: today })
+        set({ bankroll: get().bankroll + DONATION_FEE })
       },
 
-      resetBankroll: () => set({ bankroll: STARTING_BANKROLL, debt: 0, lastDonationDay: null }),
+      resetBankroll: () => set({ bankroll: STARTING_BANKROLL, debt: 0 }),
     }),
     {
       name: 'neon-strip-save',
@@ -355,7 +348,6 @@ export const useGameStore = create<GameStore>()(
       partialize: (state) => ({
         bankroll: state.bankroll,
         debt: state.debt,
-        lastDonationDay: state.lastDonationDay,
       }),
     },
   ),

@@ -1,12 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  canDonate,
-  DONATION_FEE,
-  MARKER_AMOUNT,
-  nextDonationClock,
-  splitWinnings,
-} from '../world/money'
-import { STARTING_BANKROLL } from '../store/useGameStore'
+import { DONATION_FEE, MARKER_AMOUNT, splitWinnings } from '../world/money'
 
 /** A spread of realistic and awkward wins, including odd and tiny ones. */
 const AMOUNTS = [0, 1, 2, 3, 5, 7, 10, 15, 25, 37, 50, 75, 99, 100, 125, 150, 375, 500, 1001, 2385]
@@ -81,34 +74,18 @@ describe('splitWinnings', () => {
   })
 })
 
-describe('canDonate', () => {
-  // Once per day is the entire mechanic. Without the gate the clinic is an ATM
-  // and going broke stops meaning anything again.
-  it('allows one donation per day', () => {
-    expect(canDonate(3, null)).toBe(true)
-    expect(canDonate(3, 3)).toBe(false)
-    expect(canDonate(4, 3)).toBe(true)
-  })
-
-  // The day counter is monotonic precisely so this keeps working across the
-  // 1440-minute wrap; a check derived from `minuteOfDay` would reset every time
-  // the clock passed midnight, which happens every 24 real minutes.
-  it('keeps working across many days', () => {
-    for (let day = 1; day < 40; day++) {
-      expect(canDonate(day, day - 1)).toBe(true)
-      expect(canDonate(day, day)).toBe(false)
-    }
-  })
-})
-
 describe('the economy', () => {
-  // A pint has to be worth walking there for and not worth farming. Below the
-  // smallest chip it buys nothing; anywhere near the starting purse and the
-  // tables stop mattering.
-  it('pays enough to bet with and not enough to live on', () => {
-    expect(DONATION_FEE).toBeGreaterThanOrEqual(10)
-    expect(DONATION_FEE).toBeLessThan(STARTING_BANKROLL / 5)
+  /*
+   * A pint has to be worth the ten seconds in the chair and payable in chips.
+   *
+   * There is no upper bound here any more. There used to be one — the fee had
+   * to stay well under the starting purse so the clinic could not out-earn the
+   * tables — but with the daily cap gone that ship has sailed by design, and an
+   * assertion pretending otherwise would just be a lie with a green tick.
+   */
+  it('pays a whole number of dollars, enough to bet with', () => {
     expect(Number.isInteger(DONATION_FEE)).toBe(true)
+    expect(DONATION_FEE).toBeGreaterThanOrEqual(10)
   })
 
   it('lends a whole number of dollars', () => {
@@ -116,7 +93,4 @@ describe('the economy', () => {
     expect(MARKER_AMOUNT).toBeGreaterThan(0)
   })
 
-  it('quotes a real clock time in the refusal', () => {
-    expect(nextDonationClock()).toMatch(/^\d{2}:\d{2}$/)
-  })
 })

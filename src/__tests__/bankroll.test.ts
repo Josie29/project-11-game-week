@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { STARTING_BANKROLL, useGameStore } from '../store/useGameStore'
-import { useTimeStore } from '../store/useTimeStore'
 import { donationTimeline, NurseTask } from '../scenes/clinicRoutine'
 import { DONATION_FEE, MARKER_AMOUNT } from '../world/money'
 
@@ -16,11 +15,9 @@ function reset(): void {
   useGameStore.setState({
     bankroll: STARTING_BANKROLL,
     debt: 0,
-    lastDonationDay: null,
     atChair: null,
     donation: null,
   })
-  useTimeStore.setState({ day: 0 })
 }
 
 describe('markers', () => {
@@ -115,26 +112,28 @@ describe('markers', () => {
 describe('donations', () => {
   beforeEach(reset)
 
-  it('pays the fee and stamps the day', () => {
+  it('pays the fee', () => {
     useGameStore.setState({ bankroll: 0 })
     useGameStore.getState().donate()
 
     expect(useGameStore.getState().bankroll).toBe(DONATION_FEE)
-    expect(useGameStore.getState().lastDonationDay).toBe(0)
   })
 
-  // The daily gate is the mechanic. Without it the clinic is an ATM and going
-  // broke stops mattering, which is the thing this whole feature exists to fix.
-  it('refuses twice in one day and allows it the next', () => {
+  /*
+   * No cooldown, by design: the ten seconds in the chair is the whole cost.
+   *
+   * This replaced a once-a-day gate. The gate is what stopped the clinic
+   * out-earning the tables, so the tables are now the slower way to make money
+   * — which is a deliberate choice rather than an oversight, and this test is
+   * here so that changing it back is a decision somebody has to make on purpose.
+   */
+  it('pays every single time, with no cooldown', () => {
     useGameStore.setState({ bankroll: 0 })
 
-    useGameStore.getState().donate()
-    useGameStore.getState().donate()
-    expect(useGameStore.getState().bankroll).toBe(DONATION_FEE)
-
-    useTimeStore.setState({ day: 1 })
-    useGameStore.getState().donate()
-    expect(useGameStore.getState().bankroll).toBe(DONATION_FEE * 2)
+    for (let pint = 1; pint <= 5; pint++) {
+      useGameStore.getState().donate()
+      expect(useGameStore.getState().bankroll).toBe(DONATION_FEE * pint)
+    }
   })
 
   // A donation must reach the player whatever they owe. Routing it through the
@@ -172,22 +171,19 @@ describe('the draw', () => {
 
     vi.advanceTimersByTime(needleAt)
     expect(useGameStore.getState().bankroll).toBe(0)
-    expect(useGameStore.getState().lastDonationDay).toBeNull()
 
     vi.advanceTimersByTime(completeAt - needleAt)
     expect(useGameStore.getState().bankroll).toBe(DONATION_FEE)
-    expect(useGameStore.getState().lastDonationDay).toBe(0)
   })
 
   /*
    * The case the guard exists for, and the one no screenshot can show.
    *
-   * Standing up mid-needle has to cost nothing and pay nothing. Without the
-   * guard the money arrives seconds later, from a nurse who is no longer beside
-   * anybody — and with the day stamped up front instead, leaving would burn the
-   * donation for nothing.
+   * Standing up mid-needle has to pay nothing. Without the guard the money
+   * arrives seconds later, from a nurse who is no longer beside anybody — and
+   * ten seconds is a long time to leave that hanging.
    */
-  it('pays nothing and spends no day if the player gets up mid-draw', () => {
+  it('pays nothing if the player gets up mid-draw', () => {
     useGameStore.setState({ bankroll: 0 })
     useGameStore.getState().beginDonation()
 
@@ -197,7 +193,6 @@ describe('the draw', () => {
     vi.advanceTimersByTime(20_000)
 
     expect(useGameStore.getState().bankroll).toBe(0)
-    expect(useGameStore.getState().lastDonationDay).toBeNull()
     expect(useGameStore.getState().donation).toBeNull()
   })
 
@@ -233,29 +228,5 @@ describe('the draw', () => {
     expect(useGameStore.getState().donation).toBeNull()
     vi.advanceTimersByTime(20_000)
     expect(useGameStore.getState().bankroll).toBe(0)
-  })
-})
-
-describe('the clock', () => {
-  // `?time=` jumps the clock for captures. If that counted as a day, a single
-  // frozen capture could donate, jump, and donate again.
-  it('does not count a day when the clock is set directly', () => {
-    useTimeStore.setState({ day: 4 })
-    useTimeStore.getState().setMinuteOfDay(6 * 60)
-
-    expect(useTimeStore.getState().day).toBe(4)
-  })
-
-  // ...but letting it run past midnight must, or the donation never resets.
-  it('counts a day when the clock runs past midnight', () => {
-    useTimeStore.setState({ day: 0, paused: false })
-    useTimeStore.getState().setMinuteOfDay(23 * 60 + 59)
-
-    // A game minute per real second, so a couple of minutes of game time.
-    for (let tick = 0; tick < 120; tick++) {
-      useTimeStore.getState().advance(1)
-    }
-
-    expect(useTimeStore.getState().day).toBe(1)
   })
 })
