@@ -97,9 +97,22 @@ time, before saying it is done:
    via `?boot=`, but those links are stripped from production builds, so the
    walkthrough is the only check that runs against a deployed URL. It is also
    the only one that tests the path *between* scenes.
-2. **Deploy it.** `npx vercel --prod --yes`, then hand over the URL —
-   https://project-11-game-week.vercel.app. A description of a change is not a
-   change anyone can look at.
+2. **Deploy it, then check that the deploy took.** `npx vercel --prod --yes`,
+   then compare the bundle the alias actually serves against the one `npm run
+   build` just produced:
+
+   ```
+   curl -s https://project-11-game-week.vercel.app/ | grep -o 'index-[^"]*\.js'
+   ```
+
+   The CLI has reported `Ready` and `Aliased` three times in a row while
+   https://project-11-game-week.vercel.app went on serving the previous build.
+   The walkthrough passed against it, because the walkthrough tests the paths
+   between scenes rather than the change, and the capture of the new feature
+   showed the old geometry. The filename is a content hash, so this is a
+   two-second check that the thing being handed over is the thing that was
+   written. Then hand over the URL — a description of a change is not a change
+   anyone can look at.
 3. **Say what was not verified.** Plainly, in the same breath as what was.
 
 Both steps have already earned it. The walkthrough found that one long frame
@@ -111,6 +124,17 @@ enters in the same frame it sets `nearbyVenue`.
 **Run `npm run shot <url> <out.png>` and look at the image before claiming
 visual work is done.** An entire session's worth of table work shipped with
 four visible bugs in it because it was written without ever being viewed.
+
+**Geometry is only correct relative to the camera that sees it.** A scene with a
+fixed camera can render a hand-placed object perfectly and show nothing. The
+line from the needle to the blood bag was twice the right shape in the right
+place and twice invisible — the second time because it ran almost exactly along
+the chair camera's own axis, so 65cm of tubing projected to nine pixels and read
+as a red post. Anything long and thin gets checked for extent *across* the view,
+not just in the world. Where a fixed camera and a piece of geometry have to
+agree, both belong in the layout module so a test can hold them to it — two
+constants in two files that quietly disagree is not something a later reader
+would think to look for.
 
 The script drives headless Chrome, so it works regardless of window focus, and
 it reports frames rendered — a blank capture cannot pass as a success. It takes

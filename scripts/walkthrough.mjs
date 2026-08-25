@@ -229,6 +229,17 @@ try {
   const before = await bankroll()
   await page.getByRole('button', { name: 'Donate' }).click()
 
+  /*
+   *    Caught partway through, which is the only moment the thing being built
+   *    here exists: the nurse at the chair, the line running to her stand, and
+   *    the bag part full. Half a second either side of the ten and there is
+   *    nothing to see — before it, she is still walking over; after it, the bag
+   *    has gone with her.
+   */
+  await page.waitForTimeout(6000)
+  await page.screenshot({ path: resolve(outDir, '7-drawing.png') })
+  console.log('ok   7-drawing')
+
   await page.waitForFunction(
     (was) => {
       const shown = document.querySelector('.hud__amount')?.textContent ?? ''
@@ -243,7 +254,7 @@ try {
     throw new Error(`donation paid ${after - before}, expected ${DONATION_FEE}`)
   }
   console.log(`     the pint paid $${after - before}`)
-  await capture('7-donated')
+  await capture('8-donated')
 
   // 7. Out of the clinic, across the street and up to the casino.
   await page.keyboard.press('Escape')
@@ -280,13 +291,13 @@ try {
    *    having painted.
    */
   await walkUntil(['KeyW', 'KeyA'], 'Blackjack', { burstMs: 350, bursts: 40 })
-  await capture('8-at-the-table')
+  await capture('9-at-the-table')
 
   // 8. Sit down and play a hand. F, not E — E is the camera orbit.
   await page.keyboard.press('KeyF')
   await page.waitForTimeout(600)
   await expectText('Leave table', 'sitting down')
-  await capture('9-seated')
+  await capture('10-seated')
 
   //    The stake keys are the primary control at the table, and the buttons
   //    carry their shortcut in the label ("$10 1"), which makes an exact-name
@@ -294,13 +305,13 @@ try {
   await page.keyboard.press('Digit1')
   await page.waitForTimeout(2000)
   await expectText('DEALER', 'dealing a hand')
-  await capture('10-hand-dealt')
+  await capture('11-hand-dealt')
 
   if (failures.length > 0) {
     throw new Error(`page errors: ${failures.join(' | ')}`)
   }
 
-  console.log(`\n10 beats → ${outDir}`)
+  console.log(`\n11 beats → ${outDir}`)
 } catch (error) {
   await page.screenshot({ path: resolve(outDir, 'failure.png') })
   console.error(`\nFAILED: ${error.message}`)
