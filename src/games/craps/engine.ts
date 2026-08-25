@@ -267,3 +267,19 @@ export function stakeReturnedByRoll(before: CrapsState, after: CrapsState): numb
 export function oddsRatio(point: PointNumber): Odds {
   return TRUE_ODDS[point]
 }
+
+/**
+ * What a winning field number pays above the stake, as a multiple.
+ *
+ * Exported so the felt can print its own terms from the same table the payout
+ * is computed from. A layout that says a number pays double while the engine
+ * pays triple is a correctness bug wearing a texture, and the felt is where a
+ * player goes to check.
+ *
+ * @param total The dice total.
+ * @returns The multiple, or 0 for a total the field does not pay on.
+ */
+export function fieldMultiplier(total: number): number {
+  if (!FIELD_WINNERS.has(total)) return 0
+  return FIELD_MULTIPLIERS[total] ?? 1
+}

@@ -3,15 +3,22 @@ import { useFrame } from '@react-three/fiber'
 import { useEffect, useRef, useState } from 'react'
 import { Euler, Group, Quaternion } from 'three'
 import type { DiceRoll } from '../../games/craps/types'
+import {
+  DICE_REST_POSITION as REST_POSITION,
+  DICE_REST_SPACING,
+  DICE_THROW_ORIGIN as THROW_ORIGIN,
+  DICE_THROW_SPACING,
+  DIE_HALF,
+} from '../crapsTableLayout'
 import { DIE_FACE_VALUES, FACE_UP_ROTATIONS, getDieFaceTexture } from '../diceTexture'
 
-const DIE_SIZE = 0.16
-
-/** Where the shooter releases the dice, at the far end of the table. */
-const THROW_ORIGIN: readonly [number, number, number] = [-1.1, 1.42, -0.78]
-
-/** Where the dice sit between throws, tucked against the boxman's corner. */
-const REST_POSITION: readonly [number, number, number] = [-1.5, 1.09, -0.95]
+/*
+ * Both spots are pit-relative, so they live in `../crapsTableLayout` and are
+ * asserted to be inside the bumper with a die's width to spare. Resizing the
+ * pit for a thicker rail is precisely the change that would bury a resting die
+ * in a wall, and a die that is inside a wall is a die that is simply not there.
+ */
+const DIE_SIZE = DIE_HALF * 2
 
 /** Give up waiting for the tumble to settle after this long. */
 const MAX_TUMBLE_MS = 2200
@@ -63,7 +70,7 @@ export function CrapsDice({ roll, rollId }: CrapsDiceProps) {
 
       // Reset, then throw down-table with a tumble on every axis.
       rigid.setTranslation(
-        { x: THROW_ORIGIN[0] + index * 0.22, y: THROW_ORIGIN[1], z: THROW_ORIGIN[2] },
+        { x: THROW_ORIGIN[0] + index * DICE_THROW_SPACING, y: THROW_ORIGIN[1], z: THROW_ORIGIN[2] },
         true,
       )
       rigid.setLinvel({ x: 0, y: 0, z: 0 }, true)
@@ -145,7 +152,7 @@ export function CrapsDice({ roll, rollId }: CrapsDiceProps) {
           friction={0.85}
           linearDamping={0.35}
           angularDamping={0.4}
-          position={[REST_POSITION[0] + index * 0.2, REST_POSITION[1], REST_POSITION[2]]}
+          position={[REST_POSITION[0] + index * DICE_REST_SPACING, REST_POSITION[1], REST_POSITION[2]]}
         >
           <group ref={index === 0 ? visualA : visualB} name={`craps-die-${index}`}>
             <mesh castShadow receiveShadow>

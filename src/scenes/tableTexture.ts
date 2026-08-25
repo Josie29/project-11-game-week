@@ -1,4 +1,5 @@
 import { CanvasTexture, SRGBColorSpace, type Texture } from 'three'
+import { type ArcCenter, drawArcText, strokeMarkingArc } from './arcText'
 
 /**
  * The felt is drawn to a canvas for the same reason the cards are: it puts real
@@ -27,8 +28,7 @@ const GOLD_SOFT = 'rgba(242, 205, 107, 0.62)'
  * tight arc that swings the ends of each line hundreds of pixels upward; real
  * table print is only gently bowed, which needs a large radius.
  */
-const ARC_CENTER_X = WIDTH / 2
-const ARC_CENTER_Y = -900
+const ARC_CENTER: ArcCenter = { x: WIDTH / 2, y: -900 }
 
 const HEADLINE_RADIUS = 1200
 const SUBLINE_RADIUS = 1265
@@ -52,66 +52,16 @@ const SPOT_RY = 30
 
 let feltTexture: Texture | null = null
 
-/**
- * Draws text bent around a circular arc, centred on the arc's lowest point.
- *
- * Canvas has no arc-text primitive, so each glyph is positioned and rotated
- * individually. Glyphs sit below the centre and are flipped upright, which
- * bows the line away from the dealer the way table print actually runs.
- *
- * @param radius Distance from the arc centre to the text baseline.
- * @param letterSpacing Angular step between glyphs, in radians.
+/*
+ * Arc text and arc rules live in `./arcText` now, because the craps felt bows
+ * its PASS LINE the same way. The constants passed below are the ones this
+ * felt has always used, so what it draws is unchanged.
  */
-function drawArcText(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  radius: number,
-  letterSpacing: number,
-): void {
-  const chars = [...text]
-  // Positive angles land left of centre, so start high and step down to read
-  // left-to-right. Centred about straight-down from the arc centre.
-  let angle = ((chars.length - 1) * letterSpacing) / 2
-
-  for (const char of chars) {
-    ctx.save()
-    ctx.translate(ARC_CENTER_X, ARC_CENTER_Y)
-    ctx.rotate(angle)
-    // Below the centre the rotated frame already stands each glyph upright with
-    // its top pointing back at the arc centre, so no further flip is needed.
-    ctx.translate(0, radius)
-    ctx.fillText(char, 0, 0)
-    ctx.restore()
-    angle -= letterSpacing
-  }
-}
-
-/** Strokes an arc concentric with the table markings. */
-function strokeMarkingArc(
-  ctx: CanvasRenderingContext2D,
-  radius: number,
-  halfSpread: number,
-  lineWidth: number,
-  style: string,
-): void {
-  ctx.strokeStyle = style
-  ctx.lineWidth = lineWidth
-  ctx.beginPath()
-  // Canvas angles run from +x; straight-down is PI/2.
-  ctx.arc(
-    ARC_CENTER_X,
-    ARC_CENTER_Y,
-    radius,
-    Math.PI / 2 - halfSpread,
-    Math.PI / 2 + halfSpread,
-  )
-  ctx.stroke()
-}
 
 /** Draws one betting spot: a gold ellipse tilted to follow its arc. */
 function drawBettingSpot(ctx: CanvasRenderingContext2D, angle: number): void {
   ctx.save()
-  ctx.translate(ARC_CENTER_X, ARC_CENTER_Y)
+  ctx.translate(ARC_CENTER.x, ARC_CENTER.y)
   ctx.rotate(angle)
   ctx.translate(0, SPOT_RADIUS)
 
@@ -158,15 +108,15 @@ function drawFelt(): Texture {
 
   ctx.fillStyle = GOLD
   ctx.font = '700 46px Georgia, "Times New Roman", serif'
-  drawArcText(ctx, 'BLACKJACK PAYS 3 TO 2', HEADLINE_RADIUS, HEADLINE_SPACING)
+  drawArcText(ctx, 'BLACKJACK PAYS 3 TO 2', ARC_CENTER, HEADLINE_RADIUS, HEADLINE_SPACING)
 
   ctx.font = '600 30px Georgia, "Times New Roman", serif'
   ctx.fillStyle = GOLD_SOFT
-  drawArcText(ctx, 'INSURANCE PAYS 2 TO 1', SUBLINE_RADIUS, SUBLINE_SPACING)
+  drawArcText(ctx, 'INSURANCE PAYS 2 TO 1', ARC_CENTER, SUBLINE_RADIUS, SUBLINE_SPACING)
 
   // Rule line separating the printed terms from the betting area.
-  strokeMarkingArc(ctx, DIVIDER_RADIUS, 0.3, 4, GOLD_SOFT)
-  strokeMarkingArc(ctx, DIVIDER_RADIUS - 9, 0.3, 2, 'rgba(242, 205, 107, 0.3)')
+  strokeMarkingArc(ctx, ARC_CENTER, DIVIDER_RADIUS, 0.3, 4, GOLD_SOFT)
+  strokeMarkingArc(ctx, ARC_CENTER, DIVIDER_RADIUS - 9, 0.3, 2, 'rgba(242, 205, 107, 0.3)')
 
   for (const angle of SPOT_ANGLES) {
     drawBettingSpot(ctx, angle)

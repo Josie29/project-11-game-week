@@ -307,11 +307,58 @@ try {
   await expectText('DEALER', 'dealing a hand')
   await capture('11-hand-dealt')
 
+  // 9. Cross the floor to the other table. The casino stopped being a single
+  //    table a while ago, and nothing walked from one to the other — which is
+  //    the only part of the room a `?boot=` link cannot reach.
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(800)
+  await expectText('F to sit at a table', 'standing back up')
+
+  /*
+   *    Straight across, at the depth the blackjack seat already put the player.
+   *    The craps table reaches far enough to be caught mid-stride from here,
+   *    which `casinoFloorLayout.test.ts` asserts — a narrower prompt had the
+   *    player walk the length of the room without ever being offered the table.
+   *
+   *    The prompt names the table, so this waits for the right one rather than
+   *    for any prompt at all.
+   */
+  await walkUntil(['KeyD'], 'Craps', { bursts: 30 })
+  await capture('12-crossing-to-craps')
+
+  // 10. Take the rail at craps and throw the dice. Nobody sits at craps, so
+  //    this is a stand rather than a seat.
+  await page.keyboard.press('KeyF')
+  await page.waitForTimeout(600)
+  await expectText('Roll the dice', 'stepping up to craps')
+  await capture('13-at-craps')
+
+  /*
+   *    Stake the pass line before throwing. The dice cannot be thrown with
+   *    nothing at risk, so Space on an empty felt is a no-op — and the first
+   *    version of this beat asserted on the HUD's "DICE" label, which is
+   *    printed whether or not anything was rolled. It passed without a throw
+   *    ever having happened.
+   */
+  await page.getByRole('button', { name: 'PASS LINE' }).first().click()
+  await page.waitForTimeout(400)
+
+  await page.keyboard.press('Space')
+  //    Long enough for the tumble to settle and the dice to turn to their
+  //    faces; the throw gives up after 2.2 seconds of its own accord.
+  await page.waitForTimeout(3600)
+
+  //    The outcome line only renders once the engine has settled a roll, which
+  //    makes its presence the one thing on screen that cannot be true unless
+  //    the dice were actually thrown.
+  await page.waitForSelector('.table-ui__outcome', { timeout: 6000 })
+  await capture('14-dice-thrown')
+
   if (failures.length > 0) {
     throw new Error(`page errors: ${failures.join(' | ')}`)
   }
 
-  console.log(`\n11 beats → ${outDir}`)
+  console.log(`\n14 beats → ${outDir}`)
 } catch (error) {
   await page.screenshot({ path: resolve(outDir, 'failure.png') })
   console.error(`\nFAILED: ${error.message}`)

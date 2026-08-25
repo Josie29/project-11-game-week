@@ -1,7 +1,9 @@
 import { CuboidCollider, Physics, RigidBody } from '@react-three/rapier'
 import { useMemo } from 'react'
+import { DoubleSide, ExtrudeGeometry, Shape } from 'three'
 import { totalCrapsStake } from '../../games/craps/engine'
 import { useCrapsStore } from '../../store/useCrapsStore'
+import { buildBandGeometry, buildRingGeometry } from '../bandGeometry'
 import { ChipStack } from './ChipStack'
 import { CrapsDice } from './CrapsDice'
 import {
@@ -11,26 +13,233 @@ import {
   rectCenter,
 } from '../crapsFeltLayout'
 import { getCrapsFeltTexture } from '../crapsFeltTexture'
+import {
+  APRON_BOTTOM_Y,
+  BASE_MOULDING_BOTTOM_Y,
+  CHIP_CHANNEL_DEPTH,
+  CHIP_CHANNEL_OFFSET,
+  CHIP_CHANNEL_WIDTH,
+  DRINK_HOLDER_RADIUS,
+  DRINK_HOLDERS,
+  feltToWorld,
+  INNER_CORNER_RADIUS,
+  OUTER_HALF_DEPTH,
+  OUTER_HALF_WIDTH,
+  outerOutline,
+  PIT_HALF_DEPTH,
+  PIT_HALF_WIDTH,
+  PIT_WALL_HEIGHT,
+  pitOutline,
+  PLINTH_HEIGHT,
+  PLINTH_INSET,
+  PUCK_OFF_POSITION,
+  PUCK_RADIUS,
+  RAIL_TOP_Y,
+  roundedRectOutline,
+  SURFACE_Y,
+  TABLE_TOP_Y,
+} from '../crapsTableLayout'
+import {
+  getChipChannelTexture,
+  getPitBumperTexture,
+  getRailWoodTexture,
+} from '../crapsTableTexture'
 
-/** Table footprint. The felt texture is 3:2, so the surface matches it. */
-const TABLE_WIDTH = 3.6
-const TABLE_DEPTH = 2.4
-const TABLE_TOP_Y = 1
-const RAIL_HEIGHT = 0.34
-const RAIL_THICKNESS = 0.14
+/*
+ * The table's footprint, its rail and everything let into that rail live in
+ * `../crapsTableLayout`, where they are asserted against the pit outline. Same
+ * rule the blackjack table follows, and for the same reason: hand-derived
+ * geometry on this project has produced real bugs, and a drink holder cutting
+ * through the chip channel is not something a screenshot makes obvious.
+ */
 
-/** Chips sit a hair above the felt so they never z-fight with it. */
-const SURFACE_Y = TABLE_TOP_Y + 0.012
+/** How many points round each corner of the outline. Higher is smoother. */
+const CORNER_SEGMENTS = 14
+
+/** Texture repeats per metre, chosen so nothing reads as obviously tiled. */
+const BUMPER_TILES_PER_METRE = 3.4
+const WOOD_TILES_PER_METRE = 0.62
+const APRON_TILES_PER_METRE = 0.4
+/** One repeat per chip slot, so this is the slot pitch in slots per metre. */
+const CHANNEL_SLOTS_PER_METRE = 9
+
+/** Physics wall segments, as half-extents with a rotation about y. */
+interface WallSegment {
+  readonly position: readonly [number, number, number]
+  readonly halfExtents: readonly [number, number, number]
+  readonly rotationY: number
+}
 
 /**
- * Converts a felt texture coordinate to a world position on the table.
+ * The colliders that keep the dice in the pit.
  *
- * `u` runs left to right and `v` from the boxman's edge to the player's, which
- * is the same convention `crapsFeltLayout` uses — so a bet's printed rectangle
- * and the chips placed on it are guaranteed to agree.
+ * The pit is a stadium now, so four straight walls no longer close it: a die in
+ * a corner would find a wedge of open space between the end of one wall and the
+ * start of the next and leave the table through it. The corners get their own
+ * segments, angled across the diagonal, which is a flat chamfer rather than a
+ * true arc — near enough at a 0.32 radius, and a chamfer is a cuboid, which
+ * `CuboidCollider` can express and a rounded corner cannot.
  */
-function feltToWorld(u: number, v: number): [number, number, number] {
-  return [(u - 0.5) * TABLE_WIDTH, SURFACE_Y, (v - 0.5) * TABLE_DEPTH]
+function buildWalls(height: number): WallSegment[] {
+  const straightHalfX = PIT_HALF_WIDTH - INNER_CORNER_RADIUS
+  const straightHalfZ = PIT_HALF_DEPTH - INNER_CORNER_RADIUS
+  // Deep enough that a fast die cannot step past it between frames, on top of
+  // the continuous collision detection the dice already run with.
+  const thickness = 0.12
+  const midY = TABLE_TOP_Y + height / 2
+
+  const walls: WallSegment[] = [
+    {
+      position: [0, midY, -(PIT_HALF_DEPTH + thickness)],
+      halfExtents: [straightHalfX, height / 2, thickness],
+      rotationY: 0,
+    },
+    {
+      position: [0, midY, PIT_HALF_DEPTH + thickness],
+      halfExtents: [straightHalfX, height / 2, thickness],
+      rotationY: 0,
+    },
+    {
+      position: [-(PIT_HALF_WIDTH + thickness), midY, 0],
+      halfExtents: [thickness, height / 2, straightHalfZ],
+      rotationY: 0,
+    },
+    {
+      position: [PIT_HALF_WIDTH + thickness, midY, 0],
+      halfExtents: [thickness, height / 2, straightHalfZ],
+      rotationY: 0,
+    },
+  ]
+
+  // A chamfer across each corner, seated so its inner face touches the arc at
+  // the 45 degree point and overlapping both straight walls at its ends.
+  const chord = INNER_CORNER_RADIUS * Math.SQRT2
+  const reach = INNER_CORNER_RADIUS * (1 - Math.SQRT1_2)
+
+  for (const signX of [-1, 1]) {
+    for (const signZ of [-1, 1]) {
+      walls.push({
+        position: [
+          signX * (straightHalfX + INNER_CORNER_RADIUS - reach / 2 + thickness / 2),
+          midY,
+          signZ * (straightHalfZ + INNER_CORNER_RADIUS - reach / 2 + thickness / 2),
+        ],
+        halfExtents: [chord / 2 + thickness, height / 2, thickness],
+        // The chamfer runs along the corner's diagonal; the sign pairing decides
+        // which of the two diagonals.
+        rotationY: (signX * signZ > 0 ? -1 : 1) * (Math.PI / 4),
+      })
+    }
+  }
+
+  return walls
+}
+
+/**
+ * The rail: polished wood, a chip channel cut into it, and brass drink holders.
+ *
+ * Separated out because it is the table's whole silhouette. The old rail was
+ * four brown slabs standing on a box; the reference is a moulding that wraps
+ * the pit in one unbroken sweep, and the difference between those two is most
+ * of what makes the table read as furniture.
+ */
+function TableRail() {
+  const wood = useMemo(() => getRailWoodTexture(), [])
+  const channelMap = useMemo(() => getChipChannelTexture(), [])
+
+  const geometries = useMemo(() => {
+    const inner = pitOutline(CORNER_SEGMENTS)
+    const outer = outerOutline(CORNER_SEGMENTS)
+
+    // The channel is modelled as a recessed floor between two shoulders rather
+    // than cut out of the rail top, which would need a boolean. Two rings and a
+    // band do the same job with geometry three.js can build directly.
+    const channelInner = roundedRectOutline(
+      PIT_HALF_WIDTH + CHIP_CHANNEL_OFFSET - CHIP_CHANNEL_WIDTH / 2,
+      PIT_HALF_DEPTH + CHIP_CHANNEL_OFFSET - CHIP_CHANNEL_WIDTH / 2,
+      INNER_CORNER_RADIUS + CHIP_CHANNEL_OFFSET - CHIP_CHANNEL_WIDTH / 2,
+      CORNER_SEGMENTS,
+    )
+    const channelOuter = roundedRectOutline(
+      PIT_HALF_WIDTH + CHIP_CHANNEL_OFFSET + CHIP_CHANNEL_WIDTH / 2,
+      PIT_HALF_DEPTH + CHIP_CHANNEL_OFFSET + CHIP_CHANNEL_WIDTH / 2,
+      INNER_CORNER_RADIUS + CHIP_CHANNEL_OFFSET + CHIP_CHANNEL_WIDTH / 2,
+      CORNER_SEGMENTS,
+    )
+
+    return {
+      innerShoulder: buildRingGeometry(inner, channelInner, RAIL_TOP_Y, WOOD_TILES_PER_METRE),
+      outerShoulder: buildRingGeometry(channelOuter, outer, RAIL_TOP_Y, WOOD_TILES_PER_METRE),
+      channelFloor: buildRingGeometry(
+        channelInner,
+        channelOuter,
+        RAIL_TOP_Y - CHIP_CHANNEL_DEPTH,
+        CHANNEL_SLOTS_PER_METRE,
+      ),
+      channelWalls: [
+        buildBandGeometry(channelInner, RAIL_TOP_Y - CHIP_CHANNEL_DEPTH, RAIL_TOP_Y, {
+          inward: false,
+          tilesPerMetre: CHANNEL_SLOTS_PER_METRE,
+        }),
+        buildBandGeometry(channelOuter, RAIL_TOP_Y - CHIP_CHANNEL_DEPTH, RAIL_TOP_Y, {
+          inward: true,
+          tilesPerMetre: CHANNEL_SLOTS_PER_METRE,
+        }),
+      ],
+      // The outer face of the moulding, down to where the apron takes over.
+      outerFace: buildBandGeometry(outer, TABLE_TOP_Y - 0.02, RAIL_TOP_Y, {
+        inward: false,
+        tilesPerMetre: WOOD_TILES_PER_METRE,
+      }),
+      // The inner face, above the bumper, closing the gap to the rail top.
+      innerFace: buildBandGeometry(inner, TABLE_TOP_Y + PIT_WALL_HEIGHT, RAIL_TOP_Y, {
+        inward: true,
+        tilesPerMetre: WOOD_TILES_PER_METRE,
+      }),
+    }
+  }, [])
+
+  return (
+    <group>
+      {[geometries.innerShoulder, geometries.outerShoulder, geometries.outerFace, geometries.innerFace].map(
+        (geometry, index) => (
+          <mesh key={index} geometry={geometry} castShadow receiveShadow>
+            {/*
+              Lacquered, not raw: the reference's rail is the one surface in the
+              room that mirrors the neon, and a matte rail loses it. Not a
+              mirror either — at roughness 0.22 the pendant burned a hard white
+              blob into the near corner, which bloom then turned into a lamp.
+            */}
+            <meshStandardMaterial map={wood} roughness={0.34} metalness={0.12} />
+          </mesh>
+        ),
+      )}
+
+      <mesh geometry={geometries.channelFloor} receiveShadow>
+        <meshStandardMaterial map={channelMap} roughness={0.6} metalness={0.05} />
+      </mesh>
+      {geometries.channelWalls.map((geometry, index) => (
+        <mesh key={index} geometry={geometry}>
+          <meshStandardMaterial map={channelMap} roughness={0.6} metalness={0.05} />
+        </mesh>
+      ))}
+
+      {DRINK_HOLDERS.map((holder) => (
+        <group key={`${holder.x},${holder.z}`} position={[holder.x, RAIL_TOP_Y, holder.z]}>
+          {/* Brass collar, sunk flush with the rail top. */}
+          <mesh position={[0, -0.004, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+            <torusGeometry args={[DRINK_HOLDER_RADIUS, 0.012, 8, 24]} />
+            <meshStandardMaterial color="#c9992f" roughness={0.24} metalness={0.9} />
+          </mesh>
+          {/* The well inside it, dark enough to read as a hole. */}
+          <mesh position={[0, -0.035, 0]}>
+            <cylinderGeometry args={[DRINK_HOLDER_RADIUS, DRINK_HOLDER_RADIUS * 0.9, 0.06, 20]} />
+            <meshStandardMaterial color="#120a06" roughness={0.85} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  )
 }
 
 /** The craps table: felt, rails, chips on the bets, and the dice in the pit. */
@@ -38,46 +247,113 @@ export function CrapsTable() {
   const game = useCrapsStore((state) => state.game)
   const rollId = useCrapsStore((state) => state.rollId)
 
-  const felt = useMemo(() => getCrapsFeltTexture(), [])
-
-  /** Half-extents and centres of the four rails, as fixed physics walls. */
-  const rails = useMemo(() => {
-    const halfWidth = TABLE_WIDTH / 2 + RAIL_THICKNESS / 2
-    const halfDepth = TABLE_DEPTH / 2 + RAIL_THICKNESS / 2
-
-    return [
-      { position: [0, TABLE_TOP_Y + RAIL_HEIGHT / 2, -halfDepth], size: [TABLE_WIDTH + RAIL_THICKNESS * 2, RAIL_HEIGHT, RAIL_THICKNESS] },
-      { position: [0, TABLE_TOP_Y + RAIL_HEIGHT / 2, halfDepth], size: [TABLE_WIDTH + RAIL_THICKNESS * 2, RAIL_HEIGHT, RAIL_THICKNESS] },
-      { position: [-halfWidth, TABLE_TOP_Y + RAIL_HEIGHT / 2, 0], size: [RAIL_THICKNESS, RAIL_HEIGHT, TABLE_DEPTH] },
-      { position: [halfWidth, TABLE_TOP_Y + RAIL_HEIGHT / 2, 0], size: [RAIL_THICKNESS, RAIL_HEIGHT, TABLE_DEPTH] },
-    ] as const
+  const felt = useMemo(() => {
+    const texture = getCrapsFeltTexture()
+    // `ExtrudeGeometry` writes raw shape coordinates as cap UVs, so the repeat
+    // and offset rescale them into 0..1 rather than rewriting the attribute —
+    // the same trick the blackjack slab uses.
+    texture.repeat.set(1 / (PIT_HALF_WIDTH * 2), 1 / (PIT_HALF_DEPTH * 2))
+    texture.offset.set(0.5, 0.5)
+    return texture
   }, [])
+
+  const bumper = useMemo(() => getPitBumperTexture(), [])
+  const wood = useMemo(() => getRailWoodTexture(), [])
+
+  const feltGeometry = useMemo(() => {
+    const shape = new Shape()
+    pitOutline(CORNER_SEGMENTS).forEach((point, index) => {
+      // The shape is laid in the x/y plane and rotated flat, so the outline's z
+      // becomes y here. Negated, so +z stays the shooter's edge after the
+      // rotation rather than mirroring the printed layout.
+      if (index === 0) shape.moveTo(point.x, -point.z)
+      else shape.lineTo(point.x, -point.z)
+    })
+    shape.closePath()
+    return new ExtrudeGeometry(shape, { depth: 0.1, bevelEnabled: false })
+  }, [])
+
+  const bumperGeometry = useMemo(
+    () =>
+      buildBandGeometry(pitOutline(CORNER_SEGMENTS), TABLE_TOP_Y, TABLE_TOP_Y + PIT_WALL_HEIGHT, {
+        inward: true,
+        tilesPerMetre: BUMPER_TILES_PER_METRE,
+      }),
+    [],
+  )
+
+  const apronGeometry = useMemo(
+    () =>
+      buildBandGeometry(outerOutline(CORNER_SEGMENTS), APRON_BOTTOM_Y, TABLE_TOP_Y - 0.02, {
+        inward: false,
+        tilesPerMetre: APRON_TILES_PER_METRE,
+      }),
+    [],
+  )
+
+  const baseMouldingGeometry = useMemo(
+    () =>
+      buildBandGeometry(outerOutline(CORNER_SEGMENTS), BASE_MOULDING_BOTTOM_Y, APRON_BOTTOM_Y, {
+        inward: false,
+        tilesPerMetre: WOOD_TILES_PER_METRE,
+      }),
+    [],
+  )
+
+  const walls = useMemo(() => buildWalls(PIT_WALL_HEIGHT + 0.16), [])
 
   return (
     <group>
-      {/* Felt surface. */}
-      <mesh position={[0, TABLE_TOP_Y - 0.06, 0]} receiveShadow castShadow>
-        <boxGeometry args={[TABLE_WIDTH, 0.12, TABLE_DEPTH]} />
-        <meshStandardMaterial attach="material-0" color="#0d3a2a" roughness={0.9} />
-        <meshStandardMaterial attach="material-1" color="#0d3a2a" roughness={0.9} />
-        <meshStandardMaterial attach="material-2" map={felt} roughness={0.95} />
-        <meshStandardMaterial attach="material-3" color="#0a2a1e" roughness={0.9} />
-        <meshStandardMaterial attach="material-4" color="#0d3a2a" roughness={0.9} />
-        <meshStandardMaterial attach="material-5" color="#0d3a2a" roughness={0.9} />
+      {/* The felt bed, filling the pit floor. */}
+      <mesh
+        geometry={feltGeometry}
+        position={[0, TABLE_TOP_Y - 0.1, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        receiveShadow
+      >
+        <meshStandardMaterial attach="material-0" map={felt} roughness={0.96} />
+        <meshStandardMaterial attach="material-1" color="#0a2a1e" roughness={0.9} />
       </mesh>
 
-      {/* Padded rails. A craps table is a pit — the walls are what the dice
-          bounce off, so they are physics bodies rather than decoration. */}
-      {rails.map((rail, index) => (
-        <mesh key={index} position={[...rail.position]} castShadow receiveShadow>
-          <boxGeometry args={[...rail.size]} />
-          <meshStandardMaterial color="#5a2a20" roughness={0.5} metalness={0.05} />
-        </mesh>
-      ))}
+      {/* Pyramid-rubber bumper: what the dice actually bounce off, and the one
+          surface that says craps from across the room. */}
+      <mesh geometry={bumperGeometry} receiveShadow>
+        <meshStandardMaterial map={bumper} roughness={0.78} metalness={0.02} side={DoubleSide} />
+      </mesh>
 
-      {/* Pedestal. */}
-      <mesh position={[0, 0.44, 0]} castShadow>
-        <boxGeometry args={[TABLE_WIDTH * 0.7, 0.88, TABLE_DEPTH * 0.6]} />
+      <TableRail />
+
+      {/* Apron: the table's body, below the rail and above the plinth. */}
+      <mesh geometry={apronGeometry} castShadow receiveShadow>
+        {/* Darker than the rail: the moulding is the polished piece, and an
+            apron lit to match it flattens the table into one slab. */}
+        <meshStandardMaterial map={wood} color="#4a3225" roughness={0.66} metalness={0.04} />
+      </mesh>
+
+      {/* Base moulding: the same lacquered wood as the rail, so the table has a
+          bottom edge that reads from across the floor rather than dissolving
+          into its own shadow. */}
+      <mesh geometry={baseMouldingGeometry} castShadow receiveShadow>
+        <meshStandardMaterial map={wood} roughness={0.36} metalness={0.1} />
+      </mesh>
+
+      {/* Underside, so the body does not read as a hollow shell from a low
+          camera. */}
+      <mesh position={[0, BASE_MOULDING_BOTTOM_Y, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[OUTER_HALF_WIDTH * 2, OUTER_HALF_DEPTH * 2]} />
+        <meshStandardMaterial color="#100a12" roughness={0.95} />
+      </mesh>
+
+      {/* Plinth, inset so the apron overhangs it and the table appears to
+          stand rather than sit in a block. */}
+      <mesh position={[0, PLINTH_HEIGHT / 2, 0]} castShadow receiveShadow>
+        <boxGeometry
+          args={[
+            (OUTER_HALF_WIDTH - PLINTH_INSET) * 2,
+            PLINTH_HEIGHT,
+            (OUTER_HALF_DEPTH - PLINTH_INSET) * 2,
+          ]}
+        />
         <meshStandardMaterial color="#150c18" roughness={0.9} />
       </mesh>
 
@@ -85,14 +361,17 @@ export function CrapsTable() {
           face down while the table is coming out. */}
       {(() => {
         const onPoint = game.point !== null
-        const centre = onPoint
-          ? rectCenter(POINT_BOX_RECTS[game.point!])
-          : { u: 0.035, v: 0.16 }
-        const [x, , z] = feltToWorld(centre.u, centre.v)
+        const [x, z] = onPoint
+          ? (() => {
+              const centre = rectCenter(POINT_BOX_RECTS[game.point!])
+              const world = feltToWorld(centre.u, centre.v)
+              return [world[0], world[2]] as const
+            })()
+          : PUCK_OFF_POSITION
 
         return (
           <mesh position={[x, SURFACE_Y + 0.02, z]} castShadow>
-            <cylinderGeometry args={[0.1, 0.1, 0.035, 20]} />
+            <cylinderGeometry args={[PUCK_RADIUS, PUCK_RADIUS, 0.035, 20]} />
             <meshStandardMaterial
               color={onPoint ? '#f2f0ea' : '#1a1118'}
               roughness={0.6}
@@ -113,7 +392,7 @@ export function CrapsTable() {
       })}
 
       {/*
-        Physics is scoped to this scene alone. The strip's character and the
+        Physics is scoped to this table alone. The strip's character and the
         blackjack table are transform-driven and never touch rapier, which is
         the boundary SPEC drew on day one and it has held.
       */}
@@ -135,14 +414,15 @@ export function CrapsTable() {
           {/* Deep rather than thin: the surface is what matters, but the
               depth is cheap insurance against a fast die punching through. */}
           <CuboidCollider
-            args={[TABLE_WIDTH / 2, 0.4, TABLE_DEPTH / 2]}
+            args={[OUTER_HALF_WIDTH, 0.4, OUTER_HALF_DEPTH]}
             position={[0, TABLE_TOP_Y - 0.4, 0]}
           />
-          {rails.map((rail, index) => (
+          {walls.map((wall, index) => (
             <CuboidCollider
               key={index}
-              args={[rail.size[0] / 2, rail.size[1], rail.size[2] / 2]}
-              position={[...rail.position]}
+              args={[...wall.halfExtents]}
+              position={[...wall.position]}
+              rotation={[0, wall.rotationY, 0]}
             />
           ))}
         </RigidBody>

@@ -57,8 +57,14 @@ const STOOLS: readonly { x: number; z: number }[] = [
 const LOCAL_TARGETS: Record<TableId, readonly [number, number, number]> = {
   // Roughly the middle of the felt.
   [TableId.Blackjack]: [0.15, 1.05, 0.45],
-  // The craps table is smaller and centred, and its printed layout is the game.
-  [TableId.Craps]: [0, 1.05, 0],
+  /*
+   * The craps table is smaller and centred, and its printed layout is the game.
+   * Aimed a little past the middle toward the boxman, because the control bar
+   * covers the lower third of the screen and the pass line — the biggest, most
+   * bet-on marking on the felt, and the one the layout is built around — sits
+   * on the near edge. Centred on the felt it was half behind the HUD.
+   */
+  [TableId.Craps]: [0, 1.05, -0.22],
 }
 
 /*
@@ -71,8 +77,8 @@ const LOCAL_TARGETS: Record<TableId, readonly [number, number, number]> = {
 const DEFAULT_YAW = -0.2925
 const DEFAULT_PITCH = 0.52
 const DEFAULT_DISTANCE = 5.8
-const CRAPS_DISTANCE = 4.5
-const CRAPS_PITCH = 0.68
+const CRAPS_DISTANCE = 5.1
+const CRAPS_PITCH = 0.72
 
 /*
  * Limits. The near limit is set by the seated player, not by taste: closer than
