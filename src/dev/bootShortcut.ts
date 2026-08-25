@@ -134,6 +134,10 @@ function applyTimeShortcut(): void {
  * - `?boot=table` opens the Golden Ace with a hand already dealt.
  * - `?boot=settled` plays that hand out, so the hole card is turned over.
  * - `?boot=split` deals a pair, which a random shoe will not reliably do.
+ * - `?boot=resplit` deals a pair *and* stacks a third of the same rank behind
+ *   it, so the two-split path to three hands can be walked on demand.
+ * - `?boot=push` deals two twenties, so the panel's wording for a stake coming
+ *   back untouched can be read rather than waited for.
  * - `?boot=draw` forces the dealer to draw twice, which is the case the staged
  *   reveal exists for and which a random shoe rarely produces on demand.
  * - `?boot=craps` sits at the craps table with a pass-line bet already down.
@@ -175,6 +179,8 @@ export function applyBootShortcut(): void {
     'table',
     'settled',
     'split',
+    'resplit',
+    'push',
     'draw',
     'craps',
     'broke',
@@ -311,6 +317,54 @@ export function applyBootShortcut(): void {
       { rank: Rank.Eight, suit: Suit.Hearts },
       { rank: Rank.Six, suit: Suit.Diamonds },
       ...createShoe(7),
+    ]
+
+    useGameStore.getState().adjustBankroll(-DEMO_BET)
+    useBlackjackStore.setState({ game: placeBet(createGameFromShoe(stacked), DEMO_BET) })
+    return
+  }
+
+  if (boot === 'resplit') {
+    /*
+     * Eights against a dealer sixteen, and a third eight waiting for the first
+     * split hand — the hand a player actually reported being unable to break
+     * up. Three betting spots is the widest the felt goes, so this is the only
+     * link that shows `handAnchorX` at full stretch.
+     *
+     * Split once to reach it, split again to reach three hands.
+     */
+    const stacked = [
+      { rank: Rank.Eight, suit: Suit.Spades },
+      { rank: Rank.Ten, suit: Suit.Clubs },
+      { rank: Rank.Eight, suit: Suit.Hearts },
+      { rank: Rank.Six, suit: Suit.Diamonds },
+      { rank: Rank.Eight, suit: Suit.Clubs }, // Onto hand one: eights again.
+      { rank: Rank.Three, suit: Suit.Spades }, // Onto hand two.
+      { rank: Rank.Two, suit: Suit.Hearts }, // The resplit's two cards.
+      { rank: Rank.Ten, suit: Suit.Hearts },
+      ...createShoe(13),
+    ]
+
+    useGameStore.getState().adjustBankroll(-DEMO_BET)
+    useBlackjackStore.setState({ game: placeBet(createGameFromShoe(stacked), DEMO_BET) })
+    return
+  }
+
+  if (boot === 'push') {
+    /*
+     * Two twenties, which settles as a push the moment it is dealt.
+     *
+     * Worth a link of its own because the payout on a push is the stake coming
+     * straight back, and the panel used to print that as "+$50" — a refund
+     * dressed as a win. A random shoe deals this rarely enough that the wording
+     * went unread for a long time.
+     */
+    const stacked = [
+      { rank: Rank.King, suit: Suit.Spades },
+      { rank: Rank.Queen, suit: Suit.Clubs },
+      { rank: Rank.Ten, suit: Suit.Hearts },
+      { rank: Rank.Jack, suit: Suit.Diamonds },
+      ...createShoe(17),
     ]
 
     useGameStore.getState().adjustBankroll(-DEMO_BET)

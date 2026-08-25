@@ -114,14 +114,23 @@ interface GameStore {
    */
   adjustBankroll: (amount: number) => void
   /**
-   * Credits a win, paying down any marker first.
+   * Credits a table settlement, paying down any marker out of the winnings.
    *
    * Deliberately separate from `adjustBankroll` rather than a branch inside it.
    * The clinic's payout is also a positive amount, and skimming that would mean
    * a player in debt earns nothing from donating — a trap rather than a
    * mechanic, and the one thing that must always work when you are broke.
+   *
+   * @param amount Chips returned, stake included — what the engines pay.
+   * @param stakeReturned How much of `amount` is the player's own stake coming
+   *   back. The marker takes its share of the *winnings*, never of this: it is
+   *   the player's money, it was already debited when the bet went out, and
+   *   skimming it made a push cost half the stake and a win pay nothing at all.
+   * @returns What actually reached the bankroll, which is less than `amount`
+   *   while a marker is outstanding. Callers showing chips travelling to the
+   *   stash need this rather than the gross, or they show money twice.
    */
-  creditWinnings: (amount: number) => void
+  creditWinnings: (amount: number, stakeReturned: number) => number
   /** Borrows `MARKER_AMOUNT` from the house. Refused if one is outstanding. */
   takeMarker: () => void
   /** Sells a pint. Refused if one has already been given today. */
@@ -309,11 +318,17 @@ export const useGameStore = create<GameStore>()(
 
       adjustBankroll: (amount) => set({ bankroll: Math.max(0, get().bankroll + amount) }),
 
-      creditWinnings: (amount) => {
+      creditWinnings: (amount, stakeReturned) => {
         const { bankroll, debt } = get()
-        const { toBankroll, toDebt } = splitWinnings(amount, debt)
 
-        set({ bankroll: Math.max(0, bankroll + toBankroll), debt: debt - toDebt })
+        // Only what the player is up on the round is the house's to split.
+        const stake = Math.min(Math.max(0, stakeReturned), Math.max(0, amount))
+        const { toBankroll, toDebt } = splitWinnings(amount - stake, debt)
+
+        const credited = stake + toBankroll
+        set({ bankroll: Math.max(0, bankroll + credited), debt: debt - toDebt })
+
+        return credited
       },
 
       takeMarker: () => {

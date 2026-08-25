@@ -7,6 +7,7 @@ import {
   packIntoColumns,
   stashBreakdown,
 } from '../scenes/chipLayout'
+import { MAX_HANDS } from '../games/blackjack/engine'
 import {
   CHIP_ROW_Z,
   DEALER_RACK,
@@ -16,7 +17,6 @@ import {
   isOnFelt,
   PAYOUT_NUDGE_X,
   PAYOUT_NUDGE_Z,
-  SPLIT_OFFSET,
   SHOE_MOUTH,
   SHOE_POSITION,
   STASH_COLUMN_ANCHORS,
@@ -88,24 +88,43 @@ describe('table anchors', () => {
     }
   })
 
-  it('keeps both split hands and their payouts on the felt', () => {
-    for (const handIndex of [0, 1]) {
-      const x = handAnchorX(handIndex, 2)
-      expect(isOnFelt(x, CHIP_ROW_Z, 0.16)).toBe(true)
-      // The payout sits on top of the wager rather than beside it — setting it
-      // fully alongside pushed the outer hand's winnings off the table edge.
-      expect(isOnFelt(x + PAYOUT_NUDGE_X, CHIP_ROW_Z + PAYOUT_NUDGE_Z, 0.16)).toBe(true)
+  // Every hand a resplit can produce, not just the two a single split makes.
+  // Raising MAX_HANDS without widening this is how a third betting spot ends
+  // up hanging over the table edge.
+  it('keeps every hand and its payout on the felt, up to MAX_HANDS', () => {
+    for (let handCount = 1; handCount <= MAX_HANDS; handCount++) {
+      for (let handIndex = 0; handIndex < handCount; handIndex++) {
+        const x = handAnchorX(handIndex, handCount)
+        expect(isOnFelt(x, CHIP_ROW_Z, 0.16)).toBe(true)
+        // The payout sits on top of the wager rather than beside it — setting it
+        // fully alongside pushed the outer hand's winnings off the table edge.
+        expect(isOnFelt(x + PAYOUT_NUDGE_X, CHIP_ROW_Z + PAYOUT_NUDGE_Z, 0.16)).toBe(true)
+      }
     }
     expect(handAnchorX(0, 1)).toBe(0)
   })
 
   // The stash lives in a narrow band between the centre spot and the rail. If
-  // it drifted outward it would land under the left split hand's chips.
-  it('keeps the stash clear of both split hands', () => {
+  // it drifted outward, or a hand drifted inward, they would share a patch of
+  // felt — which is the whole reason a fourth hand is not offered.
+  it('keeps the stash clear of every split hand', () => {
     for (const [x, z] of STASH_COLUMN_ANCHORS) {
-      for (const handIndex of [0, 1]) {
-        const handX = handAnchorX(handIndex, 2)
-        expect(Math.hypot(x - handX, z - CHIP_ROW_Z)).toBeGreaterThan(0.34)
+      for (let handCount = 2; handCount <= MAX_HANDS; handCount++) {
+        for (let handIndex = 0; handIndex < handCount; handIndex++) {
+          const handX = handAnchorX(handIndex, handCount)
+          expect(Math.hypot(x - handX, z - CHIP_ROW_Z)).toBeGreaterThan(0.34)
+        }
+      }
+    }
+  })
+
+  // Two stacks of chips on the same spot read as one stack of the wrong size,
+  // and a player cannot tell which hand they are looking at.
+  it('separates neighbouring hands by more than a chip stack is wide', () => {
+    for (let handCount = 2; handCount <= MAX_HANDS; handCount++) {
+      for (let handIndex = 1; handIndex < handCount; handIndex++) {
+        const gap = handAnchorX(handIndex, handCount) - handAnchorX(handIndex - 1, handCount)
+        expect(gap).toBeGreaterThan(0.6)
       }
     }
   })
@@ -123,9 +142,6 @@ describe('table anchors', () => {
     }
   })
 
-  it('separates split hands by more than a chip stack is wide', () => {
-    expect(SPLIT_OFFSET * 2).toBeGreaterThan(0.6)
-  })
 
   it('rejects points off the felt', () => {
     expect(isOnFelt(0, 3.5)).toBe(false)

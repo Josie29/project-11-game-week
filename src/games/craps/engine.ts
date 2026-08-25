@@ -242,6 +242,27 @@ export function totalCrapsPayout(state: CrapsState): number {
   return Object.values(state.lastPayouts).reduce((sum, amount) => sum + amount, 0)
 }
 
+/**
+ * How much of the last roll's payout was the player's own stake coming back.
+ *
+ * Payouts are chips returned *including* the stake, so the winnings are the
+ * remainder. A bet that lost returned nothing and gets no stake back, which is
+ * why this reads the payout rather than simply summing what left the felt.
+ *
+ * Needed because the marker takes a share of winnings only. Splitting the gross
+ * would charge the player for a bet merely coming home — a barred twelve on
+ * don't pass is a push, and it must cost nothing.
+ *
+ * @param before The state the roll was made from, which still holds the stakes.
+ * @param after The state `rollCraps` returned.
+ */
+export function stakeReturnedByRoll(before: CrapsState, after: CrapsState): number {
+  return Object.entries(after.lastPayouts).reduce((sum, [bet, payout]) => {
+    if (payout <= 0) return sum
+    return sum + Math.min(payout, before.bets[bet as CrapsBet])
+  }, 0)
+}
+
 /** True odds for a point, as a ratio, for printing "pays 6 to 5". */
 export function oddsRatio(point: PointNumber): Odds {
   return TRUE_ODDS[point]

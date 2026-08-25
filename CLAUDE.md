@@ -124,6 +124,8 @@ Dev-only deep links, stripped from production builds:
 | `?boot=table` | a hand dealt |
 | `?boot=settled` | a hand played out |
 | `?boot=split` | a stacked pair, ready to split |
+| `?boot=resplit` | a pair, with a third of the same rank behind it |
+| `?boot=push` | two twenties, so a push's wording can be read |
 | `?boot=draw` | a dealer who must draw twice |
 | `?boot=craps` | seated at craps with a pass line down |
 | `?boot=floor` | standing on the casino floor, between the tables |

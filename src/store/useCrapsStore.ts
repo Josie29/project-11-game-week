@@ -4,6 +4,7 @@ import {
   createCrapsGame,
   placeCrapsBet,
   rollCraps,
+  stakeReturnedByRoll,
   totalCrapsPayout,
 } from '../games/craps/engine'
 import type { CrapsState } from '../games/craps/types'
@@ -88,7 +89,10 @@ export const useCrapsStore = create<CrapsStore>()((set, get) => {
             at: DICE_SETTLE_MS,
             run: () => {
               const payout = totalCrapsPayout(next)
-              if (payout > 0) useGameStore.getState().creditWinnings(payout)
+              // Stake back whole, marker's share out of the winnings only.
+              if (payout > 0) {
+                useGameStore.getState().creditWinnings(payout, stakeReturnedByRoll(game, next))
+              }
               set({ isRolling: false })
             },
           },

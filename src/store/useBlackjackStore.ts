@@ -213,11 +213,20 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
 
     if (next.totalPayout <= 0) return
 
-    useGameStore.getState().creditWinnings(next.totalPayout)
+    /*
+     * The stake goes back whole and only the winnings meet the marker. Passing
+     * the gross here meant a push handed the house half the stake, and a win
+     * handed it the entire profit — the round-trip of a bet is not a win.
+     * `totalStaked` covers a split for free: a hand that lost returned no
+     * stake, and the credit is clamped to what was actually paid out.
+     */
+    const credited = useGameStore
+      .getState()
+      .creditWinnings(next.totalPayout, totalStaked(next))
 
     // Held back from the stash until the chips are raked in. The chips
     // themselves are placed by the dealer at the end of the reveal, not here.
-    set({ uncollectedPayout: next.totalPayout })
+    set({ uncollectedPayout: credited })
   }
 
   return {
