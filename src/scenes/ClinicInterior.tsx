@@ -28,6 +28,7 @@ import {
 } from './clinicLayout'
 import { CasinoCharacter } from './components/CasinoCharacter'
 import { ClinicStaff } from './components/ClinicStaff'
+import { ExitDoor } from './components/ExitDoor'
 import { WalkingPlayer, type ProximityTarget } from './components/WalkingPlayer'
 
 /*
@@ -287,17 +288,8 @@ export function ClinicInterior() {
         </mesh>
       </group>
 
-      {/* The way out. */}
-      <group position={[EXIT_DOOR[0], 0, EXIT_DOOR[2]]}>
-        <mesh position={[0, 1.2, -0.04]}>
-          <planeGeometry args={[1.6, 2.4]} />
-          <meshBasicMaterial color="#1c2732" toneMapped={false} />
-        </mesh>
-        <mesh position={[0, 2.5, -0.05]}>
-          <planeGeometry args={[1.9, 0.14]} />
-          <meshBasicMaterial color="#63e08a" toneMapped={false} />
-        </mesh>
-      </group>
+      {/* The way out, back onto the strip. */}
+      <ExitDoor position={EXIT_DOOR} accent="#8fa3b4" width={1.8} height={2.5} />
 
       {atChair === null ? (
         <WalkingPlayer

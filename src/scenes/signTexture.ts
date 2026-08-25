@@ -26,6 +26,7 @@ const marqueeCache = new Map<string, Texture>()
 const bladeCache = new Map<string, Texture>()
 const shopSignCache = new Map<string, Texture>()
 const lightboxCache = new Map<string, Texture>()
+let exitSign: Texture | null = null
 
 function createContext(width: number, height: number): CanvasRenderingContext2D {
   const canvas = document.createElement('canvas')
@@ -258,6 +259,39 @@ export function getLightboxTexture(name: string, accent: string): Texture {
   const texture = finish(ctx)
   lightboxCache.set(key, texture)
   return texture
+}
+
+/**
+ * The green box over a way out.
+ *
+ * The one sign in the game that is not selling anything, and the only one whose
+ * job is purely to be findable. Both interiors previously marked their exit
+ * with a dark rectangle and a thin coloured line, which in a lit room reads as
+ * a smudge on the wall.
+ */
+export function getExitSignTexture(): Texture {
+  if (exitSign) return exitSign
+
+  const width = 512
+  const height = 256
+  const ctx = createContext(width, height)
+
+  ctx.fillStyle = '#1c7a43'
+  ctx.fillRect(0, 0, width, height)
+
+  // A paler inner field, so the box has an edge rather than floating.
+  ctx.fillStyle = '#259954'
+  ctx.fillRect(14, 14, width - 28, height - 28)
+
+  ctx.font = '700 132px Helvetica, Arial, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = '#f4fff8'
+  ctx.letterSpacing = '14px'
+  ctx.fillText('EXIT', width / 2, height / 2 + 4)
+
+  exitSign = finish(ctx)
+  return exitSign
 }
 
 /** Vertical blade sign: the tall projecting sign beside an entrance. */

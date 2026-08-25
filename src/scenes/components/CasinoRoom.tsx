@@ -1,4 +1,5 @@
 import { BackSide, DoubleSide } from 'three'
+import { ExitDoor } from './ExitDoor'
 import {
   EXIT_DOOR,
   ROOM,
@@ -26,9 +27,6 @@ const ROOM_WIDTH = ROOM.maxX - ROOM.minX
 const ROOM_DEPTH = ROOM.maxZ - ROOM.minZ
 const ROOM_CENTER_X = (ROOM.minX + ROOM.maxX) / 2
 const ROOM_CENTER_Z = (ROOM.minZ + ROOM.maxZ) / 2
-
-const DOOR_WIDTH = 2.4
-const DOOR_HEIGHT = 3
 
 /** Warm pendant over a table, matching the one the fixed camera used to see. */
 function Pendant({ position }: { position: readonly [number, number, number] }) {
@@ -136,24 +134,8 @@ export function CasinoRoom({ neonColor }: CasinoRoomProps) {
         <Pendant key={table} position={tableOrigin(table)} />
       ))}
 
-      {/* The way out, lit so it reads as an exit from across the room. */}
-      <group position={[EXIT_DOOR[0], 0, EXIT_DOOR[2]]}>
-        <mesh position={[0, DOOR_HEIGHT / 2, -0.04]}>
-          <planeGeometry args={[DOOR_WIDTH, DOOR_HEIGHT]} />
-          <meshBasicMaterial color="#2a1e3a" toneMapped={false} />
-        </mesh>
-        {[-1, 1].map((side) => (
-          <mesh key={side} position={[side * (DOOR_WIDTH / 2 + 0.08), DOOR_HEIGHT / 2, -0.06]}>
-            <planeGeometry args={[0.1, DOOR_HEIGHT + 0.2]} />
-            <meshBasicMaterial color={neonColor} toneMapped={false} />
-          </mesh>
-        ))}
-        <mesh position={[0, DOOR_HEIGHT + 0.1, -0.06]}>
-          <planeGeometry args={[DOOR_WIDTH + 0.26, 0.1]} />
-          <meshBasicMaterial color={neonColor} toneMapped={false} />
-        </mesh>
-        <pointLight position={[0, 2.2, -1.2]} color={neonColor} intensity={14} distance={9} />
-      </group>
+      {/* The way out, back onto the strip. */}
+      <ExitDoor position={EXIT_DOOR} accent={neonColor} />
     </>
   )
 }

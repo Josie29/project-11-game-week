@@ -43,6 +43,11 @@ const SCENES = [
   { name: 'clinicfront', path: '/?boot=clinicfront&look=-90&time=21:00&freeze', settleMs: 2600 },
   { name: 'clinic', path: '/?boot=clinic&time=21:00&freeze', settleMs: 2600 },
   { name: 'drawing', path: '/?boot=drawing&time=21:00&freeze', settleMs: 2600 },
+  // Both exits looked into. They spent their whole life invisible — unrotated
+  // planes facing away from the only person who needed to see them — so the
+  // way out of each room is worth its own capture.
+  { name: 'clinic-exit', path: '/?boot=clinic&look=180&time=21:00&freeze', settleMs: 2600 },
+  { name: 'casino-exit', path: '/?boot=floor&look=180&time=21:00&freeze', settleMs: 2600 },
   // The two halves of being broke: a marker on offer, and a marker already
   // taken. Neither is reachable without actually losing everything.
   { name: 'broke', path: '/?boot=broke&time=21:00&freeze', settleMs: 1800 },

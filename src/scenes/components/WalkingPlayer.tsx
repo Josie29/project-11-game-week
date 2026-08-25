@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber'
 import { useRef } from 'react'
 import { Group, MathUtils, Vector3 } from 'three'
 import { useAppearanceStore } from '../../store/useAppearanceStore'
+import { useGameStore } from '../../store/useGameStore'
 import { Control } from '../../world/controls'
 import { useOrbitInput } from '../useOrbitInput'
 import { CasinoCharacter } from './CasinoCharacter'
@@ -212,10 +213,21 @@ export function WalkingPlayer({
   const appearance = useAppearanceStore((state) => state.appearance)
   const equipped = useAppearanceStore((state) => state.equipped)
 
+  /*
+   * Read once, at mount: this seeds the orbit rather than driving it.
+   *
+   * `?look=` writes it, and it is what lets a capture swing round to face a
+   * frontage instead of seeing it at the glancing angle the play camera gives.
+   * It was dropped when this rig was pulled out of `Player`, which left the
+   * modifier set but never read — captures still ran and just quietly framed
+   * the wrong thing.
+   */
+  const initialYaw = useGameStore.getState().initialCameraYaw
+
   // Drag to look, scroll to zoom, R to reset — the same control as the table,
   // sharing its implementation.
   const { orbit, lastInputAt } = useOrbitInput(
-    { yaw: 0, pitch, distance },
+    { yaw: initialYaw, pitch, distance },
     {
       minPitch: MIN_PITCH,
       maxPitch: MAX_PITCH,
