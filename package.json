@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "shot": "node scripts/shot.mjs",
     "shots": "node scripts/shots.mjs",
-    "locate": "node scripts/locate.mjs"
+    "locate": "node scripts/locate.mjs",
+    "walkthrough": "node scripts/walkthrough.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.8",

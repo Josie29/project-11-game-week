@@ -75,6 +75,28 @@ integer arithmetic. Never as decimals.
 
 ## Visual work
 
+## Delivering a feature
+
+A feature is not delivered until it has been driven and deployed. Both, every
+time, before saying it is done:
+
+1. **Drive it.** `npm run walkthrough [baseUrl]` plays the app the way a player
+   does — clicks the buttons, holds the movement keys, asserts on what is on
+   screen and captures each beat. `npm run shots` covers the individual scenes
+   via `?boot=`, but those links are stripped from production builds, so the
+   walkthrough is the only check that runs against a deployed URL. It is also
+   the only one that tests the path *between* scenes.
+2. **Deploy it.** `npx vercel --prod --yes`, then hand over the URL —
+   https://project-11-game-week.vercel.app. A description of a change is not a
+   change anyone can look at.
+3. **Say what was not verified.** Plainly, in the same breath as what was.
+
+Both steps have already earned it. The walkthrough found that one long frame
+teleported the player down the street, because movement integrated an unclamped
+`delta` — invisible in every screenshot and in every test. It also found that
+the "Walk in to shop" prompt never paints for an open venue, because `Player`
+enters in the same frame it sets `nearbyVenue`.
+
 **Run `npm run shot <url> <out.png>` and look at the image before claiming
 visual work is done.** An entire session's worth of table work shipped with
 four visible bugs in it because it was written without ever being viewed.

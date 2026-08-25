@@ -58,6 +58,18 @@ const ORBIT_SPEED = 1.9
  */
 const FOLLOW_DEAD_ZONE = MathUtils.degToRad(35)
 
+/**
+ * Longest frame the walk integrates over, in seconds.
+ *
+ * Movement is `speed * delta`, so a single long frame moves the player by
+ * however long it was — a stalled tab, a garbage-collection pause or a slow
+ * machine teleports them down the street rather than slowing them down. A
+ * scripted walkthrough hit this first: two seconds of held W put the player
+ * past the end of the strip. Clamping trades a little lost ground on a bad
+ * frame for never losing control of where you are.
+ */
+const MAX_STEP_SECONDS = 0.1
+
 /** Wraps an angle to [-PI, PI] so turns always take the short way round. */
 function wrapAngle(angle: number): number {
   return Math.atan2(Math.sin(angle), Math.cos(angle))
@@ -136,7 +148,7 @@ export function Player() {
     speedRef.current = isMoving ? WALK_SPEED : 0
 
     if (isMoving) {
-      direction.normalize().multiplyScalar(WALK_SPEED * delta)
+      direction.normalize().multiplyScalar(WALK_SPEED * Math.min(delta, MAX_STEP_SECONDS))
       group.position.x += direction.x
       group.position.z += direction.z
 
