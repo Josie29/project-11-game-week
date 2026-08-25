@@ -1,3 +1,4 @@
+import { AccountBadge } from './AccountBadge'
 import { STANDING_TABLES, TABLE_LABELS } from '../scenes/casinoFloorLayout'
 import { Location, useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
@@ -34,6 +35,8 @@ export function Hud() {
         {debt > 0 && (
           <span className="hud__debt">owes ${debt.toLocaleString()}</span>
         )}
+        {/* Under the money, because that is what an account is for here. */}
+        <AccountBadge />
       </div>
 
       {/* Deliberately still shown indoors, where a real casino would have none. */}

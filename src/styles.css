@@ -438,6 +438,53 @@ kbd {
   font-size: 0.9375rem;
 }
 
+.hud__account {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.hud__account--quiet {
+  /* Holds the row while the session resolves, so the bankroll does not jump. */
+  min-height: 1.25rem;
+}
+
+.hud__avatar {
+  border-radius: 50%;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.hud__account-name {
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud__account-action {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--color-text-muted);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.hud__account-action:hover {
+  color: var(--color-neon-gold);
+}
+
+.hud__account-error {
+  color: var(--color-loss);
+}
+
 .hud__debt {
   font-family: var(--font-numeric);
   font-size: 0.8125rem;
