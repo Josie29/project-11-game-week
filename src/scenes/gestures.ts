@@ -225,9 +225,9 @@ export const GESTURES: Record<Gesture, GestureDefinition> = {
       const dab = Math.sin(t * Math.PI * 4) * 0.2 * dabWindow
 
       return {
-        shoulderPitch: (-1.05 + dab) * reach,
+        shoulderPitch: (-0.72 + dab) * reach,
         shoulderRoll: REST_POSE.shoulderRoll - 0.34 * reach,
-        elbowPitch: (-0.78 - dab) * reach,
+        elbowPitch: (-1.02 - dab) * reach,
       }
     },
   },
@@ -252,10 +252,18 @@ export const GESTURES: Record<Gesture, GestureDefinition> = {
       // Reaches in over the first third and simply holds for the rest.
       const settle = smoothstep(0, 0.34, t)
 
+      /*
+       * Angled down to the tray, not out at chest height.
+       *
+       * A dealer's reach is nearly horizontal because a felt is at waist level
+       * and an arm's length away. The donor's arm is on a tray by their hip and
+       * she is standing over it, so the same numbers had her reaching forward
+       * into empty air at her own chest — which reads as a wave.
+       */
       return {
-        shoulderPitch: -1.16 * settle,
-        shoulderRoll: REST_POSE.shoulderRoll - 0.3 * settle,
-        elbowPitch: -0.92 * settle,
+        shoulderPitch: -0.74 * settle,
+        shoulderRoll: REST_POSE.shoulderRoll - 0.26 * settle,
+        elbowPitch: -1.12 * settle,
       }
     },
   },

@@ -97,6 +97,25 @@ async function walkUntil(keys, text, { burstMs = 700, bursts = 30 } = {}) {
   throw new Error(`walked ${bursts} bursts of ${keys.join('+')} without seeing "${text}"`)
 }
 
+/**
+ * Walks a fixed number of bursts, but gives up early if `text` appears.
+ *
+ * For legs that are getting into position rather than arriving, on a street
+ * where getting into position sometimes arrives anyway. Crossing to the far kerb
+ * lands beside the casino's door about half the time and slides into it, and the
+ * other half stops dead against the kerb — so neither `walkUntil` (which would
+ * throw on the half that stops) nor a bare count (which would spend the rest of
+ * the count walking around inside) is right on its own. Unlike `walkUntil` this
+ * never throws: not arriving is one of the two expected outcomes.
+ */
+async function walkAtMost(keys, text, { burstMs = 700, bursts = 20 } = {}) {
+  for (let i = 0; i < bursts; i++) {
+    if (await isVisible(text)) return
+    await walk(keys, burstMs)
+    await page.waitForTimeout(120)
+  }
+}
+
 async function capture(name) {
   await page.waitForTimeout(SETTLE_MS)
   await page.screenshot({ path: resolve(outDir, `${name}.png`) })
@@ -145,72 +164,61 @@ try {
   await wear.click()
   await capture('5-wearing')
 
-  // 5. Out of the shop, across the strip and down to the casino.
+  // 5. Out of the shop and further down the same kerb to the clinic.
   //
-  //    Cross first, then walk down. Doing both at once traces a diagonal that
-  //    crosses the casino's row while still out in the middle of the road, five
-  //    units from its door and well outside the trigger.
-  //
-  //    Every leg below runs far more bursts than the distance needs, and the
-  //    counts are sized for a deployed build rather than a local one — the same
-  //    counts that cleared the crossing against localhost fell short against
-  //    Vercel, where the frames are slower.
-  //
-  //    Every leg below runs more bursts than the distance needs. Ground covered
-  //    per burst varies with the frame rate — the walk clamps its step at a
-  //    10fps floor, so a slow headless frame moves the player a quarter of what
-  //    a fast one does — and both the kerb and the walls clamp, which makes
-  //    overshooting free. Counts tuned on one run failed on the next.
+  //    The clinic before the casino, deliberately: they are on the same side of
+  //    the street with nothing between them, whereas walking back *up* from the
+  //    casino means passing the shop's door, and a burst covers more ground
+  //    than the door's trigger is wide.
   await page.keyboard.press('Escape')
-  await page.waitForTimeout(600)
+  //    Long enough for the strip to be drawing frames again. The first burst
+  //    after a scene change routinely covers no ground at all, and this leg has
+  //    no slack to spend on it — see below.
+  await page.waitForTimeout(1200)
 
-  for (let i = 0; i < 30; i++) await walk(['KeyA'], 700)
-  await walkUntil(['KeyW'], 'F to sit at a table', { bursts: 45 })
+  /*
+   *    Down the kerb, shrugging the shop off if it grabs us on the way past.
+   *
+   *    Every counted version of this leg failed, and it is worth saying why,
+   *    because the instinct is always to retune the count. Leaving a venue puts
+   *    the player 3.5 units into the road against a trigger 2.6 wide, so the
+   *    first step back toward the kerb is within half a unit of walking straight
+   *    back in. Stepping *down* the street first fixes that — but the step has
+   *    to be at least four units to clear the door and at most sixteen to stop
+   *    short of the clinic, and a burst covers anywhere from half a unit to five
+   *    depending on what the renderer managed. No fixed count lives in that
+   *    window; two different ones failed in opposite directions.
+   *
+   *    So it does not count. It walks in steps small enough not to step over the
+   *    clinic's trigger, and if the shop takes it, it leaves and carries on.
+   *    Walking back into the shop is not a failure to prevent, just something to
+   *    recover from — and it is recoverable, because leaving always puts the
+   *    player in the same spot and the step down the street is pure forward,
+   *    which is the one direction that reliably holds its line.
+   */
+  for (let i = 0; i < 40; i++) {
+    if (await isVisible('F to use a chair')) break
 
-  //    Inside now, and W plus A heads for the blackjack table.
-  await walkUntil(['KeyW', 'KeyA'], 'Blackjack', { bursts: 20 })
-  await capture('6-at-the-table')
+    if (await isVisible('The Gilded Hanger')) {
+      await page.keyboard.press('Escape')
+      await page.waitForTimeout(900)
+      await walk(['KeyW'], 700)
+      continue
+    }
 
-  // 6. Sit down and play a hand. F, not E — E is the camera orbit.
-  await page.keyboard.press('KeyF')
-  await page.waitForTimeout(600)
-  await expectText('Leave table', 'sitting down')
-  await capture('7-seated')
+    await walk(['KeyW', 'KeyD'], 350)
+    await page.waitForTimeout(120)
+  }
 
-  //    The stake keys are the primary control at the table, and the buttons
-  //    carry their shortcut in the label ("$10 1"), which makes an exact-name
-  //    click brittle. Press the key the HUD tells the player to press.
-  await page.keyboard.press('Digit1')
-  await page.waitForTimeout(2000)
-  await expectText('DEALER', 'dealing a hand')
-  await capture('8-hand-dealt')
+  await expectText('F to use a chair', 'walking down to the clinic')
+  await capture('6-clinic')
 
-  // 7. Out of the casino and down to the clinic, which is the answer to having
-  //    lost it all. Leave the table, cross the floor to the exit, then cross
-  //    the street and carry on down — the clinic is past the casino on the
-  //    shop's side, so nothing else is walked through on the way.
-  await page.keyboard.press('Escape')
-  await page.waitForTimeout(700)
-  await walkUntilGone(['KeyS', 'KeyD'], 'F to sit at a table', { bursts: 30 })
-
-  for (let i = 0; i < 34; i++) await walk(['KeyD'], 700)
-  await walkUntil(['KeyW'], 'F to use a chair', { bursts: 45 })
-  await capture('9-clinic')
-
-  // 8. Sell a pint. This is the answer to going broke, so it has to work from
-  //    the street and not only from a deep link.
-  //    Walking in lands beside a recliner, so the prompt is already up.
+  // 6. Sell a pint. Ten seconds of nurse, and the bankroll is the proof.
   await expectText('Donation chair', 'arriving in the clinic')
   await page.keyboard.press('KeyF')
   await page.waitForTimeout(700)
   await expectText('Donate', 'sitting in the chair')
 
-  //    The nurse walks over, swabs and draws before the money lands — ten
-  //    seconds of it — so this waits on the bankroll rather than on a delay.
-  //
-  //    The bankroll is the right thing to assert on: there is no cooldown any
-  //    more, so there is no refusal message to wait for, and "the number went
-  //    up by the fee" is the whole point of sitting through the draw.
   const bankroll = () =>
     page
       .locator('.hud__amount')
@@ -235,8 +243,58 @@ try {
     throw new Error(`donation paid ${after - before}, expected ${DONATION_FEE}`)
   }
   console.log(`     the pint paid $${after - before}`)
+  await capture('7-donated')
 
-  await capture('10-donated')
+  // 7. Out of the clinic, across the street and up to the casino.
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(700)
+  await walkUntilGone(['KeyS'], 'F to use a chair', { bursts: 30 })
+
+  /*
+   *    Cross, then ride the kerb up to the door.
+   *
+   *    The crossing is the leg that does not behave the same way twice. Movement
+   *    is camera-relative and `walk` re-pins the camera each burst, so whether
+   *    the player finishes it pinned square against the far kerb at the clinic's
+   *    row or curls the last few units up into the casino's doorway is decided
+   *    by frame timing. Both were observed on the same machine minutes apart.
+   *
+   *    Hence a leg that tolerates either, followed by one that only has work to
+   *    do in the first case. Going up rather than straight across also keeps the
+   *    player off the diagonal, which reaches the casino's row while still out
+   *    in the middle of the road, seven units short of the door.
+   */
+  await walkAtMost(['KeyA'], 'F to sit at a table', { bursts: 20 })
+  await walkUntil(['KeyS', 'KeyA'], 'F to sit at a table', { burstMs: 350, bursts: 60 })
+
+  /*
+   *    Shorter bursts for the last few feet, and only here.
+   *
+   *    A counted leg cannot use them — under about 330 ms no frame lands and the
+   *    player moves nothing, so shortening the burst only wastes the count. A
+   *    leg that walks until it sees something does not care: a burst that moves
+   *    nothing just checks again. And this approach needs the finer step. The
+   *    table blocks the diagonal, so the player slides along its front edge, and
+   *    the seat is offered across 3.6 units of that slide — which a full burst
+   *    can step over in one go, ending against the far wall with no prompt ever
+   *    having painted.
+   */
+  await walkUntil(['KeyW', 'KeyA'], 'Blackjack', { burstMs: 350, bursts: 40 })
+  await capture('8-at-the-table')
+
+  // 8. Sit down and play a hand. F, not E — E is the camera orbit.
+  await page.keyboard.press('KeyF')
+  await page.waitForTimeout(600)
+  await expectText('Leave table', 'sitting down')
+  await capture('9-seated')
+
+  //    The stake keys are the primary control at the table, and the buttons
+  //    carry their shortcut in the label ("$10 1"), which makes an exact-name
+  //    click brittle. Press the key the HUD tells the player to press.
+  await page.keyboard.press('Digit1')
+  await page.waitForTimeout(2000)
+  await expectText('DEALER', 'dealing a hand')
+  await capture('10-hand-dealt')
 
   if (failures.length > 0) {
     throw new Error(`page errors: ${failures.join(' | ')}`)
@@ -246,6 +304,21 @@ try {
 } catch (error) {
   await page.screenshot({ path: resolve(outDir, 'failure.png') })
   console.error(`\nFAILED: ${error.message}`)
+
+  /*
+   * Where the player actually was, which a screenshot of a dark room does not
+   * tell you. Every failure in this script so far has been the player being
+   * somewhere other than where the burst counts assumed, and reading it off the
+   * scene settled three of them in one run each after a day of guessing.
+   *
+   * Dev builds only — `devRender` is stripped from production, so against a
+   * deployed URL this quietly prints nothing and the screenshot is all there is.
+   */
+  const at = await page
+    .evaluate(() => window.devRender?.locate?.('player')?.[0]?.position ?? null)
+    .catch(() => null)
+  if (at) console.error(`Player was at [${at.map((n) => n.toFixed(2)).join(', ')}]`)
+
   console.error(`Last frame written to ${resolve(outDir, 'failure.png')}`)
   process.exitCode = 1
 } finally {

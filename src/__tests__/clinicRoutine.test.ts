@@ -2,10 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { isInside } from '../scenes/casinoFloorLayout'
 import {
   CHAIR_COUNT,
+  chairCameraAt,
+  chairCameraTarget,
   chairPosition,
   chairSitSpot,
+  DRAW_LINE_PATH,
   isOnClinicFloor,
+  ivBagAt,
   obstacles,
+  trayAt,
 } from '../scenes/clinicLayout'
 import {
   donationTimeline,
@@ -145,5 +150,74 @@ describe('drawProgress', () => {
       expect(now).toBeGreaterThanOrEqual(previous)
       previous = now
     }
+  })
+})
+
+describe('the line from the arm to the bag', () => {
+  /*
+   * Both ends are hand-placed, and both ends have been wrong.
+   *
+   * The line is drawn in the bag's local space, so an error at either end is
+   * silent: the tube still renders, still looks like tubing, and simply does not
+   * touch the arm. The first version ended inside the tray mesh and the second
+   * ended at a bag so close to the arm that the whole line projected to about
+   * nine pixels. Neither was visible as a bug in a screenshot — you have to
+   * measure it.
+   */
+  it('starts at the donor’s arm and ends at the bag', () => {
+    const needle = DRAW_LINE_PATH[0]
+    const port = DRAW_LINE_PATH[DRAW_LINE_PATH.length - 1]
+    expect(needle).toBeDefined()
+    expect(port).toBeDefined()
+    if (!needle || !port) return
+
+    for (const index of CHAIRS) {
+      const bag = ivBagAt(index)
+      const tray = trayAt(index)
+
+      // The needle end, in world space, has to land on the tray the donor's arm
+      // is resting on — within an arm's width of it, not across the room.
+      const reach = Math.hypot(
+        bag[0] + needle[0] - tray[0],
+        bag[1] + needle[1] - tray[1],
+        bag[2] + needle[2] - tray[2],
+      )
+      expect(reach, `chair ${index}: the needle is ${reach.toFixed(2)} from the tray`).toBeLessThan(0.35)
+
+      // ...and the port end has to stay at the bag it is drawn relative to.
+      expect(Math.hypot(port[0], port[2]), `chair ${index}: the port is off the bag`).toBeLessThan(0.1)
+    }
+  })
+
+  /*
+   * A line that reads at one angle and vanishes at another is the bug that cost
+   * two attempts here. The fixed chair camera looks along roughly (-0.76, -0.65)
+   * in xz, so a line running that way collapses to a dot. Requiring real extent
+   * across the *screen* — not just in world space — is what makes it visible.
+   */
+  it('crosses the camera rather than pointing down it', () => {
+    const needle = DRAW_LINE_PATH[0]
+    if (!needle) throw new Error('no line')
+
+    const eye = chairCameraAt(0)
+    const at = chairCameraTarget(0)
+
+    // The camera's right vector in the xz plane: the view direction turned a
+    // quarter turn. Anything the line has along this shows up as screen width.
+    const viewX = at[0] - eye[0]
+    const viewZ = at[2] - eye[2]
+    const length = Math.hypot(viewX, viewZ)
+    const [rightX, rightZ] = [-viewZ / length, viewX / length]
+
+    const across = Math.abs(needle[0] * rightX + needle[2] * rightZ)
+    const up = Math.abs(needle[1])
+
+    expect(Math.hypot(across, up), 'the line is nearly edge-on to the camera').toBeGreaterThan(0.6)
+
+    // ...and the check has teeth: the version that shipped as a red stub, which
+    // ran from the arm to a bag on the tray, fails it.
+    const stub: readonly [number, number, number] = [-0.5, -0.1, -0.42]
+    const stubAcross = Math.abs(stub[0] * rightX + stub[2] * rightZ)
+    expect(Math.hypot(stubAcross, Math.abs(stub[1]))).toBeLessThan(0.6)
   })
 })

@@ -79,6 +79,92 @@ export const CHAIR_SIT_X = -2.6
  */
 export const SIT_RADIUS = 1.6
 
+/**
+ * A quarter turn, so a recliner faces out into the room.
+ *
+ * Exported because two things now have to agree about it: the chair draws its
+ * parts in its own turned space, and the draw hangs a bag on the chair's stand
+ * from outside that space. Everything below is in the chair's space, and
+ * `reclinerToWorld` is the only place the turn is applied.
+ */
+export const RECLINER_TURN = Math.PI / 2
+
+/** The tray the donor's arm rests on, in the chair's own space. */
+export const TRAY_LOCAL: readonly [number, number, number] = [0.62, 0.56, 0.02]
+
+/** Where the IV stand carries its bag, in the chair's own space. */
+export const IV_BAG_LOCAL: readonly [number, number, number] = [-0.5, 1.5, -0.2]
+
+/**
+ * The line from the needle to the bag, as points local to the bag itself.
+ *
+ * Here rather than in the component for the usual reason — these are
+ * hand-derived 3D coordinates, and the two previous versions of this line were
+ * both perfectly reasonable numbers that drew something nobody could see. The
+ * test asserts the needle end actually reaches the tray.
+ */
+export const DRAW_LINE_PATH: readonly (readonly [number, number, number])[] = [
+  // At the crook of the donor's arm, where the needle is.
+  [0.25, -0.8, -1],
+  // Slack, before it climbs. Tubing leaves an arm downward, not upward.
+  [0.24, -0.72, -0.72],
+  [0.16, -0.52, -0.42],
+  [0.06, -0.26, -0.16],
+  // Into the port underneath the bag.
+  [0, -0.1, 0],
+]
+
+/**
+ * Turns a point in a recliner's own space into world space.
+ *
+ * @param local The point, as the chair's own meshes are written.
+ * @param index Which chair, which sets the z.
+ * @returns The same point in world coordinates.
+ */
+export function reclinerToWorld(
+  local: readonly [number, number, number],
+  index: number,
+): readonly [number, number, number] {
+  const [x, y, z] = local
+  const cos = Math.cos(RECLINER_TURN)
+  const sin = Math.sin(RECLINER_TURN)
+
+  return [CHAIR_X + x * cos + z * sin, y, (CHAIR_Z[index] ?? 0) - x * sin + z * cos]
+}
+
+/** Where the bag hangs over a given chair, in world space. */
+export function ivBagAt(index: number): readonly [number, number, number] {
+  return reclinerToWorld(IV_BAG_LOCAL, index)
+}
+
+/** Where the donor's arm rests, in world space. */
+export function trayAt(index: number): readonly [number, number, number] {
+  return reclinerToWorld(TRAY_LOCAL, index)
+}
+
+/**
+ * The fixed camera on an occupied chair, as offsets from that chair.
+ *
+ * Here rather than in the component because the draw line has to be drawn
+ * across this camera to be visible at all, and a line and a camera that disagree
+ * is not something a later reader would think to check. The test derives the
+ * view direction from these, so moving the camera moves the assertion with it.
+ */
+export const CHAIR_CAMERA_OFFSET: readonly [number, number, number] = [2.7, 1.68, 1.72]
+export const CHAIR_CAMERA_TARGET: readonly [number, number, number] = [0.3, 1.14, -0.2]
+
+/** Where the chair camera sits, in world space. */
+export function chairCameraAt(index: number): readonly [number, number, number] {
+  const [x, y, z] = CHAIR_CAMERA_OFFSET
+  return [CHAIR_X + x, y, (CHAIR_Z[index] ?? 0) + z]
+}
+
+/** What it is aimed at, in world space. */
+export function chairCameraTarget(index: number): readonly [number, number, number] {
+  const [x, y, z] = CHAIR_CAMERA_TARGET
+  return [CHAIR_X + x, y, (CHAIR_Z[index] ?? 0) + z]
+}
+
 /** The check-in desk, by the door. */
 export const DESK: readonly [number, number, number] = [3.4, 0, 3.4]
 export const DESK_WIDTH = 2.6

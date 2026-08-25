@@ -295,7 +295,7 @@ export function CasinoCharacter({
             </group>
           )}
 
-          <group position={[0, -body.forearm, 0]}>
+          <group name={`hand:${side === 1 ? 'right' : 'left'}`} position={[0, -body.forearm, 0]}>
             {/* Palm */}
             <mesh position={[0, -0.05, 0]}>
               <boxGeometry args={[0.085, 0.09, 0.05]} />

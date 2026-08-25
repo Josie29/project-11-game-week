@@ -1,11 +1,14 @@
 import { useFrame } from '@react-three/fiber'
-import { useRef } from 'react'
-import { Group, MathUtils } from 'three'
+import { useMemo, useRef } from 'react'
+import { CatmullRomCurve3, Group, MathUtils, Mesh, TubeGeometry, Vector3 } from 'three'
 import { NURSE_APPEARANCE, RECEPTIONIST_APPEARANCE } from '../../character/appearance'
 import { useGameStore } from '../../store/useGameStore'
-import { CHAIR_Z, DESK } from '../clinicLayout'
+import { useTimeStore } from '../../store/useTimeStore'
+import { DESK, DRAW_LINE_PATH, ivBagAt } from '../clinicLayout'
 import {
   donationTimeline,
+  drawProgress,
+  frozenDrawElapsed,
   NURSE_HOME,
   NURSE_PATROL,
   nurseStationFor,
@@ -13,7 +16,7 @@ import {
   PATROL_LEG_MS,
   PATROL_PAUSE_MS,
 } from '../clinicRoutine'
-import { Gesture } from '../gestures'
+import { GESTURES, Gesture } from '../gestures'
 import { CasinoCharacter, type ArmSignal } from './CasinoCharacter'
 
 /*
@@ -180,17 +183,29 @@ function Nurse() {
     // which is what she should do at a waypoint and at the chair.
     speedRef.current = delta > 0 ? travelled / delta : 0
 
-    if (travelled > 0.0004) {
+    /*
+     * Where she is looking, decided by what she is doing rather than by whether
+     * she happened to move this frame.
+     *
+     * Working used to be the `else` of "did she travel", which meant the single
+     * big step onto the station counted as travel and left her facing the way
+     * she arrived — turned out into the room, reaching at nothing, while the
+     * panel said she was drawing blood.
+     */
+    if (task === NurseTask.Working) {
+      /*
+       * Snapped square to the chair, not eased into it.
+       *
+       * Working is a held state she arrives already turned for, and easing made
+       * the facing depend on how many frames elapsed — at the three frames a
+       * second headless rendering manages, she was still side-on to the donor
+       * when the screenshot was taken, reaching at nothing.
+       */
+      group.rotation.y = -Math.PI / 2
+    } else if (travelled > 0.0004) {
       group.rotation.y = lerpAngle(
         group.rotation.y,
         Math.atan2(movedX, movedZ),
-        1 - Math.exp(-TURN_DAMPING * delta),
-      )
-    } else if (task === NurseTask.Working && donation) {
-      // Stood at the chair, she turns to face the donor rather than the wall.
-      group.rotation.y = lerpAngle(
-        group.rotation.y,
-        -Math.PI / 2,
         1 - Math.exp(-TURN_DAMPING * delta),
       )
     }
@@ -203,16 +218,28 @@ function Nurse() {
      * the payout, and getting up mid-draw stops both at once.
      */
     if (donation) {
-      const elapsed = now - donation.startedAt
+      const elapsed = elapsedSince(donation.startedAt)
+      const wanted =
+        elapsed >= timeline.needleAt
+          ? Gesture.InsertNeedle
+          : elapsed >= timeline.swabAt
+            ? Gesture.SwabArm
+            : null
 
-      if (elapsed >= timeline.needleAt) {
-        if (signal.current.gesture !== Gesture.InsertNeedle) {
-          signal.current = { gesture: Gesture.InsertNeedle, startedAt: now }
-        }
-      } else if (elapsed >= timeline.swabAt) {
-        if (signal.current.gesture !== Gesture.SwabArm) {
-          signal.current = { gesture: Gesture.SwabArm, startedAt: now }
-        }
+      /*
+       * Under `?freeze` the gesture is re-stamped every frame at a fixed offset
+       * so the arm holds one pose.
+       *
+       * Otherwise a frozen capture still runs the gesture clock: the arm
+       * reaches, finishes and drops back to her side while the bag is
+       * supposedly still filling, and which of those the screenshot catches
+       * depends on how long the page took to load.
+       */
+      const frozen = useTimeStore.getState().paused
+
+      if (wanted !== null && (frozen || signal.current.gesture !== wanted)) {
+        const hold = frozen ? GESTURES[wanted].durationMs * 0.5 : 0
+        signal.current = { gesture: wanted, startedAt: now - hold }
       }
     } else if (signal.current.gesture !== null) {
       signal.current = { gesture: null, startedAt: 0 }
@@ -236,27 +263,121 @@ function Nurse() {
 }
 
 /**
- * The collection bag on the chair's tray, which only exists during a draw.
+ * How far into a draw we are, holding still under `?freeze`.
  *
- * Mounted and unmounted rather than hidden, so getting up mid-needle takes it
- * with you — a bag left sitting on an empty chair is worse than no bag.
+ * Both the bag's level and the nurse's gestures read from this, so a frozen
+ * capture shows the same frame every time and the two cannot disagree about
+ * where the procedure has got to.
+ */
+function elapsedSince(startedAt: number): number {
+  return useTimeStore.getState().paused ? frozenDrawElapsed() : performance.now() - startedAt
+}
+
+/** Outside dimensions of the collection bag. */
+const BAG_WIDTH = 0.15
+const BAG_HEIGHT = 0.2
+const BAG_DEPTH = 0.07
+
+/**
+ * The line from the donor's arm up to the bag on the stand.
  *
- * On the near end of the tray rather than the far one: the nurse works from the
- * far side and stood squarely in front of it.
+ * Drawn as a tube along a curve rather than a straight cylinder: a taut line
+ * between two points reads as a strut, and the slack is the only thing that says
+ * this is soft tubing. Points are local to the bag.
+ *
+ * The route matters as much as the shape. Two earlier versions were geometrically
+ * fine and invisible: the first sagged straight down into the tray mesh, and the
+ * second, which arced above it, ran from the arm to a bag sitting a few
+ * centimetres away — almost exactly along the camera's own axis, so a line 65 cm
+ * long projected to about nine pixels and read as a red post standing on the
+ * tray. Hanging the bag on the stand is what fixes it: the line now crosses most
+ * of the frame diagonally, and nothing about it depends on the viewing angle.
+ */
+const LINE_PATH = new CatmullRomCurve3(
+  DRAW_LINE_PATH.map(([x, y, z]) => new Vector3(x, y, z)),
+)
+
+/**
+ * The collection bag on the chair's IV stand, and the line running to it.
+ *
+ * Mounted and unmounted with the draw rather than hidden, so getting up
+ * mid-needle takes it with you — a bag left hanging over an empty chair is
+ * worse than no bag.
+ *
+ * It hangs exactly where the stand's own bag does, and `Recliner` takes that one
+ * down for the duration. Two bags on one pole reads as a mistake, and the swap
+ * is what lets the line be long enough to see.
  */
 function DrawBag() {
   const donation = useGameStore((state) => state.donation)
+
+  const shellRef = useRef<Group>(null)
+  const fillRef = useRef<Mesh>(null)
+
+  const line = useMemo(() => new TubeGeometry(LINE_PATH, 20, 0.019, 6, false), [])
+
+  useFrame(() => {
+    if (!donation) return
+
+    const elapsed = elapsedSince(donation.startedAt)
+    const { needleAt } = donationTimeline()
+
+    /*
+     * Nothing is hung until the needle is actually in.
+     *
+     * The bag used to appear the moment Donate was pressed — full, while the
+     * nurse was still walking over — which gave away that it was a prop rather
+     * than the thing being filled.
+     */
+    if (shellRef.current) shellRef.current.visible = elapsed >= needleAt
+
+    if (fillRef.current) {
+      const progress = drawProgress(elapsed)
+
+      // Grown from the bottom: scaling a centred box stretches it both ways, so
+      // the base has to be walked down by half of whatever it gained.
+      fillRef.current.scale.y = Math.max(0.0001, progress)
+      fillRef.current.position.y = -BAG_HEIGHT / 2 + (BAG_HEIGHT * progress) / 2
+    }
+  })
+
   if (!donation) return null
 
   return (
-    <group name="clinic:draw" position={[-3.55, 0.72, (CHAIR_Z[donation.chair] ?? 0) - 0.18]}>
+    <group
+      name="clinic:draw"
+      ref={shellRef}
+      visible={false}
+      position={[...ivBagAt(donation.chair)]}
+    >
+      {/* The empty pouch: near-clear, so what is in it is the only thing read. */}
       <mesh>
-        <boxGeometry args={[0.15, 0.2, 0.07]} />
-        <meshStandardMaterial color="#8f1f2c" roughness={0.4} transparent opacity={0.92} />
+        <boxGeometry args={[BAG_WIDTH, BAG_HEIGHT, BAG_DEPTH]} />
+        <meshStandardMaterial
+          color="#dbe6ee"
+          roughness={0.25}
+          transparent
+          opacity={0.3}
+          depthWrite={false}
+        />
       </mesh>
-      <mesh position={[0, 0.13, 0]}>
-        <boxGeometry args={[0.07, 0.05, 0.05]} />
-        <meshStandardMaterial color="#cfd8de" roughness={0.5} />
+
+      {/* What has been drawn so far. Starts at nothing and rises. */}
+      <mesh ref={fillRef} position={[0, -BAG_HEIGHT / 2, 0]}>
+        <boxGeometry args={[BAG_WIDTH - 0.012, BAG_HEIGHT, BAG_DEPTH - 0.008]} />
+        <meshStandardMaterial color="#8f1f2c" roughness={0.35} />
+      </mesh>
+
+      {/* The hook it hangs by, over the top of the stand. */}
+      <mesh position={[0, BAG_HEIGHT / 2 + 0.04, 0]}>
+        <boxGeometry args={[0.05, 0.08, 0.04]} />
+        <meshStandardMaterial color="#cfd8de" roughness={0.5} metalness={0.5} />
+      </mesh>
+
+      {/* Thick enough to read. At a realistic gauge it was two pixels wide and
+          might as well not have been drawn. */}
+      <mesh geometry={line}>
+        <meshStandardMaterial color="#a52735" roughness={0.3} />
       </mesh>
     </group>
   )

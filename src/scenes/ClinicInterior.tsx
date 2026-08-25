@@ -1,6 +1,7 @@
 import { PerspectiveCamera } from '@react-three/drei'
-import { useEffect, useMemo } from 'react'
-import { BackSide } from 'three'
+import { useFrame } from '@react-three/fiber'
+import { useEffect, useMemo, useRef } from 'react'
+import { BackSide, PerspectiveCamera as PerspectiveCameraImpl, Vector3 } from 'three'
 import { useAppearanceStore } from '../store/useAppearanceStore'
 import { useGameStore } from '../store/useGameStore'
 import {
@@ -9,6 +10,8 @@ import {
   CHAIR_IDS,
   CHAIR_X,
   CHAIR_Z,
+  chairCameraAt,
+  chairCameraTarget,
   chairIndex,
   chairSitSpot,
   DESK,
@@ -17,9 +20,12 @@ import {
   DESK_WIDTH,
   EXIT_DOOR,
   EXIT_RADIUS,
+  IV_BAG_LOCAL,
   obstacles,
+  RECLINER_TURN,
   ROOM,
   SIT_RADIUS,
+  TRAY_LOCAL,
   VENDING,
   WAITING_X,
   WAITING_Z,
@@ -52,10 +58,21 @@ const ROOM_CENTER_Z = (ROOM.minZ + ROOM.maxZ) / 2
 const FLUORESCENT = '#dff0ff'
 const CROSS_RED = '#d0323c'
 
+interface ReclinerProps {
+  z: number
+  /**
+   * Whether a draw is under way in this chair.
+   *
+   * The stand's own bag comes down for the duration, because the draw hangs the
+   * one being filled in the same place. Two bags on one pole reads as a bug.
+   */
+  drawing?: boolean
+}
+
 /** One reclining donation chair with its IV stand and tray. */
-function Recliner({ z }: { z: number }) {
+function Recliner({ z, drawing = false }: ReclinerProps) {
   return (
-    <group position={[CHAIR_X, 0, z]} rotation={[0, Math.PI / 2, 0]}>
+    <group position={[CHAIR_X, 0, z]} rotation={[0, RECLINER_TURN, 0]}>
       {/* Base and seat. */}
       <mesh position={[0, 0.28, 0]} castShadow receiveShadow>
         <boxGeometry args={[0.72, 0.16, 0.62]} />
@@ -80,7 +97,7 @@ function Recliner({ z }: { z: number }) {
         <boxGeometry args={[0.14, 0.1, 0.6]} />
         <meshStandardMaterial color="#26478a" roughness={0.6} />
       </mesh>
-      <mesh position={[0.62, 0.56, 0.02]}>
+      <mesh position={[...TRAY_LOCAL]}>
         <boxGeometry args={[0.3, 0.03, 0.36]} />
         <meshStandardMaterial color="#b9c2ca" roughness={0.35} metalness={0.6} />
       </mesh>
@@ -94,7 +111,7 @@ function Recliner({ z }: { z: number }) {
         <cylinderGeometry args={[0.18, 0.18, 0.04, 10]} />
         <meshStandardMaterial color="#8f98a1" roughness={0.5} metalness={0.5} />
       </mesh>
-      <mesh position={[-0.5, 1.5, -0.2]}>
+      <mesh position={[...IV_BAG_LOCAL]} visible={!drawing}>
         <boxGeometry args={[0.14, 0.24, 0.06]} />
         <meshStandardMaterial
           color="#c9384a"
@@ -107,11 +124,42 @@ function Recliner({ z }: { z: number }) {
   )
 }
 
+/**
+ * Fixed camera on the chair, aimed at the arm being worked on.
+ *
+ * No orbit: there is nothing to read on a felt here and nothing to line up. It
+ * sits close, because what it has to show is small — a bag filling and a line
+ * running to it — and from across the room all of that was a few pixels wide.
+ *
+ * Aimed with `lookAt` rather than a hand-set rotation, so the framing follows
+ * the chair rather than being three Euler angles that happen to suit one of
+ * them.
+ */
+function ChairCamera({ chair }: { chair: number }) {
+  const cameraRef = useRef<PerspectiveCameraImpl>(null)
+
+  const target = useMemo(() => new Vector3(...chairCameraTarget(chair)), [chair])
+
+  useFrame(() => {
+    cameraRef.current?.lookAt(target)
+  })
+
+  return (
+    <PerspectiveCamera
+      ref={cameraRef}
+      makeDefault
+      fov={44}
+      position={[...chairCameraAt(chair)]}
+    />
+  )
+}
+
 export function ClinicInterior() {
   const appearance = useAppearanceStore((state) => state.appearance)
   const equipped = useAppearanceStore((state) => state.equipped)
   const atChair = useGameStore((state) => state.atChair)
   const clinicPosition = useGameStore((state) => state.clinicPosition)
+  const donation = useGameStore((state) => state.donation)
 
   /**
    * F sits down in whichever recliner the player is standing at.
@@ -236,8 +284,8 @@ export function ClinicInterior() {
         </mesh>
       </group>
 
-      {CHAIR_Z.map((z) => (
-        <Recliner key={z} z={z} />
+      {CHAIR_Z.map((z, index) => (
+        <Recliner key={z} z={z} drawing={donation?.chair === index} />
       ))}
 
       <ClinicStaff />
@@ -308,17 +356,7 @@ export function ClinicInterior() {
         />
       ) : (
         <>
-          {/*
-            Fixed camera on the chair. No orbit: there is nothing to read on a
-            felt here and nothing to line up, so the shot only has to show the
-            player that something is happening to them.
-          */}
-          <PerspectiveCamera
-            makeDefault
-            fov={42}
-            position={[CHAIR_X + 3.4, 2.1, (CHAIR_Z[atChair] ?? 0) + 2.4]}
-            rotation={[-0.42, 0.72, 0.3]}
-          />
+          <ChairCamera chair={atChair} />
           <group position={[CHAIR_X + 0.1, 0, CHAIR_Z[atChair] ?? 0]} rotation={[0, Math.PI / 2, 0]}>
             <CasinoCharacter appearance={appearance} equipped={equipped} seated />
           </group>

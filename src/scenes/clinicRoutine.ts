@@ -112,6 +112,19 @@ export function donationTimeline(): DonationTimeline {
   return { arriveAt, swabAt, needleAt, completeAt: needleAt + DRAW_MS }
 }
 
+/**
+ * Where `?freeze` holds a draw.
+ *
+ * The bag fills over time, so an unpinned capture of it lands on a different
+ * level every run and the regression check stops meaning anything — the same
+ * reason the clock and the two turntables are freezable. Just past halfway, so
+ * the bag reads as filling rather than as empty or as done.
+ */
+export function frozenDrawElapsed(): number {
+  const { needleAt, completeAt } = donationTimeline()
+  return needleAt + (completeAt - needleAt) * 0.55
+}
+
 /** How far through the draw itself, 0 to 1, at `elapsed` ms into the sequence. */
 export function drawProgress(elapsed: number): number {
   const { needleAt, completeAt } = donationTimeline()
