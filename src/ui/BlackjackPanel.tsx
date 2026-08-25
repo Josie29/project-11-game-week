@@ -54,7 +54,7 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
   const resetRound = useBlackjackStore((state) => state.reset)
 
   const bankroll = useGameStore((state) => state.bankroll)
-  const leaveVenue = useGameStore((state) => state.leaveVenue)
+  const standUp = useGameStore((state) => state.standUp)
   const resetBankroll = useGameStore((state) => state.resetBankroll)
 
   const dealerCardsShown = useBlackjackStore((state) => state.dealerCardsShown)
@@ -85,9 +85,9 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
   const isBroke = bankroll <= 0 && isBetting
 
   function handleLeave(): void {
-    // Walking out abandons the hand, so clear the table for next time.
+    // Standing up abandons the hand, so clear the table for next time.
     resetRound()
-    leaveVenue()
+    standUp()
   }
 
   useTableHotkeys({
@@ -241,7 +241,7 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
           style={{ color: casino.neonColor }}
           onClick={handleLeave}
         >
-          Leave {casino.name} <kbd>Esc</kbd>
+          Leave table <kbd>Esc</kbd>
         </button>
       </div>
     </div>

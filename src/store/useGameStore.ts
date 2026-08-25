@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { ENTRANCE, SIT_SPOTS, TableId } from '../scenes/casinoFloorLayout'
 import { VenueId, getVenue, PLAYER_SPAWN } from '../world/venues'
 
 export enum Location {
@@ -20,6 +21,18 @@ interface GameStore {
   activeVenue: VenueId | null
   /** Casino the player is standing next to, for the HUD prompt. */
   nearbyVenue: VenueId | null
+  /**
+   * The table the player is sitting at, or `null` while walking the floor.
+   *
+   * The casino used to be a table; now it is a room with two of them, so being
+   * inside a casino and being in a game are separate states. This is what picks
+   * the panel and the camera.
+   */
+  activeTable: TableId | null
+  /** The table F would seat them at, for the floor prompt. */
+  nearbyTable: TableId | null
+  /** Where the player should appear when the casino floor mounts. */
+  floorPosition: readonly [number, number, number]
   /** Where the player should appear when the strip mounts. */
   spawnPosition: readonly [number, number, number]
   /**
@@ -42,6 +55,9 @@ interface GameStore {
 
   enterVenue: (id: VenueId) => void
   leaveVenue: () => void
+  sitAt: (table: TableId) => void
+  standUp: () => void
+  setNearbyTable: (table: TableId | null) => void
   openDesigner: () => void
   closeDesigner: () => void
   setNearbyVenue: (id: VenueId | null) => void
@@ -57,11 +73,47 @@ export const useGameStore = create<GameStore>()(
       location: Location.Strip,
       activeVenue: null,
       nearbyVenue: null,
+      activeTable: null,
+      nearbyTable: null,
+      floorPosition: ENTRANCE,
       spawnPosition: PLAYER_SPAWN,
       designerReturnTo: Location.Strip,
       initialCameraYaw: 0,
 
-      enterVenue: (id) => set({ location: Location.Interior, activeVenue: id, nearbyVenue: null }),
+      enterVenue: (id) =>
+        set({
+          location: Location.Interior,
+          activeVenue: id,
+          nearbyVenue: null,
+          // Always arrive on your feet at the door, never already seated.
+          activeTable: null,
+          nearbyTable: null,
+          floorPosition: ENTRANCE,
+        }),
+
+      sitAt: (table) => set({ activeTable: table, nearbyTable: null }),
+
+      /**
+       * Stands the player up beside the table they were at.
+       *
+       * Putting them back at the entrance would read as being thrown out of the
+       * casino for leaving a table; the same reasoning as the door offset in
+       * `leaveVenue`.
+       */
+      standUp: () => {
+        const { activeTable } = get()
+        set({
+          activeTable: null,
+          nearbyTable: null,
+          floorPosition: activeTable ? SIT_SPOTS[activeTable] : ENTRANCE,
+        })
+      },
+
+      setNearbyTable: (table) => {
+        // Called from the render loop, so bail out unless it actually changed.
+        if (get().nearbyTable === table) return
+        set({ nearbyTable: table })
+      },
 
       openDesigner: () => {
         const { location } = get()
@@ -87,6 +139,8 @@ export const useGameStore = create<GameStore>()(
           location: Location.Strip,
           activeVenue: null,
           nearbyVenue: null,
+          activeTable: null,
+          nearbyTable: null,
           spawnPosition: [x + offsetX, y, z],
         })
       },

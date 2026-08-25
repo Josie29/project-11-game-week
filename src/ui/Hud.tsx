@@ -1,3 +1,4 @@
+import { TABLE_LABELS } from '../scenes/casinoFloorLayout'
 import { Location, useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
 import { getVenue } from '../world/venues'
@@ -8,6 +9,8 @@ export function Hud() {
   const bankroll = useGameStore((state) => state.bankroll)
   const location = useGameStore((state) => state.location)
   const nearbyVenue = useGameStore((state) => state.nearbyVenue)
+  const nearbyTable = useGameStore((state) => state.nearbyTable)
+  const activeTable = useGameStore((state) => state.activeTable)
   const minuteOfDay = useTimeStore((state) => state.minuteOfDay)
 
   const nearby = nearbyVenue ? getVenue(nearbyVenue) : null
@@ -29,7 +32,25 @@ export function Hud() {
       )}
 
       {location === Location.Interior && (
-        <div className="hud__hint">Drag to look &middot; scroll to zoom &middot; R to reset</div>
+        <div className="hud__hint">
+          {activeTable === null
+            ? 'WASD to walk · F to sit at a table · drag to look · R to reset'
+            : 'Drag to look · scroll to zoom · R to reset'}
+        </div>
+      )}
+
+      {/*
+        The table prompt. Unlike the door prompt, this one actually paints —
+        walking up to a table only offers the seat, it does not take it, so the
+        player has time to read it.
+      */}
+      {nearbyTable !== null && activeTable === null && (
+        <div className="hud__prompt">
+          <strong>{TABLE_LABELS[nearbyTable]}</strong>
+          <span>
+            Press <kbd>F</kbd> to sit
+          </span>
+        </div>
       )}
 
       {nearby && (

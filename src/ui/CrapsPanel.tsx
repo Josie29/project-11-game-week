@@ -39,7 +39,7 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
   const resetTable = useCrapsStore((state) => state.reset)
 
   const bankroll = useGameStore((state) => state.bankroll)
-  const leaveVenue = useGameStore((state) => state.leaveVenue)
+  const standUp = useGameStore((state) => state.standUp)
 
   const casino = getVenue(venueId)
   const staked = Object.values(game.bets).reduce((sum, amount) => sum + amount, 0)
@@ -50,7 +50,7 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
 
   function handleLeave(): void {
     resetTable()
-    leaveVenue()
+    standUp()
   }
 
   useEffect(() => {
@@ -158,7 +158,7 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
           style={{ color: casino.neonColor }}
           onClick={handleLeave}
         >
-          Leave {casino.name} <kbd>Esc</kbd>
+          Leave table <kbd>Esc</kbd>
         </button>
       </div>
     </div>

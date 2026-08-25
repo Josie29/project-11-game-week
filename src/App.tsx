@@ -8,6 +8,7 @@ import { DesignerStage } from './scenes/DesignerStage'
 import { ShopInterior } from './scenes/ShopInterior'
 import { Strip } from './scenes/Strip'
 import { useAppearanceStore } from './store/useAppearanceStore'
+import { TableId } from './scenes/casinoFloorLayout'
 import { Location, useGameStore } from './store/useGameStore'
 import { useTimeStore } from './store/useTimeStore'
 import { BlackjackPanel } from './ui/BlackjackPanel'
@@ -15,7 +16,7 @@ import { CharacterDesigner } from './ui/CharacterDesigner'
 import { CrapsPanel } from './ui/CrapsPanel'
 import { Hud } from './ui/Hud'
 import { ShopPanel } from './ui/ShopPanel'
-import { GameKind, getVenue, VenueKind } from './world/venues'
+import { getVenue, VenueKind } from './world/venues'
 import { KEYBOARD_MAP } from './world/controls'
 import { bloomAt, INTERIOR_BLOOM } from './world/timeOfDay'
 
@@ -23,6 +24,7 @@ export function App() {
   const location = useGameStore((state) => state.location)
   const activeVenue = useGameStore((state) => state.activeVenue)
   const hasDesigned = useAppearanceStore((state) => state.hasDesigned)
+  const activeTable = useGameStore((state) => state.activeTable)
 
   /*
    * A player who has never designed a character gets the designer instead of
@@ -87,14 +89,19 @@ export function App() {
       {!isDesigning && <Hud />}
       {isDesigning && <CharacterDesigner />}
 
+      {/*
+        The panel follows the table, not the venue: one casino now holds both
+        games, and while the player is walking its floor there is no game to
+        show controls for.
+      */}
       {indoorVenue && activeVenue && (
         isShopping ? (
           <ShopPanel venueId={activeVenue} />
-        ) : indoorVenue.game === GameKind.Craps ? (
+        ) : activeTable === TableId.Craps ? (
           <CrapsPanel venueId={activeVenue} />
-        ) : (
+        ) : activeTable === TableId.Blackjack ? (
           <BlackjackPanel venueId={activeVenue} />
-        )
+        ) : null
       )}
     </KeyboardControls>
   )

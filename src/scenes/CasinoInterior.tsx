@@ -1,15 +1,31 @@
 import { PerspectiveCamera } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
-import { useRef } from 'react'
-import { DoubleSide, PerspectiveCamera as PerspectiveCameraImpl, Vector3 } from 'three'
+import { useEffect, useMemo, useRef } from 'react'
+import { PerspectiveCamera as PerspectiveCameraImpl, Vector3 } from 'three'
 import { DEALER_APPEARANCE } from '../character/appearance'
 import { useAppearanceStore } from '../store/useAppearanceStore'
-import { gameAt, GameKind, getVenue, type VenueId } from '../world/venues'
+import { useGameStore } from '../store/useGameStore'
+import { getVenue, type VenueId } from '../world/venues'
+import {
+  CAMERA_BOUNDS,
+  DEALER_SPOTS,
+  EXIT_DOOR,
+  EXIT_RADIUS,
+  SEATS,
+  SIT_RADIUS,
+  SIT_SPOTS,
+  TABLE_FOOTPRINTS,
+  TABLE_IDS,
+  tableOrigin,
+  TableId,
+  WALK_BOUNDS,
+} from './casinoFloorLayout'
 import { BlackjackTable } from './components/BlackjackTable'
 import { CasinoCharacter } from './components/CasinoCharacter'
-import { CasinoFloor } from './components/CasinoFloor'
+import { CasinoRoom } from './components/CasinoRoom'
 import { CrapsTable } from './components/CrapsTable'
 import { Stool } from './components/Stool'
+import { WalkingPlayer, type ProximityTarget } from './components/WalkingPlayer'
 import { useOrbitInput } from './useOrbitInput'
 
 interface CasinoInteriorProps {
@@ -17,7 +33,7 @@ interface CasinoInteriorProps {
 }
 
 /**
- * Stools around the player's arc of the table.
+ * Stools around the blackjack table's arc, in the table's own local frame.
  *
  * Positioned to sit just outside the rail, roughly behind each betting spot
  * printed on the felt, so the seats line up with the places you can bet.
@@ -30,13 +46,20 @@ const STOOLS: readonly { x: number; z: number }[] = [
   { x: 2.6, z: 2.5 },
 ]
 
-/** The seat the player occupies — the centre spot, where their cards land. */
-const PLAYER_SEAT = STOOLS[2] ?? { x: 0, z: 2.95 }
-
-/** Point the camera orbits and looks at — roughly the middle of the felt. */
-const BLACKJACK_TARGET = new Vector3(0.15, 1.05, 0.45)
-/** The craps table is smaller and centred, and its printed layout is the game. */
-const CRAPS_TARGET = new Vector3(0, 1.05, 0)
+/**
+ * Where each table's camera looks, in that table's own local frame.
+ *
+ * These are the values the fixed camera used before the tables moved into a
+ * room. The tables are translated and never rotated, so the world target is
+ * just this plus the table's origin — which is what keeps the seated framing
+ * identical to what shipped.
+ */
+const LOCAL_TARGETS: Record<TableId, readonly [number, number, number]> = {
+  // Roughly the middle of the felt.
+  [TableId.Blackjack]: [0.15, 1.05, 0.45],
+  // The craps table is smaller and centred, and its printed layout is the game.
+  [TableId.Craps]: [0, 1.05, 0],
+}
 
 /*
  * Opening view, as an orbit rather than a position. Both closer and steeper
@@ -74,18 +97,26 @@ const YAW_RANGE = 1.4
 /** Higher is snappier; keeps the camera from snapping between frames. */
 const ORBIT_DAMPING = 12
 
+/** Scratch vector, reused so the orbit loop allocates nothing. */
+const DESIRED = new Vector3()
+
 /**
- * Orbit camera over the table: drag to look, scroll to zoom, R to reset.
+ * Orbit camera over a table: drag to look, scroll to zoom, R to reset.
  *
- * Input handling is shared with the strip camera via `useOrbitInput`; only the
- * limits and what it looks at differ.
+ * Input handling is shared with the walking camera via `useOrbitInput`; only
+ * the limits and what it looks at differ.
  */
-function TableCamera({ game }: { game: GameKind }) {
+function TableCamera({ table }: { table: TableId }) {
   const cameraRef = useRef<PerspectiveCameraImpl>(null)
   const defaultCamera = useThree((state) => state.camera)
 
-  const isCraps = game === GameKind.Craps
-  const target = isCraps ? CRAPS_TARGET : BLACKJACK_TARGET
+  const isCraps = table === TableId.Craps
+
+  const target = useMemo(() => {
+    const [originX, , originZ] = tableOrigin(table)
+    const [localX, localY, localZ] = LOCAL_TARGETS[table]
+    return new Vector3(originX + localX, localY, originZ + localZ)
+  }, [table])
 
   const { orbit } = useOrbitInput(
     {
@@ -123,89 +154,12 @@ function TableCamera({ game }: { game: GameKind }) {
   return <PerspectiveCamera ref={cameraRef} makeDefault fov={45} />
 }
 
-/** Scratch vector, reused so the orbit loop allocates nothing. */
-const DESIRED = new Vector3()
-
-/**
- * The casino floor, framed over the seated player's shoulder.
- *
- * The opening view sits behind and left of their stool, which puts the
- * signalling right arm on the near side rather than hidden behind their own
- * body. From there the player can orbit and zoom freely — see `TableCamera`.
- */
-export function CasinoInterior({ venueId }: CasinoInteriorProps) {
-  const venue = getVenue(venueId)
-  const game = gameAt(venueId)
-  const appearance = useAppearanceStore((state) => state.appearance)
-  const equipped = useAppearanceStore((state) => state.equipped)
+/** The blackjack table with its stools, placed on the floor. */
+function BlackjackPit() {
+  const [x, , z] = tableOrigin(TableId.Blackjack)
 
   return (
-    <>
-      <color attach="background" args={['#0b0611']} />
-      {/* Haze that swallows the far tables and keeps focus on the felt. */}
-      <fog attach="fog" args={['#0b0611', 9, 26]} />
-
-      <TableCamera game={game} />
-
-      {/* Lifted well above a realistic level: at 0.32 the table's cast shadow
-          went solid black and swallowed the whole foreground. */}
-      <ambientLight intensity={0.5} color="#b9a7d8" />
-
-      {/* Overhead lamp — the warm pool of light does most of the work. Hung
-          high so the table's shadow stays close to its own footprint. */}
-      <spotLight
-        position={[0, 7.2, 0.5]}
-        angle={0.68}
-        penumbra={0.85}
-        intensity={155}
-        distance={20}
-        color="#ffe4b5"
-        castShadow
-        shadow-mapSize={[2048, 2048]}
-        // Without a bias the near-flat felt self-shadows into a hard band.
-        shadow-bias={-0.0008}
-        shadow-normalBias={0.02}
-      />
-
-      {/* House-colour rim from behind the dealer, separating table from room. */}
-      <pointLight position={[0, 3, -3.6]} color={venue.neonColor} intensity={30} distance={11} />
-      {/* Cool fill from the player's side so the near rail is not solid black. */}
-      <pointLight position={[0, 2.4, 5]} color="#6f7ae0" intensity={14} distance={12} />
-
-      {/* Patterned carpet. */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[48, 48]} />
-        <meshStandardMaterial color="#2a1030" roughness={0.95} />
-      </mesh>
-
-      {/* Back wall with a neon band, so the room has depth behind the dealer. */}
-      <mesh position={[0, 4.5, -17]} receiveShadow>
-        <planeGeometry args={[48, 9]} />
-        <meshStandardMaterial color="#170e21" roughness={0.95} />
-      </mesh>
-      <mesh position={[0, 3.1, -16.9]}>
-        <planeGeometry args={[26, 0.18]} />
-        <meshBasicMaterial color={venue.neonColor} toneMapped={false} />
-      </mesh>
-
-      {/* Brass pendant over the table, per art/refs/blackjack_floor.png. It
-          gives the overhead spotlight a visible source. */}
-      <group position={[0, 3.9, 0.2]}>
-        <mesh position={[0, 0.8, 0]}>
-          <cylinderGeometry args={[0.018, 0.018, 1.6, 6]} />
-          <meshStandardMaterial color="#3a2f1c" roughness={0.6} metalness={0.5} />
-        </mesh>
-        <mesh>
-          <coneGeometry args={[0.46, 0.34, 20, 1, true]} />
-          <meshStandardMaterial color="#8a6a2f" roughness={0.35} metalness={0.75} side={DoubleSide} />
-        </mesh>
-        {/* Emissive disc across the shade's mouth, so the lamp reads as lit. */}
-        <mesh position={[0, -0.16, 0]} rotation={[Math.PI / 2, 0, 0]}>
-          <circleGeometry args={[0.43, 20]} />
-          <meshBasicMaterial color="#d9b273" toneMapped={false} />
-        </mesh>
-      </group>
-
+    <group position={[x, 0, z]}>
       {STOOLS.map((stool) => (
         <Stool
           key={`${stool.x}-${stool.z}`}
@@ -214,29 +168,127 @@ export function CasinoInterior({ venueId }: CasinoInteriorProps) {
           rotationY={Math.atan2(-stool.x, -stool.z)}
         />
       ))}
+      <BlackjackTable />
+    </group>
+  )
+}
 
-      {/* The dealer, standing behind the table facing the player. */}
-      <group position={[0, 0, -1.35]}>
-        <CasinoCharacter
-          appearance={DEALER_APPEARANCE}
-          dealerPose
-          staff
-          gestureSource="dealer"
+/**
+ * The Golden Ace: a floor you walk, with a table at each end of it.
+ *
+ * Two modes. While `activeTable` is null the player controls their character
+ * around the room and F sits them down; once seated the camera falls into the
+ * table orbit and the game panel takes over, which is what this scene did for
+ * its whole life before the room existed.
+ */
+export function CasinoInterior({ venueId }: CasinoInteriorProps) {
+  const venue = getVenue(venueId)
+  const appearance = useAppearanceStore((state) => state.appearance)
+  const equipped = useAppearanceStore((state) => state.equipped)
+  const activeTable = useGameStore((state) => state.activeTable)
+  const floorPosition = useGameStore((state) => state.floorPosition)
+
+  /**
+   * F sits down at whatever the player is standing at.
+   *
+   * A plain listener rather than a `KeyboardControls` binding, because sitting
+   * is an edge — holding F should seat you once, not every frame. Same pattern
+   * as Escape in `ShopPanel`. Note F rather than E: E is already
+   * `Control.OrbitRight`.
+   */
+  useEffect(() => {
+    if (activeTable !== null) return
+
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      if (event.key.toLowerCase() !== 'f') return
+
+      const store = useGameStore.getState()
+      if (store.nearbyTable !== null) store.sitAt(store.nearbyTable)
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [activeTable])
+
+  const targets = useMemo<readonly ProximityTarget[]>(
+    () => [
+      ...TABLE_IDS.map((table) => ({
+        id: table as string,
+        position: SIT_SPOTS[table],
+        radius: SIT_RADIUS,
+      })),
+      { id: 'exit', position: EXIT_DOOR, radius: EXIT_RADIUS },
+    ],
+    [],
+  )
+
+  const obstacles = useMemo(() => TABLE_IDS.map((table) => TABLE_FOOTPRINTS[table]), [])
+
+  function handleNearest(id: string | null): void {
+    const store = useGameStore.getState()
+
+    // The exit works on contact, like every other door in the game.
+    if (id === 'exit') {
+      store.leaveVenue()
+      return
+    }
+
+    store.setNearbyTable((id as TableId | null) ?? null)
+  }
+
+  return (
+    <>
+      <CasinoRoom neonColor={venue.neonColor} />
+
+      {/* Both tables are always in the room; only the camera moves. */}
+      <BlackjackPit />
+      <CrapsTable />
+
+      {TABLE_IDS.map((table) => (
+        <group key={table} position={[DEALER_SPOTS[table][0], 0, DEALER_SPOTS[table][2]]}>
+          <CasinoCharacter
+            appearance={DEALER_APPEARANCE}
+            dealerPose
+            staff
+            // Only the table in play drives the dealer's hand signals; the other
+            // one would mirror them for a game nobody is watching.
+            {...(activeTable === table ? { gestureSource: 'dealer' as const } : {})}
+          />
+        </group>
+      ))}
+
+      {activeTable === null ? (
+        <WalkingPlayer
+          bounds={WALK_BOUNDS}
+          spawn={floorPosition}
+          // Facing into the room (-Z), with the exit behind them.
+          facing={Math.PI}
+          targets={targets}
+          onNearest={handleNearest}
+          obstacles={obstacles}
+          // Tighter and higher than the strip: the room is twelve units deep,
+          // and the strip's near-level seat buries the camera in the far wall.
+          distance={5.6}
+          pitch={0.42}
+          cameraBounds={CAMERA_BOUNDS}
         />
-      </group>
-
-      {/* The player, seated at the centre spot with their back to the camera. */}
-      <group position={[PLAYER_SEAT.x, 0, PLAYER_SEAT.z]} rotation={[0, Math.PI, 0]}>
-        <CasinoCharacter
-          appearance={appearance}
-          equipped={equipped}
-          seated
-          gestureSource="player"
-        />
-      </group>
-
-      <CasinoFloor />
-      {game === GameKind.Craps ? <CrapsTable /> : <BlackjackTable />}
+      ) : (
+        <>
+          <TableCamera table={activeTable} />
+          <group
+            position={[SEATS[activeTable][0], 0, SEATS[activeTable][2]]}
+            rotation={[0, Math.PI, 0]}
+          >
+            <CasinoCharacter
+              appearance={appearance}
+              equipped={equipped}
+              seated
+              gestureSource="player"
+            />
+          </group>
+        </>
+      )}
     </>
   )
 }

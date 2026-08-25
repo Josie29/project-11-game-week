@@ -109,12 +109,13 @@ Dev-only deep links, stripped from production builds:
 
 | URL | Scene |
 | --- | --- |
-| `?boot=casino` | Golden Ace, awaiting a bet |
+| `?boot=casino` | seated at blackjack, awaiting a bet |
 | `?boot=table` | a hand dealt |
 | `?boot=settled` | a hand played out |
 | `?boot=split` | a stacked pair, ready to split |
 | `?boot=draw` | a dealer who must draw twice |
-| `?boot=craps` | Lucky Viper with a pass line down |
+| `?boot=craps` | seated at craps with a pass line down |
+| `?boot=floor` | standing on the casino floor, between the tables |
 | `?boot=designer` | the dressing-room stage |
 | `?boot=shop` | The Gilded Hanger, bankroll topped up |
 | `?boot=shopfront` | on the street outside the shop, to look at the storefront |
@@ -192,8 +193,20 @@ the first 420 ms of a round.
   workflow in `workflows/` and changing only the positive prompt, the
   `SaveImage` prefix and the seed — the sampler and the negative prompt are
   tuned and should be left alone.
-- Physics (`@react-three/rapier`) is scoped to the craps scene alone. The strip
-  character and the blackjack table are transform-driven and never touch it.
+- Physics (`@react-three/rapier`) is scoped to the craps **table** — its
+  `<Physics>` provider lives inside `CrapsTable.tsx`. Everything else, the
+  walking characters and the blackjack table included, is transform-driven and
+  never touches it.
+
+  It used to be scoped to the craps *scene*, which stopped being true when both
+  tables moved into one room: the world is now mounted the whole time the player
+  is in the casino rather than only while playing craps. One world, two sleeping
+  bodies, four fixed colliders.
+
+  **The craps table stays at the world origin.** A `<Physics>` provider under a
+  translated parent is the kind of thing that works until it does not, so the
+  blackjack table takes the offset instead — see `CRAPS_ORIGIN` in
+  `src/scenes/casinoFloorLayout.ts`, which is asserted.
 - Use a **fixed physics timestep**. `timeStep="vary"` ties the simulation to
   the frame rate and small fast objects tunnel through walls on a slow frame.
 - Set **velocity, not impulse**, on small bodies. A 0.16 m die masses about

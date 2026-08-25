@@ -131,11 +131,53 @@ try {
   await wear.click()
   await capture('5-wearing')
 
+  // 5. Out of the shop, across the strip, into the casino, up to a table.
+  //    The strip clamps the player at the kerb, so the A component stops
+  //    mattering once they reach it and W carries them down to the door; inside
+  //    the room the same pair heads for the blackjack table.
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(600)
+
+  //    Cross first, then walk down. Doing both at once traces a diagonal that
+  //    crosses the casino's row while still out in the middle of the road, five
+  //    units from its door and well outside the trigger.
+  //    Deliberately more bursts than the distance needs. Ground covered per
+  //    burst varies with the frame rate — the walk clamps its step at a 10fps
+  //    floor, so a slow headless frame moves the player a quarter of what a
+  //    fast one does — and the kerb clamp makes overshooting free. Eight bursts
+  //    reached the kerb on one run and stopped halfway on the next, which put
+  //    the player seven units from the casino door as they walked past it.
+  for (let i = 0; i < 20; i++) await walk(['KeyA'], 320)
+
+  //    Walk down the kerb until the floor hint says we are inside. A fixed
+  //    number of bursts is not enough here: headless frame times vary by an
+  //    order of magnitude between runs, so the same hold overshot the casino's
+  //    door on one run and stopped short of it on the next.
+  await walkUntil(['KeyW'], 'F to sit at a table', { bursts: 28 })
+
+  //    Inside now, and the same pair of keys heads for the blackjack table.
+  await walkUntil(['KeyW', 'KeyA'], 'Press', { bursts: 20 })
+  await capture('6-at-the-table')
+
+  // 6. Sit down and play a hand. F, not E — E is the camera orbit.
+  await page.keyboard.press('KeyF')
+  await page.waitForTimeout(600)
+  await expectText('Leave table', 'sitting down')
+  await capture('7-seated')
+
+  //    The stake keys are the primary control at the table, and the buttons
+  //    carry their shortcut in the label ("$10 1"), which makes an exact-name
+  //    click brittle. Press the key the HUD tells the player to press.
+  await page.keyboard.press('Digit1')
+  await page.waitForTimeout(2000)
+  await expectText('DEALER', 'dealing a hand')
+  await capture('8-hand-dealt')
+
   if (failures.length > 0) {
     throw new Error(`page errors: ${failures.join(' | ')}`)
   }
 
-  console.log(`\n5 beats → ${outDir}`)
+  console.log(`\n8 beats → ${outDir}`)
 } catch (error) {
   await page.screenshot({ path: resolve(outDir, 'failure.png') })
   console.error(`\nFAILED: ${error.message}`)

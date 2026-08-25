@@ -1,6 +1,5 @@
 export enum VenueId {
   GoldenAce = 'golden-ace',
-  LuckyViper = 'lucky-viper',
   GildedHanger = 'gilded-hanger',
 }
 
@@ -10,17 +9,10 @@ export enum VenueKind {
   Shop = 'shop',
 }
 
-export enum GameKind {
-  Blackjack = 'blackjack',
-  Craps = 'craps',
-}
-
 export interface VenueConfig {
   readonly id: VenueId
   readonly name: string
   readonly kind: VenueKind
-  /** Which game is played inside. Absent on shops. */
-  readonly game?: GameKind
   /** World position of the entrance. Doubles as the proximity-trigger centre. */
   readonly doorPosition: readonly [number, number, number]
   /** Facade neon colour, also used for signage and the HUD accent. */
@@ -62,22 +54,13 @@ export const VENUES: readonly VenueConfig[] = [
     available: true,
   },
   {
+    // The one casino. It holds both a blackjack table and a craps table, which
+    // is why a venue no longer names a game — the table does.
     id: VenueId.GoldenAce,
     name: 'Golden Ace',
     kind: VenueKind.Casino,
-    game: GameKind.Blackjack,
     doorPosition: [-8.5, 0, -14],
     neonColor: '#ffc63f',
-    invitation: 'Walk in to play',
-    available: true,
-  },
-  {
-    id: VenueId.LuckyViper,
-    name: 'Lucky Viper',
-    kind: VenueKind.Casino,
-    game: GameKind.Craps,
-    doorPosition: [8.5, 0, -34],
-    neonColor: '#22e0ff',
     invitation: 'Walk in to play',
     available: true,
   },
@@ -89,21 +72,6 @@ export function getVenue(id: VenueId): VenueConfig {
     throw new Error(`Unknown venue id "${id}"`)
   }
   return venue
-}
-
-/**
- * The game played at a venue.
- *
- * @throws {Error} If the venue is a shop, which has no game. Callers reach this
- *   only by rendering a table for a door that has none, which is a bug rather
- *   than a state to handle.
- */
-export function gameAt(id: VenueId): GameKind {
-  const venue = getVenue(id)
-  if (venue.game === undefined) {
-    throw new Error(`Venue "${id}" is a ${venue.kind} and has no game`)
-  }
-  return venue.game
 }
 
 /** Half-width of the reflective roadway. */

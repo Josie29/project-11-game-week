@@ -7,6 +7,7 @@ import { useBlackjackStore } from '../store/useBlackjackStore'
 import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
+import { TableId } from '../scenes/casinoFloorLayout'
 import { CrapsBet } from '../scenes/crapsFeltLayout'
 import { VenueId } from '../world/venues'
 
@@ -127,7 +128,8 @@ function applyTimeShortcut(): void {
  * - `?boot=split` deals a pair, which a random shoe will not reliably do.
  * - `?boot=draw` forces the dealer to draw twice, which is the case the staged
  *   reveal exists for and which a random shoe rarely produces on demand.
- * - `?boot=craps` opens the Lucky Viper with a pass-line bet already down.
+ * - `?boot=craps` sits at the craps table with a pass-line bet already down.
+ * - `?boot=floor` stands on the casino floor, between the two tables.
  * - `?boot=designer` opens the dressing-room stage.
  * - `?boot=shop` opens The Gilded Hanger with the catalogue affordable.
  * - `?dressed` puts the whole wardrobe on the player. A modifier, not a scene:
@@ -161,6 +163,7 @@ export function applyBootShortcut(): void {
     'draw',
     'craps',
     'designer',
+    'floor',
     'shop',
     'shopfront',
     'strip',
@@ -204,13 +207,25 @@ export function applyBootShortcut(): void {
     return
   }
 
+  if (boot === 'floor') {
+    // Standing on the casino floor. Every other casino link sits the player
+    // down immediately, so without this there is no way to capture the room.
+    useAppearanceStore.getState().completeDesign()
+    useGameStore.getState().enterVenue(VenueId.GoldenAce)
+    return
+  }
+
+  // Everything below opens the one casino and sits the player at a table.
+  // `enterVenue` always arrives on foot, so each of these has to sit down.
+  useGameStore.getState().enterVenue(VenueId.GoldenAce)
+
   if (boot === 'craps') {
-    useGameStore.getState().enterVenue(VenueId.LuckyViper)
+    useGameStore.getState().sitAt(TableId.Craps)
     useCrapsStore.getState().wager(CrapsBet.PassLine, DEMO_BET)
     return
   }
 
-  useGameStore.getState().enterVenue(VenueId.GoldenAce)
+  useGameStore.getState().sitAt(TableId.Blackjack)
 
   if (boot === 'split') {
     // Stack a pair of eights against a dealer sixteen, then let the rest of the

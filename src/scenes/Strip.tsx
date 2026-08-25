@@ -49,8 +49,26 @@ const BUILDING_ROWS: readonly { z: number; leftHeight: number; rightHeight: numb
   { z: -46, leftHeight: 13, rightHeight: 8 },
 ]
 
-/** A third, unenterable house, purely to give the street a named skyline. */
-const SCENERY_SIGN = { z: -30, side: -1 as const, name: 'Neon Palace', color: '#ff2d95' }
+/**
+ * Named houses on the skyline that you cannot walk into.
+ *
+ * The Lucky Viper is here rather than in `VENUES` because the casino it used to
+ * lead to has been folded into the Golden Ace, which now holds both tables. Its
+ * tower and its cyan stay on the street — the strip would read as two buildings
+ * and a gap without it — but its door is gone.
+ *
+ * `z` must be a `BUILDING_ROWS` entry or the sign has no tower to hang on. The
+ * Lucky Viper's old door sat at z = -34, which is between two rows, so it never
+ * had a marquee at all; as scenery it finally gets one.
+ */
+const SCENERY_SIGNS: readonly { z: number; side: 1 | -1; name: string; color: string }[] = [
+  { z: -30, side: -1, name: 'Neon Palace', color: '#ff2d95' },
+  { z: -30, side: 1, name: 'Lucky Viper', color: '#22e0ff' },
+]
+
+function scenerySignAt(z: number, side: 1 | -1) {
+  return SCENERY_SIGNS.find((sign) => sign.z === z && sign.side === side)
+}
 
 const PALM_ROW_Z = [6, -2, -10, -18, -26, -34, -42] as const
 const LAMP_ROW_Z = [4, -8, -20, -32, -44] as const
@@ -77,8 +95,7 @@ function venueAt(z: number, side: 1 | -1) {
 function signFor(z: number, side: 1 | -1): string | undefined {
   const venue = venueAt(z, side)
   if (venue) return venue.kind === VenueKind.Shop ? undefined : venue.name
-  if (SCENERY_SIGN.z === z && SCENERY_SIGN.side === side) return SCENERY_SIGN.name
-  return undefined
+  return scenerySignAt(z, side)?.name
 }
 
 /**
@@ -91,8 +108,7 @@ function signFor(z: number, side: 1 | -1): string | undefined {
 function signColor(z: number, side: 1 | -1, fallback: string): string {
   const venue = venueAt(z, side)
   if (venue) return venue.neonColor
-  if (SCENERY_SIGN.z === z && SCENERY_SIGN.side === side) return SCENERY_SIGN.color
-  return fallback
+  return scenerySignAt(z, side)?.color ?? fallback
 }
 
 /**

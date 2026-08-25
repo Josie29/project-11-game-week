@@ -48,6 +48,9 @@ const SCENES = [
   // swings an arm holding a cane.
   { name: 'strip-dressed', path: '/?boot=strip&dressed&time=21:00&freeze', settleMs: 2400 },
   { name: 'blackjack-dressed', path: '/?boot=settled&dressed&time=21:00&freeze', settleMs: 2600 },
+  // The walkable casino floor. Every other casino link sits the player at a
+  // table, so without this the room itself is never captured.
+  { name: 'casino-floor', path: '/?boot=floor&time=21:00&freeze', settleMs: 2600 },
   { name: 'blackjack-bet', path: '/?boot=casino&time=21:00&freeze', settleMs: 1800 },
   { name: 'blackjack-dealt', path: '/?boot=table&time=21:00&freeze', settleMs: 1800 },
   { name: 'blackjack-settled', path: '/?boot=settled&time=21:00&freeze', settleMs: 2600 },
