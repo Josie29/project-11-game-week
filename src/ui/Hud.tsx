@@ -1,5 +1,6 @@
 import { findItem } from '../character/catalog'
 import { approvalTotal, isFitting, onApproval } from '../character/fitting'
+import { AccountBadge } from './AccountBadge'
 import { STANDING_TABLES, TABLE_LABELS } from '../scenes/casinoFloorLayout'
 import { useAppearanceStore } from '../store/useAppearanceStore'
 import { Location, useGameStore } from '../store/useGameStore'
@@ -73,6 +74,8 @@ export function Hud() {
             on approval {onApproval(fitting).length} · ${owing.toLocaleString()}
           </span>
         )}
+        {/* Under the money, because that is what an account is for here. */}
+        <AccountBadge />
       </div>
 
       {/* Deliberately still shown indoors, where a real casino would have none. */}
