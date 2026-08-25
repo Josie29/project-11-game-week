@@ -74,6 +74,12 @@ Dev-only deep links, stripped from production builds:
 | `?boot=split` | a stacked pair, ready to split |
 | `?boot=draw` | a dealer who must draw twice |
 | `?boot=craps` | Lucky Viper with a pass line down |
+| `?time=HH:MM` | opens at that hour, clock still running |
+| `?freeze` | holds the clock, so a capture is reproducible |
+
+`?time=` and `?freeze` compose with any `?boot=`. Every scene in
+`npm run shots` pins both — the clock runs during the settle delay, so an
+unpinned capture lands on a different sky and different HUD digits each run.
 
 **When something is invisible, build the diagnostic before the fix.** A missing
 die looked identical to a die that had tunnelled out of the world;
@@ -93,7 +99,20 @@ the first 420 ms of a round.
 
 - **Textures are drawn to canvas at runtime**, not shipped as images — cards,
   felt, signage, facades, sky, dice pips. No asset pipeline, crisp at any
-  resolution, and text is guaranteed correct.
+  resolution, and text is guaranteed correct. This is also what made the
+  day/night cycle affordable: a daytime sky was five more hex values, not a
+  generated image.
+- **Anything that varies with the hour reads `src/world/timeOfDay.ts`**, which
+  is pure and holds every keyframe. Scenes never contain the curve.
+
+  A texture authored for one hour cannot be rescued by lighting at another.
+  The facades are painted dark enough for night that no plausible daylight rig
+  lifted them, and noon showed a row of night towers with their lights on until
+  the texture itself started following the clock.
+
+  Two curves driving one impression have to arrive together. The sky was
+  keyframed separately from the facades and neon, and for a while 07:00 showed
+  daylit buildings under a night sky.
 - **Table geometry lives in `src/scenes/tableLayout.ts`**, not in components.
 - **Characters are procedural primitives** with named joint groups, so gestures
   can be authored directly.

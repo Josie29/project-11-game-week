@@ -1,11 +1,23 @@
 import { MeshReflectorMaterial } from '@react-three/drei'
+import { useLayoutEffect } from 'react'
 import { BackSide } from 'three'
+import { useTimeStore } from '../store/useTimeStore'
 import {
   CASINOS,
   FACADE_X,
   ROAD_HALF_WIDTH,
   SIDEWALK_HEIGHT,
 } from '../world/casinos'
+import {
+  daylightAt,
+  lightingAt,
+  neonLevelAt,
+  quantize,
+  SKY_BUCKET_MINUTES,
+  skyBucket,
+  skyPaletteAt,
+} from '../world/timeOfDay'
+import { setFacadeDaylight } from './facadeTexture'
 import { Building } from './components/Building'
 import { CasinoDoor } from './components/CasinoDoor'
 import { Player } from './components/Player'
@@ -65,49 +77,133 @@ function signColor(z: number, side: 1 | -1, fallback: string): string {
   return fallback
 }
 
-export function Strip() {
+/**
+ * Sky dome.
+ *
+ * Its own component so a step of the day redraws four hundred pixels of
+ * gradient rather than re-rendering sixteen towers behind it.
+ */
+function SkyDome() {
+  const bucket = useTimeStore((state) => skyBucket(state.minuteOfDay))
+  // Sample the middle of the step, so the gradient sits centred on it.
+  const palette = skyPaletteAt(bucket * SKY_BUCKET_MINUTES + SKY_BUCKET_MINUTES / 2)
+
+  return (
+    <mesh>
+      <sphereGeometry args={[220, 32, 16]} />
+      <meshBasicMaterial
+        map={getSkyTexture(bucket, palette)}
+        side={BackSide}
+        fog={false}
+        toneMapped={false}
+      />
+    </mesh>
+  )
+}
+
+/**
+ * Fog and the outdoor light rig, following the hour.
+ *
+ * Unlike the sky these are plain numbers, so they vary continuously and cover
+ * the step the gradient moves in.
+ */
+function StripLighting() {
+  const minuteOfDay = useTimeStore((state) => state.minuteOfDay)
+  const light = lightingAt(minuteOfDay)
+
   return (
     <>
-      {/* Sky dome. Unfogged and unlit so the gradient stays exactly as authored. */}
-      <mesh>
-        <sphereGeometry args={[220, 32, 16]} />
-        <meshBasicMaterial map={getSkyTexture()} side={BackSide} fog={false} toneMapped={false} />
-      </mesh>
-
       {/* Fog tinted to the horizon so the far end of the street dissolves into it. */}
-      <fog attach="fog" args={['#202b50', 26, 125]} />
+      <fog attach="fog" args={[light.fogColor, light.fogNear, light.fogFar]} />
 
-      <ambientLight intensity={0.58} color="#8ea0d8" />
-      {/* Cool moonlight key so the towers keep readable form between signs. */}
-      <directionalLight position={[10, 26, 10]} intensity={0.55} color="#93a6ff" />
+      <ambientLight intensity={light.ambientIntensity} color={light.ambientColor} />
+      {/* Key light: cool moonlight at night, swinging low and warm at dawn and dusk. */}
+      <directionalLight
+        position={[light.keyPosition[0], light.keyPosition[1], light.keyPosition[2]]}
+        intensity={light.keyIntensity}
+        color={light.keyColor}
+      />
+    </>
+  )
+}
 
-      {/*
-        Wet asphalt. The mirrored roadway carrying stretched neon is the single
-        strongest cue in the reference art, and a real reflection pass sells it
-        in a way a dark plane never could. Kept at a low resolution with heavy
-        blur so it stays inside the frame budget.
-      */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -20]}>
-        <planeGeometry args={[ROAD_HALF_WIDTH * 2, 140]} />
-        <MeshReflectorMaterial
-          resolution={512}
-          mixBlur={1}
-          mixStrength={11}
-          blur={[300, 90]}
-          depthScale={1}
-          minDepthThreshold={0.4}
-          maxDepthThreshold={1.25}
-          /*
-            The shader multiplies the base colour by the captured reflection, so
-            a near-black roadway cancels the effect out entirely. This has to
-            stay light enough for the neon above to survive the multiply.
-          */
-          color="#39406b"
-          roughness={0.62}
-          metalness={0.45}
-          mirror={1}
-        />
-      </mesh>
+/**
+ * Wet asphalt.
+ *
+ * The mirrored roadway carrying stretched neon is the single strongest cue in
+ * the reference art, and a real reflection pass sells it in a way a dark plane
+ * never could. Kept at a low resolution with heavy blur so it stays inside the
+ * frame budget.
+ *
+ * Its colour follows the hour off the sky's step rather than the raw minute:
+ * the road drying out over ten seconds is invisible, and pinning it to the
+ * coarser value keeps the surrounding street from re-rendering every second.
+ */
+function Roadway() {
+  const bucket = useTimeStore((state) => skyBucket(state.minuteOfDay))
+  const light = lightingAt(bucket * SKY_BUCKET_MINUTES)
+
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -20]}>
+      <planeGeometry args={[ROAD_HALF_WIDTH * 2, 140]} />
+      <MeshReflectorMaterial
+        resolution={512}
+        mixBlur={1}
+        mixStrength={light.roadMixStrength}
+        blur={[300, 90]}
+        depthScale={1}
+        minDepthThreshold={0.4}
+        maxDepthThreshold={1.25}
+        /*
+          The shader multiplies the base colour by the captured reflection, so
+          a near-black roadway cancels the effect out entirely. This has to
+          stay light enough for the neon above to survive the multiply — and
+          light enough by day that the street is not a hole under a bright sky.
+        */
+        color={light.roadColor}
+        roughness={light.roadRoughness}
+        metalness={light.roadMetalness}
+        mirror={light.roadMirror}
+      />
+    </mesh>
+  )
+}
+
+/**
+ * Repaints the shared facade texture for the hour.
+ *
+ * The walls were authored dark enough for a night scene that no plausible
+ * daylight rig lifts them — under a noon sky the street stayed a row of night
+ * towers with their lights on. Lighting cannot correct a texture painted for
+ * one time of day, so the texture itself has to move.
+ *
+ * Renders nothing; it exists to own the side effect.
+ */
+function FacadeDaylight() {
+  const bucket = useTimeStore((state) => skyBucket(state.minuteOfDay))
+
+  useLayoutEffect(() => {
+    setFacadeDaylight(bucket, daylightAt(bucket * SKY_BUCKET_MINUTES))
+  }, [bucket])
+
+  return null
+}
+
+export function Strip() {
+  // Quantized so the street only re-renders while neon is actually fading,
+  // rather than once a second for the whole day.
+  const neonLevel = useTimeStore((state) => quantize(neonLevelAt(state.minuteOfDay), 0.05))
+  const daylight = useTimeStore((state) => quantize(daylightAt(state.minuteOfDay), 0.05))
+  const sidewalkColor = useTimeStore(
+    (state) => lightingAt(skyBucket(state.minuteOfDay) * SKY_BUCKET_MINUTES).sidewalkColor,
+  )
+
+  return (
+    <>
+      <SkyDome />
+      <StripLighting />
+      <Roadway />
+      <FacadeDaylight />
 
       {/*
         No centre line. The reflector darkens the roadway by multiplying in the
@@ -124,7 +220,7 @@ export function Strip() {
           receiveShadow
         >
           <boxGeometry args={[FACADE_X - ROAD_HALF_WIDTH, SIDEWALK_HEIGHT, 140]} />
-          <meshStandardMaterial color="#2c3049" roughness={0.85} />
+          <meshStandardMaterial color={sidewalkColor} roughness={0.85} />
         </mesh>
       ))}
 
@@ -138,6 +234,7 @@ export function Strip() {
             neonColor={signColor(row.z, -1, neonFor(index))}
             facing={1}
             signName={signFor(row.z, -1)}
+            neonLevel={neonLevel}
           />
           <Building
             position={[BUILDING_CENTER_X, 0, row.z]}
@@ -147,26 +244,41 @@ export function Strip() {
             neonColor={signColor(row.z, 1, neonFor(index + 2))}
             facing={-1}
             signName={signFor(row.z, 1)}
+            neonLevel={neonLevel}
           />
         </group>
       ))}
 
       {PALM_ROW_Z.map((z, index) => (
         <group key={z}>
-          <PalmTree position={[-7.6, SIDEWALK_HEIGHT, z]} height={6.4} spin={index * 0.8} />
-          <PalmTree position={[7.6, SIDEWALK_HEIGHT, z - 4]} height={7.1} spin={index * 1.3} />
+          <PalmTree
+            position={[-7.6, SIDEWALK_HEIGHT, z]}
+            height={6.4}
+            spin={index * 0.8}
+            daylight={daylight}
+          />
+          <PalmTree
+            position={[7.6, SIDEWALK_HEIGHT, z - 4]}
+            height={7.1}
+            spin={index * 1.3}
+            daylight={daylight}
+          />
         </group>
       ))}
 
       {LAMP_ROW_Z.map((z) => (
         <group key={z}>
-          <StreetLamp position={[-6.6, SIDEWALK_HEIGHT, z]} />
-          <StreetLamp position={[6.6, SIDEWALK_HEIGHT, z - 6]} />
+          <StreetLamp position={[-6.6, SIDEWALK_HEIGHT, z]} neonLevel={neonLevel} daylight={daylight} />
+          <StreetLamp
+            position={[6.6, SIDEWALK_HEIGHT, z - 6]}
+            neonLevel={neonLevel}
+            daylight={daylight}
+          />
         </group>
       ))}
 
       {CASINOS.map((casino) => (
-        <CasinoDoor key={casino.id} casino={casino} />
+        <CasinoDoor key={casino.id} casino={casino} neonLevel={neonLevel} />
       ))}
 
       <Player />

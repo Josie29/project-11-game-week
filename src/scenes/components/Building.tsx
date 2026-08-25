@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { DoubleSide, RepeatWrapping } from 'three'
+import { dimHex } from '../../world/timeOfDay'
 import { getFacadeTexture } from '../facadeTexture'
 import { getBladeTexture, getMarqueeTexture } from '../signTexture'
 
@@ -13,6 +14,8 @@ interface BuildingProps {
   facing: 1 | -1
   /** When set, the tower carries a named marquee and a projecting blade sign. */
   signName?: string | undefined
+  /** How brightly the neon burns, 0 to 1. Washes the signage out in daylight. */
+  neonLevel?: number
 }
 
 /** Heights, as a fraction of the tower, at which neon bands wrap the facade. */
@@ -36,11 +39,21 @@ export function Building({
   neonColor,
   facing,
   signName,
+  neonLevel = 1,
 }: BuildingProps) {
   const [x, y, z] = position
   // Nudge lit geometry clear of the wall so it never z-fights with the facade.
   const litX = x + facing * (width / 2 + 0.06)
   const facadeRotation: [number, number, number] = [0, facing * Math.PI * 0.5, 0]
+
+  const litNeon = dimHex(neonColor, neonLevel)
+  /*
+    Signage dims by tinting the material rather than by redrawing the texture.
+    `getMarqueeTexture` caches per name and colour, so handing it a dimmed
+    colour would mint a fresh 512px canvas for every sign on every step of the
+    day. three multiplies `color` into `map` for free instead.
+  */
+  const signTint = dimHex('#ffffff', neonLevel)
 
   const facade = useMemo(() => {
     const texture = getFacadeTexture().clone()
@@ -67,7 +80,7 @@ export function Building({
           rotation={facadeRotation}
         >
           <planeGeometry args={[depth * 0.92, 0.16]} />
-          <meshBasicMaterial color={neonColor} toneMapped={false} />
+          <meshBasicMaterial color={litNeon} toneMapped={false} />
         </mesh>
       ))}
 
@@ -80,14 +93,14 @@ export function Building({
           rotation={facadeRotation}
         >
           <planeGeometry args={[0.13, height * 0.8]} />
-          <meshBasicMaterial color={neonColor} toneMapped={false} />
+          <meshBasicMaterial color={litNeon} toneMapped={false} />
         </mesh>
       ))}
 
       {/* Crown band so the skyline has a lit edge against the night sky. */}
       <mesh position={[litX, y + height - 0.4, z]} rotation={facadeRotation}>
         <planeGeometry args={[depth * 0.8, 0.22]} />
-        <meshBasicMaterial color={neonColor} toneMapped={false} />
+        <meshBasicMaterial color={litNeon} toneMapped={false} />
       </mesh>
 
       {signName && (
@@ -96,7 +109,11 @@ export function Building({
               hung low, since it is the thing a player reads to find the door. */}
           <mesh position={[litX, y + 4.4, z]} rotation={facadeRotation}>
             <planeGeometry args={[depth * 0.98, depth * 0.245]} />
-            <meshBasicMaterial map={getMarqueeTexture(signName, neonColor)} toneMapped={false} />
+            <meshBasicMaterial
+              map={getMarqueeTexture(signName, neonColor)}
+              color={signTint}
+              toneMapped={false}
+            />
           </mesh>
 
           {/*
@@ -108,6 +125,7 @@ export function Building({
             <planeGeometry args={[1.9, 7.6]} />
             <meshBasicMaterial
               map={getBladeTexture(signName, neonColor)}
+              color={signTint}
               toneMapped={false}
               side={DoubleSide}
             />

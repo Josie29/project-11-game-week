@@ -87,6 +87,23 @@ canvas {
   color: var(--color-text-muted);
 }
 
+/*
+  Opposite corner from the bankroll, so the two numbers never compete. Absolute
+  because `.hud` is a top-left flex column, the same escape `.hud__prompt` uses.
+*/
+.hud__clock {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  font-family: var(--font-numeric);
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  /* Fixed width per digit, so ticking minutes cannot jitter the alignment. */
+  font-variant-numeric: tabular-nums;
+}
+
 .hud__prompt {
   position: absolute;
   left: 50%;

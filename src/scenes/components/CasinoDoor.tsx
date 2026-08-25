@@ -1,8 +1,20 @@
 import type { CasinoConfig } from '../../world/casinos'
+import { dimHex } from '../../world/timeOfDay'
 
 interface CasinoDoorProps {
   casino: CasinoConfig
+  /** How brightly the entrance burns, 0 to 1. Washes out in daylight. */
+  neonLevel?: number
 }
+
+/**
+ * Floor on the spill light, as a fraction of its night intensity.
+ *
+ * The doorway is the thing the player is looking for, so it keeps reading as a
+ * light source even at noon — dimming it all the way out would leave the only
+ * interactive object on the street indistinguishable from the facade.
+ */
+const SPILL_DAYLIGHT_FLOOR = 0.22
 
 /**
  * The lit entrance the player walks into.
@@ -10,11 +22,14 @@ interface CasinoDoorProps {
  * Purely decorative — the actual entry is a proximity check in `Player`, so the
  * door never needs collision or interaction handlers.
  */
-export function CasinoDoor({ casino }: CasinoDoorProps) {
+export function CasinoDoor({ casino, neonLevel = 1 }: CasinoDoorProps) {
   const [x, y, z] = casino.doorPosition
   // Doors on the left of the street face +X; those on the right face -X.
   const facing = x < 0 ? 1 : -1
-  const color = casino.available ? casino.neonColor : '#4a5070'
+  const color = dimHex(casino.available ? casino.neonColor : '#4a5070', neonLevel)
+
+  const nightIntensity = casino.available ? 22 : 6
+  const spill = nightIntensity * (SPILL_DAYLIGHT_FLOOR + (1 - SPILL_DAYLIGHT_FLOOR) * neonLevel)
 
   return (
     <group position={[x, y, z]}>
@@ -34,7 +49,7 @@ export function CasinoDoor({ casino }: CasinoDoorProps) {
       <pointLight
         position={[facing * 1.5, 2.4, 0]}
         color={color}
-        intensity={casino.available ? 22 : 6}
+        intensity={spill}
         distance={12}
         decay={2}
       />

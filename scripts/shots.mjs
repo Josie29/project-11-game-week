@@ -23,14 +23,22 @@ const BASE = process.env.SHOTS_BASE_URL ?? 'http://localhost:5180'
  * long enough for that scene's animation to land.
  */
 const SCENES = [
-  { name: 'strip', path: '/', settleMs: 2400 },
-  { name: 'blackjack-bet', path: '/?boot=casino', settleMs: 1800 },
-  { name: 'blackjack-dealt', path: '/?boot=table', settleMs: 1800 },
-  { name: 'blackjack-settled', path: '/?boot=settled', settleMs: 2600 },
-  { name: 'blackjack-split', path: '/?boot=split', settleMs: 2000, keys: ['p'] },
-  { name: 'blackjack-dealer-draws', path: '/?boot=draw', settleMs: 4200, keys: ['s'] },
-  { name: 'craps-comeout', path: '/?boot=craps', settleMs: 1800 },
-  { name: 'craps-rolled', path: '/?boot=craps', settleMs: 3400, keys: [' '] },
+  // Every capture pins its hour and freezes it. The clock otherwise keeps
+  // running through the settle delay, so two runs land on different skies —
+  // and, since the HUD clock is on screen indoors too, on different digits in
+  // the corner. Either way the comparison this file exists for stops meaning
+  // anything.
+  { name: 'strip', path: '/?time=21:00&freeze', settleMs: 2400 },
+  { name: 'strip-dawn', path: '/?time=05:30&freeze', settleMs: 2400 },
+  { name: 'strip-noon', path: '/?time=12:00&freeze', settleMs: 2400 },
+  { name: 'strip-dusk', path: '/?time=19:00&freeze', settleMs: 2400 },
+  { name: 'blackjack-bet', path: '/?boot=casino&time=21:00&freeze', settleMs: 1800 },
+  { name: 'blackjack-dealt', path: '/?boot=table&time=21:00&freeze', settleMs: 1800 },
+  { name: 'blackjack-settled', path: '/?boot=settled&time=21:00&freeze', settleMs: 2600 },
+  { name: 'blackjack-split', path: '/?boot=split&time=21:00&freeze', settleMs: 2000, keys: ['p'] },
+  { name: 'blackjack-dealer-draws', path: '/?boot=draw&time=21:00&freeze', settleMs: 4200, keys: ['s'] },
+  { name: 'craps-comeout', path: '/?boot=craps&time=21:00&freeze', settleMs: 1800 },
+  { name: 'craps-rolled', path: '/?boot=craps&time=21:00&freeze', settleMs: 3400, keys: [' '] },
 ]
 
 const outDir = resolve(process.argv[2] ?? 'shots')

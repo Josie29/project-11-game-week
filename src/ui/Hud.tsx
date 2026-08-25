@@ -1,11 +1,14 @@
 import { Location, useGameStore } from '../store/useGameStore'
+import { useTimeStore } from '../store/useTimeStore'
 import { getCasino } from '../world/casinos'
+import { daylightAt, formatClock } from '../world/timeOfDay'
 
-/** Persistent overlay: bankroll, movement hint, and the door prompt. */
+/** Persistent overlay: bankroll, clock, movement hint, and the door prompt. */
 export function Hud() {
   const bankroll = useGameStore((state) => state.bankroll)
   const location = useGameStore((state) => state.location)
   const nearbyCasino = useGameStore((state) => state.nearbyCasino)
+  const minuteOfDay = useTimeStore((state) => state.minuteOfDay)
 
   const nearby = nearbyCasino ? getCasino(nearbyCasino) : null
 
@@ -15,6 +18,9 @@ export function Hud() {
         <span className="hud__label">Bankroll</span>
         <span className="hud__amount">${bankroll.toLocaleString()}</span>
       </div>
+
+      {/* Deliberately still shown indoors, where a real casino would have none. */}
+      <time className="hud__clock">{formatClock(minuteOfDay)}</time>
 
       {location === Location.Strip && (
         <div className="hud__hint">
@@ -29,7 +35,18 @@ export function Hud() {
       {nearby && (
         <div className="hud__prompt" style={{ borderColor: nearby.neonColor }}>
           <strong style={{ color: nearby.neonColor }}>{nearby.name}</strong>
-          <span>{nearby.available ? 'Walk in to play' : 'Closed tonight'}</span>
+          {/*
+            "Closed tonight" was written when the strip was permanently dark.
+            It survived unchanged into a noon sky, which is the sort of line a
+            player reads once and stops trusting the rest of the screen over.
+          */}
+          <span>
+            {nearby.available
+              ? 'Walk in to play'
+              : daylightAt(minuteOfDay) > 0.5
+                ? 'Closed today'
+                : 'Closed tonight'}
+          </span>
         </div>
       )}
     </div>

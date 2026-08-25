@@ -128,12 +128,12 @@ the checkpoint passed
 Explicitly not this week — listing them so they stop being tempting.
 **Splitting pairs was on this list and shipped anyway**: the pure-engine split
 meant it cost a day rather than the week that was feared, and it is covered by
-tests.
+tests. **The day/night cycle was too**, after the week — see below.
 
 - Native iOS build, App Store submission, TestFlight
 - Multiplayer, accounts, backend, leaderboards
 - Real money or in-app purchases of any kind
-- Open-world town, interior NPCs, traffic, day/night cycle
+- Open-world town, interior NPCs, traffic
 - Card counting, side bets, insurance
 - Craps: come bets, place bets, hardways, any prop bet
 - Mobile touch controls (desktop keyboard/mouse only)
@@ -160,6 +160,14 @@ Worth recording, because the misses were more instructive than the hits.
 - **Splitting pairs was listed as a non-goal and shipped anyway.** The
   pure-engine rule made it affordable. The non-goals that held were the ones
   about scope of *world*, not scope of *rules*.
+- **The day/night cycle was a non-goal and shipped after the week**, for the
+  same reason the art pipeline miss was a happy one: because every texture is
+  drawn at runtime, a daytime sky was five more hex values rather than a
+  second set of assets. The cost was not the sky but everything keyed to it —
+  the facade texture, the road's mirror and the neon brightness all had night
+  baked in, and each was invisible until a daytime frame was actually looked
+  at. The clock and the colour curves are pure and tested; the scenes read
+  them.
 - **Physics arrived only in craps**, exactly as scoped, and the boundary held:
   the strip character and the blackjack table never touch rapier.
 - **The riskiest thing was not any feature — it was working without seeing the

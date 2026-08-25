@@ -3,11 +3,44 @@ import { PlayerAction, Rank, Suit } from '../games/blackjack/types'
 import { useBlackjackStore } from '../store/useBlackjackStore'
 import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
+import { useTimeStore } from '../store/useTimeStore'
 import { CrapsBet } from '../scenes/crapsFeltLayout'
 import { CasinoId } from '../world/casinos'
 
 /** Wager staked automatically when deep-linking to a dealt table. */
 const DEMO_BET = 50
+
+/** Matches a 24-hour `HH:MM`, rejecting impossible hours and minutes. */
+const CLOCK_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/
+
+/**
+ * Honours `?time=HH:MM` to open at an hour, and `?freeze` to hold it there.
+ *
+ * The two are separate because they serve opposite needs. Watching a transition
+ * means jumping to just before sunrise and letting it run, so `?time=` alone
+ * keeps the clock moving. A screenshot means the opposite: time running through
+ * the settle delay lands each capture on whatever hour it happened to reach, so
+ * two runs disagree and the regression check is worthless — hence `?freeze`.
+ *
+ * Both apply independently of `?boot=`, so all three compose.
+ */
+function applyTimeShortcut(): void {
+  const params = new URLSearchParams(window.location.search)
+  const time = params.get('time')
+
+  if (time) {
+    const match = CLOCK_PATTERN.exec(time)
+    const hours = match?.[1]
+    const minutes = match?.[2]
+    if (hours !== undefined && minutes !== undefined) {
+      useTimeStore.getState().setMinuteOfDay(Number(hours) * 60 + Number(minutes))
+    }
+  }
+
+  if (params.has('freeze')) {
+    useTimeStore.getState().setPaused(true)
+  }
+}
 
 /**
  * Honours a `?boot=` query parameter so a scene can be opened directly.
@@ -23,8 +56,14 @@ const DEMO_BET = 50
  * - `?boot=draw` forces the dealer to draw twice, which is the case the staged
  *   reveal exists for and which a random shoe rarely produces on demand.
  * - `?boot=craps` opens the Lucky Viper with a pass-line bet already down.
+ * - `?time=HH:MM` opens at that hour, with the clock still running.
+ * - `?freeze` holds the clock wherever it is, so a capture is reproducible.
+ *
+ * All three compose, e.g. `?boot=craps&time=06:00&freeze`.
  */
 export function applyBootShortcut(): void {
+  applyTimeShortcut()
+
   const boot = new URLSearchParams(window.location.search).get('boot')
   if (!boot) return
 
