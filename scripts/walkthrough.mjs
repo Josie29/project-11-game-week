@@ -148,6 +148,11 @@ try {
   //    crosses the casino's row while still out in the middle of the road, five
   //    units from its door and well outside the trigger.
   //
+  //    Every leg below runs far more bursts than the distance needs, and the
+  //    counts are sized for a deployed build rather than a local one — the same
+  //    counts that cleared the crossing against localhost fell short against
+  //    Vercel, where the frames are slower.
+  //
   //    Every leg below runs more bursts than the distance needs. Ground covered
   //    per burst varies with the frame rate — the walk clamps its step at a
   //    10fps floor, so a slow headless frame moves the player a quarter of what
@@ -156,8 +161,8 @@ try {
   await page.keyboard.press('Escape')
   await page.waitForTimeout(600)
 
-  for (let i = 0; i < 20; i++) await walk(['KeyA'], 320)
-  await walkUntil(['KeyW'], 'F to sit at a table', { bursts: 28 })
+  for (let i = 0; i < 30; i++) await walk(['KeyA'], 320)
+  await walkUntil(['KeyW'], 'F to sit at a table', { bursts: 45 })
 
   //    Inside now, and W plus A heads for the blackjack table.
   await walkUntil(['KeyW', 'KeyA'], 'Blackjack', { bursts: 20 })
@@ -185,8 +190,8 @@ try {
   await page.waitForTimeout(700)
   await walkUntilGone(['KeyS', 'KeyD'], 'F to sit at a table', { bursts: 30 })
 
-  for (let i = 0; i < 24; i++) await walk(['KeyD'], 320)
-  await walkUntil(['KeyW'], 'F to use a chair', { bursts: 30 })
+  for (let i = 0; i < 34; i++) await walk(['KeyD'], 320)
+  await walkUntil(['KeyW'], 'F to use a chair', { bursts: 45 })
   await capture('9-clinic')
 
   // 8. Sell a pint. This is the answer to going broke, so it has to work from
