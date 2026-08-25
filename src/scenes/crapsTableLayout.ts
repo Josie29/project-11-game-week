@@ -25,18 +25,19 @@ export interface TablePoint {
 /**
  * The playing surface, wall to wall.
  *
- * Narrower than the table used to be. The rail went from a 0.14 strip to a
- * 0.30 moulding to match `art/refs/craps_table.png`, and it took that width out
- * of the pit rather than off the outside: the outer footprint is load-bearing
- * for where the player stands, where the boxman stands and where the walking
- * collision box sits, and none of those wanted retuning to buy a nicer rail.
+ * Two and a half to one, which is roughly a real table's proportions. It was
+ * three to two, near enough square, and that shape is what made the throw wrong:
+ * a craps shooter stands at one end of a long side and throws the length of the
+ * table into the far wall, and on a squarish table there is no length to throw
+ * down. Everything else here follows from that — where the shooter stands,
+ * where the dice are released, and how the print is laid out.
  */
-export const PIT_HALF_WIDTH = 1.7
-export const PIT_HALF_DEPTH = 1.1
+export const PIT_HALF_WIDTH = 2.25
+export const PIT_HALF_DEPTH = 0.9
 
 /** The table's outer edge, rail included. */
-export const OUTER_HALF_WIDTH = 2.0
-export const OUTER_HALF_DEPTH = 1.4
+export const OUTER_HALF_WIDTH = 2.57
+export const OUTER_HALF_DEPTH = 1.22
 
 /** How wide the wooden rail moulding is, measured across the top. */
 export const RAIL_WIDTH = OUTER_HALF_WIDTH - PIT_HALF_WIDTH
@@ -48,7 +49,7 @@ export const RAIL_WIDTH = OUTER_HALF_WIDTH - PIT_HALF_WIDTH
  * what keeps the moulding a constant width all the way round. Set them
  * independently and the corners pinch.
  */
-export const OUTER_CORNER_RADIUS = 0.62
+export const OUTER_CORNER_RADIUS = 0.52
 export const INNER_CORNER_RADIUS = OUTER_CORNER_RADIUS - RAIL_WIDTH
 
 /** The felt surface. */
@@ -103,50 +104,64 @@ export const DRINK_HOLDER_RADIUS = 0.075
 export const DIE_HALF = 0.08
 
 /**
- * Where the shooter releases the dice and where they wait between throws.
+ * Where the shooter releases the dice, and where they wait between throws.
  *
- * Here rather than in `CrapsDice.tsx` because they are pit-relative: shrinking
- * the pit for a thicker rail is exactly the change that would leave the resting
- * dice buried in a bumper, and nothing on screen would say so — the dice would
- * simply be gone, which is a failure this project has already had once.
+ * Both ends of the table's long axis, because that is the throw: the shooter
+ * stands at one end of the near rail and pitches the dice the length of the
+ * felt into the far wall. Thrown across the short axis — which is what a
+ * squarish table forced — they travel about a metre and stop, which reads as
+ * dropping them rather than shooting them.
+ *
+ * Here rather than in `CrapsDice.tsx` because they are pit-relative. Resizing
+ * the pit is exactly the change that would leave the resting dice buried in a
+ * bumper, and nothing on screen would say so: the dice would simply be gone,
+ * which is a failure this project has already had once.
+ *
+ * Both pairs sit on the strip of bare felt past the end of the printed layout,
+ * so neither the resting dice nor the release point lands on top of a bet.
  */
-export const DICE_THROW_ORIGIN: readonly [number, number, number] = [-1.05, 1.42, -0.72]
-export const DICE_REST_POSITION: readonly [number, number, number] = [-1.42, 1.09, -0.88]
+export const DICE_THROW_ORIGINS: readonly (readonly [number, number, number])[] = [
+  [-2.0, 1.42, 0.42],
+  [-2.0, 1.42, 0.62],
+]
 
-/** How far apart the two dice sit, at the throw and at rest. */
-export const DICE_THROW_SPACING = 0.22
-export const DICE_REST_SPACING = 0.2
+export const DICE_REST_POSITIONS: readonly (readonly [number, number, number])[] = [
+  [-2.1, 1.09, -0.22],
+  [-2.1, 1.09, 0.02],
+]
+
+/**
+ * Launch velocity per die, in metres per second.
+ *
+ * Velocity, not impulse: a 0.16 m cube at rapier's default density masses about
+ * four grams, so an impulse of the magnitude that looks reasonable on paper
+ * accelerates it to several hundred metres per second. Set here so the throw
+ * and the table it has to cross stay in one file — the table got two and a half
+ * times longer, and a throw tuned for the old one dies in the middle of it.
+ */
+export const DICE_THROW_VELOCITIES: readonly (readonly [number, number, number])[] = [
+  [5.7, 0.45, -0.55],
+  [5.4, 0.45, -0.75],
+]
 
 export const PUCK_RADIUS = 0.1
 
 /**
  * Where the ON puck waits while the table is coming out.
  *
- * The strip of felt between the last point box and the bumper, on the opposite
- * side from the dice. It used to sit in the same corner the dice rest in, which
- * put a black disc underneath them — the two are the only loose objects on the
- * felt between throws, and having them touch made the puck read as a third die.
- *
- * There is not much room for it anywhere else, and less than it looks: the
- * point boxes reach to within a puck's width of the boxman's bumper, so the
- * only clear felt at that end is beside them — and pushed any further toward
- * the corner it runs into the pit's rounding and hangs over the bumper, which
- * `isInCrapsPit` refuses and the eye does not catch.
+ * The bare felt past the far end of the printed layout, opposite the dice. The
+ * printed bands now run the full width of a much longer table, so these two end
+ * strips are the only felt not spoken for — and pushed any further out the puck
+ * runs into the pit's rounding and hangs over the bumper, which `isInCrapsPit`
+ * refuses and the eye does not catch.
  */
-export const PUCK_OFF_POSITION: readonly [number, number] = [1.55, -0.6]
+export const PUCK_OFF_POSITION: readonly [number, number] = [2.12, 0]
 
-/**
- * Where the drink holders are let into the rail.
- *
- * Four along the long sides where players stand, one at each end for the crew.
- * Asserted onto the rail rather than eyeballed, because a holder half a
- * centimetre inboard cuts a hole through the chip channel.
- */
 export const DRINK_HOLDERS: readonly TablePoint[] = [
-  { x: -1.15, z: -(PIT_HALF_DEPTH + DRINK_HOLDER_OFFSET) },
-  { x: 1.15, z: -(PIT_HALF_DEPTH + DRINK_HOLDER_OFFSET) },
-  { x: -1.15, z: PIT_HALF_DEPTH + DRINK_HOLDER_OFFSET },
-  { x: 1.15, z: PIT_HALF_DEPTH + DRINK_HOLDER_OFFSET },
+  ...[-1.55, 0, 1.55].flatMap((x) => [
+    { x, z: -(PIT_HALF_DEPTH + DRINK_HOLDER_OFFSET) },
+    { x, z: PIT_HALF_DEPTH + DRINK_HOLDER_OFFSET },
+  ]),
   { x: -(PIT_HALF_WIDTH + DRINK_HOLDER_OFFSET), z: 0 },
   { x: PIT_HALF_WIDTH + DRINK_HOLDER_OFFSET, z: 0 },
 ]

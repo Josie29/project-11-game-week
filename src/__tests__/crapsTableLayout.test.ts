@@ -1,13 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { CrapsBet, getCrapsBetRect, POINT_BOX_RECTS, POINT_NUMBERS, rectCenter } from '../scenes/crapsFeltLayout'
+import {
+  betChipSpot,
+  CrapsBet,
+  PLACE_BETS,
+  POINT_BOX_RECTS,
+  POINT_NUMBERS,
+  pointPuckSpot,
+} from '../scenes/crapsFeltLayout'
+import { CHIP_RADIUS } from '../scenes/chipLayout'
 import { CRAPS_ORIGIN, TABLE_FOOTPRINTS, TableId } from '../scenes/casinoFloorLayout'
 import {
   CHIP_CHANNEL_OFFSET,
   CHIP_CHANNEL_WIDTH,
-  DICE_REST_POSITION,
-  DICE_REST_SPACING,
-  DICE_THROW_ORIGIN,
-  DICE_THROW_SPACING,
+  DICE_REST_POSITIONS,
+  DICE_THROW_ORIGINS,
+  DICE_THROW_VELOCITIES,
   DIE_HALF,
   DRINK_HOLDER_OFFSET,
   DRINK_HOLDER_RADIUS,
@@ -114,22 +121,44 @@ describe('what is let into the rail', () => {
 
 describe('the dice', () => {
   it('parks both dice inside the pit with a die width to spare', () => {
-    // The pit shrank to make room for a thicker rail. A resting die left inside
-    // a bumper does not look wrong, it looks absent — this project has already
-    // lost a die to y = -18 once, and it took a diagnostic to find it.
-    for (let index = 0; index < 2; index++) {
-      const x = DICE_REST_POSITION[0] + index * DICE_REST_SPACING
-      expect(isInCrapsPit(x, DICE_REST_POSITION[2], DIE_HALF)).toBe(true)
+    // A resting die left inside a bumper does not look wrong, it looks absent —
+    // this project has already lost a die to y = -18 once, and it took a
+    // diagnostic to find it.
+    for (const [x, , z] of DICE_REST_POSITIONS) {
+      expect(isInCrapsPit(x, z, DIE_HALF)).toBe(true)
     }
   })
 
   it('releases both dice from over the felt, not over the rail', () => {
     // Released over the rail, a die drops onto wood and skitters off the table
     // instead of into the pit.
-    for (let index = 0; index < 2; index++) {
-      const x = DICE_THROW_ORIGIN[0] + index * DICE_THROW_SPACING
-      expect(isInCrapsPit(x, DICE_THROW_ORIGIN[2], DIE_HALF)).toBe(true)
+    for (const [x, , z] of DICE_THROW_ORIGINS) {
+      expect(isInCrapsPit(x, z, DIE_HALF)).toBe(true)
     }
+  })
+
+  /*
+   * The throw has to run the length of the table, which is the whole reason the
+   * table was made long. Released in the middle, or aimed across the short
+   * axis, the dice travel about a metre and stop — which reads as dropping them
+   * rather than shooting them, and no screenshot of the settled dice shows it.
+   */
+  it('shoots from one end, down the long axis, at the far wall', () => {
+    for (const [x] of DICE_THROW_ORIGINS) {
+      // Released in the far third of the table's length...
+      expect(x).toBeLessThan(-PIT_HALF_WIDTH * 0.66)
+    }
+
+    for (const [vx, , vz] of DICE_THROW_VELOCITIES) {
+      // ...and thrown mostly along it, not across it.
+      expect(vx).toBeGreaterThan(0)
+      expect(Math.abs(vx)).toBeGreaterThan(Math.abs(vz) * 3)
+    }
+
+    // Fast enough to actually cross a table this long. At the old throw's speed
+    // the dice died around the middle of it.
+    const reach = Math.min(...DICE_THROW_VELOCITIES.map(([vx]) => vx))
+    expect(reach).toBeGreaterThan(PIT_HALF_WIDTH)
   })
 
   it('parks the OFF puck on the felt and clear of the resting dice', () => {
@@ -140,9 +169,8 @@ describe('the dice', () => {
     const [puckX, puckZ] = PUCK_OFF_POSITION
     expect(isInCrapsPit(puckX, puckZ, PUCK_RADIUS)).toBe(true)
 
-    for (let index = 0; index < 2; index++) {
-      const dieX = DICE_REST_POSITION[0] + index * DICE_REST_SPACING
-      const gap = Math.hypot(puckX - dieX, puckZ - DICE_REST_POSITION[2])
+    for (const [dieX, , dieZ] of DICE_REST_POSITIONS) {
+      const gap = Math.hypot(puckX - dieX, puckZ - dieZ)
       expect(gap).toBeGreaterThan(PUCK_RADIUS + DIE_HALF)
     }
   })
@@ -172,11 +200,13 @@ describe('the dice', () => {
 describe('the printed layout on the felt', () => {
   it('keeps every bet and its chips on the felt', () => {
     // `feltToWorld` scales by the pit, so a resized pit moves the print and the
-    // chips together — but only if every band was inside the felt to start
+    // chips together — but only if every stack was inside the felt to start
     // with. A chip stack overhanging the bumper is the craps table's version of
-    // the payout that fell off the blackjack table's edge.
+    // the payout that fell off the blackjack table's edge, and the line bets
+    // are stacked off-centre now, which is exactly the nudge that puts one over
+    // an edge without moving the printed band it belongs to.
     for (const bet of Object.values(CrapsBet)) {
-      const { u, v } = rectCenter(getCrapsBetRect(bet))
+      const { u, v } = betChipSpot(bet)
       const [x, , z] = feltToWorld(u, v)
       expect(isInCrapsPit(x, z, 0.12)).toBe(true)
     }
@@ -184,9 +214,35 @@ describe('the printed layout on the felt', () => {
 
   it('keeps the ON puck on the felt over every point it can be parked on', () => {
     for (const point of POINT_NUMBERS) {
-      const { u, v } = rectCenter(POINT_BOX_RECTS[point])
+      const { u, v } = pointPuckSpot(point)
       const [x, , z] = feltToWorld(u, v)
-      expect(isInCrapsPit(x, z, 0.1)).toBe(true)
+      expect(isInCrapsPit(x, z, PUCK_RADIUS)).toBe(true)
+    }
+  })
+
+  /*
+   * The point is usually a number the player has money on, so the puck and a
+   * stack of chips want the same box. Overlapping, the puck buries the chips
+   * and the felt stops saying how much is on the number it is sitting on.
+   */
+  it('keeps the puck clear of the chips inside the same box', () => {
+    for (const point of POINT_NUMBERS) {
+      const puck = pointPuckSpot(point)
+      const chips = betChipSpot(PLACE_BETS[point])
+
+      const [puckX, , puckZ] = feltToWorld(puck.u, puck.v)
+      const [chipX, , chipZ] = feltToWorld(chips.u, chips.v)
+
+      expect(Math.hypot(puckX - chipX, puckZ - chipZ)).toBeGreaterThan(PUCK_RADIUS + CHIP_RADIUS)
+
+      // And both still inside the box they belong to.
+      const rect = POINT_BOX_RECTS[point]
+      for (const spot of [puck, chips]) {
+        expect(spot.u).toBeGreaterThan(rect.u0)
+        expect(spot.u).toBeLessThan(rect.u1)
+        expect(spot.v).toBeGreaterThan(rect.v0)
+        expect(spot.v).toBeLessThan(rect.v1)
+      }
     }
   })
 

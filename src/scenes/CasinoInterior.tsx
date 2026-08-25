@@ -12,8 +12,9 @@ import {
   EXIT_DOOR,
   EXIT_RADIUS,
   SEATS,
-  SIT_RADIUS,
+  SIT_RADII,
   SIT_SPOTS,
+  STANDING_TABLES,
   TABLE_FOOTPRINTS,
   TABLE_IDS,
   tableOrigin,
@@ -58,13 +59,12 @@ const LOCAL_TARGETS: Record<TableId, readonly [number, number, number]> = {
   // Roughly the middle of the felt.
   [TableId.Blackjack]: [0.15, 1.05, 0.45],
   /*
-   * The craps table is smaller and centred, and its printed layout is the game.
-   * Aimed a little past the middle toward the boxman, because the control bar
-   * covers the lower third of the screen and the pass line — the biggest, most
-   * bet-on marking on the felt, and the one the layout is built around — sits
-   * on the near edge. Centred on the felt it was half behind the HUD.
+   * The craps table's printed layout is the game, so the camera looks at the
+   * middle of it. Aimed a little past centre toward the boxman, because the
+   * control bar covers the lower third of the screen and the pass line — the
+   * biggest, most bet-on marking on the felt — sits on the near edge.
    */
-  [TableId.Craps]: [0, 1.05, -0.22],
+  [TableId.Craps]: [0, 1.05, 0.04],
 }
 
 /*
@@ -77,8 +77,20 @@ const LOCAL_TARGETS: Record<TableId, readonly [number, number, number]> = {
 const DEFAULT_YAW = -0.2925
 const DEFAULT_PITCH = 0.52
 const DEFAULT_DISTANCE = 5.8
-const CRAPS_DISTANCE = 5.1
-const CRAPS_PITCH = 0.72
+/*
+ * Further back and less steep than blackjack's. The craps table is over five
+ * metres end to end now — more than twice its old width — and at the previous
+ * distance both ends of the layout were off the sides of the screen.
+ */
+const CRAPS_DISTANCE = 5.9
+const CRAPS_PITCH = 0.82
+/*
+ * Swung off the shooter's shoulder rather than square to the table. Square on,
+ * the standing player is directly between the camera and the felt and reads as
+ * a dark mass at the bottom of the frame; from here they stand in profile at
+ * the near left, and the table runs away from them in the direction they throw.
+ */
+const CRAPS_YAW = 0.0
 
 /*
  * Limits. The near limit is set by the seated player, not by taste: closer than
@@ -126,7 +138,7 @@ function TableCamera({ table }: { table: TableId }) {
 
   const { orbit } = useOrbitInput(
     {
-      yaw: isCraps ? 0 : DEFAULT_YAW,
+      yaw: isCraps ? CRAPS_YAW : DEFAULT_YAW,
       pitch: isCraps ? CRAPS_PITCH : DEFAULT_PITCH,
       distance: isCraps ? CRAPS_DISTANCE : DEFAULT_DISTANCE,
     },
@@ -222,7 +234,7 @@ export function CasinoInterior({ venueId }: CasinoInteriorProps) {
       ...TABLE_IDS.map((table) => ({
         id: table as string,
         position: SIT_SPOTS[table],
-        radius: SIT_RADIUS,
+        radius: SIT_RADII[table],
       })),
       { id: 'exit', position: EXIT_DOOR, radius: EXIT_RADIUS },
     ],
@@ -286,10 +298,16 @@ export function CasinoInterior({ venueId }: CasinoInteriorProps) {
             position={[SEATS[activeTable][0], 0, SEATS[activeTable][2]]}
             rotation={[0, Math.PI, 0]}
           >
+            {/*
+              Standing at craps, seated at blackjack. Nobody sits at a craps
+              table — you stand at the rail and throw over it — and the seated
+              pose put the player's head below the rail they were supposedly
+              throwing across, which read as them hiding behind the table.
+            */}
             <CasinoCharacter
               appearance={appearance}
               equipped={equipped}
-              seated
+              seated={!STANDING_TABLES.has(activeTable)}
               gestureSource="player"
             />
           </group>

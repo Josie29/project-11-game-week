@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   CrapsBet,
+  isPlaceBet,
+  PLACE_BETS,
   POINT_BOX_RECTS,
   POINT_NUMBERS,
   PointNumber,
@@ -51,13 +53,31 @@ describe('craps felt hit testing', () => {
    */
   it('returns null for bare felt and off-texture points', () => {
     // Gap between the field band and the don't-pass bar.
-    expect(hitTestCrapsFelt(0.5, 0.52)).toBeNull()
+    expect(hitTestCrapsFelt(0.5, 0.475)).toBeNull()
     // Outside the horizontal margin, level with the pass line.
-    expect(hitTestCrapsFelt(0.02, 0.88)).toBeNull()
-    // The boxman's end carries display-only point boxes, not bets.
-    expect(hitTestCrapsFelt(0.5, 0.16)).toBeNull()
+    expect(hitTestCrapsFelt(0.02, 0.77)).toBeNull()
+    // The strip of felt between the place boxes and the field band.
+    expect(hitTestCrapsFelt(0.5, 0.295)).toBeNull()
+    // The apron of bare felt the print is held back from, at the near bumper.
+    expect(hitTestCrapsFelt(0.5, 0.95)).toBeNull()
+    // The gap between two place boxes. Worth its own case now the boxes take
+    // money: a click that lands between the six and the eight must buy
+    // nothing, not the nearer of the two.
+    expect(hitTestCrapsFelt(0.5, 0.2)).toBeNull()
     expect(hitTestCrapsFelt(-0.3, 0.5)).toBeNull()
     expect(hitTestCrapsFelt(1.4, 0.5)).toBeNull()
+  })
+
+  /**
+   * Catches the bug where a numbered box stops resolving to the place bet on
+   * that number — a click on the 6 buying the 8, which spends real money on the
+   * wrong wager and looks like the felt simply mispainted.
+   */
+  it('resolves each numbered box to the place bet on that number', () => {
+    for (const point of POINT_NUMBERS) {
+      const { u, v } = rectCenter(POINT_BOX_RECTS[point])
+      expect(hitTestCrapsFelt(u, v)).toBe(PLACE_BETS[point])
+    }
   })
 
   /**
@@ -93,14 +113,19 @@ describe('craps point boxes', () => {
    * bet region — the player cannot tell what the point is, which makes the
    * come-out to point-resolution sequence unreadable.
    */
-  it('places every point box inside the felt and clear of the bet bands', () => {
-    const topmostBet = Math.min(...ALL_BETS.map((bet) => getCrapsBetRect(bet).v0))
+  it('places every point box inside the felt and clear of the line bands', () => {
+    // Measured against the line bets only. The boxes are themselves bets now,
+    // so including them would compare the row with itself and pass whatever it
+    // was given.
+    const topmostLineBet = Math.min(
+      ...ALL_BETS.filter((bet) => !isPlaceBet(bet)).map((bet) => getCrapsBetRect(bet).v0),
+    )
 
     for (const point of POINT_NUMBERS) {
       const rect = POINT_BOX_RECTS[point]
       expect(rect.u0).toBeGreaterThanOrEqual(0)
       expect(rect.u1).toBeLessThanOrEqual(1)
-      expect(rect.v1).toBeLessThan(topmostBet)
+      expect(rect.v1).toBeLessThan(topmostLineBet)
     }
   })
 

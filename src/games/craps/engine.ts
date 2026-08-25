@@ -1,4 +1,11 @@
-import { CrapsBet, type PointNumber, POINT_NUMBERS } from '../../scenes/crapsFeltLayout'
+import {
+  CrapsBet,
+  PLACE_BET_LIST,
+  PLACE_BETS,
+  placeBetNumber,
+  type PointNumber,
+  POINT_NUMBERS,
+} from '../../scenes/crapsFeltLayout'
 import { nextRandom } from '../rng'
 import {
   type CrapsBets,
@@ -45,6 +52,81 @@ export function oddsPayout(stake: number, point: PointNumber): number {
 }
 
 /**
+ * What a place bet pays, as a ratio.
+ *
+ * These are the house's numbers, not true odds — a place bet is the free odds
+ * bet with the edge put back in, which is why it is offered without needing a
+ * line bet behind it.
+ *
+ * Ratios again, never decimals, for the reason above: 7:6 as a decimal is
+ * 1.1666..., and a six-dollar bet then pays 6.999999999999999.
+ */
+const PLACE_ODDS: Readonly<Record<PointNumber, Odds>> = {
+  4: { numerator: 9, denominator: 5 },
+  10: { numerator: 9, denominator: 5 },
+  5: { numerator: 7, denominator: 5 },
+  9: { numerator: 7, denominator: 5 },
+  6: { numerator: 7, denominator: 6 },
+  8: { numerator: 7, denominator: 6 },
+}
+
+/**
+ * The smallest stake a place bet may be made in, per number.
+ *
+ * Not decoration and not house style — it is the money invariant. A place bet
+ * pays in fifths on the outside numbers and sixths on the six and eight, so a
+ * ten-dollar bet on the six pays $11.66 and the table either shortchanges the
+ * player or invents a cent. A real table solves this by taking the six and
+ * eight in sixes and everything else in fives, and so does this one: every
+ * stake the panel offers is a multiple of this, which is what makes
+ * `placePayout` exact rather than rounded.
+ */
+export const PLACE_UNITS: Readonly<Record<PointNumber, number>> = {
+  4: 5,
+  10: 5,
+  5: 5,
+  9: 5,
+  6: 6,
+  8: 6,
+}
+
+/**
+ * Stake tiers the table offers on a place bet, smallest first.
+ *
+ * Multiples of the number's own unit rather than one shared set of round
+ * figures, so the six and eight are taken in sixes the way a real table takes
+ * them. Derived rather than listed, because a hand-written list is exactly
+ * where a stake that pays $11.66 gets in.
+ *
+ * Two tiers, not a long ladder: place bets stack, so a player who wants more on
+ * a number presses the same button again. The panel offers exactly these, which
+ * is what lets the whole-dollar test cover everything reachable.
+ */
+const PLACE_TIERS: readonly number[] = [1, 5]
+
+/** The stakes offered on a number, every one of which pays whole dollars. */
+export function placeStakes(point: PointNumber): number[] {
+  return PLACE_TIERS.map((tier) => PLACE_UNITS[point] * tier)
+}
+
+/**
+ * Chips returned by a winning place bet, stake included.
+ *
+ * @param stake The amount on the number. Expected to be a multiple of that
+ *   number's `PLACE_UNITS` entry, which every offered stake is.
+ * @param point The number that was rolled.
+ */
+export function placePayout(stake: number, point: PointNumber): number {
+  const { numerator, denominator } = PLACE_ODDS[point]
+  return stake + Math.floor((stake * numerator) / denominator)
+}
+
+/** What a place bet on a number pays, as a ratio, for printing "pays 9 to 5". */
+export function placeRatio(point: PointNumber): Odds {
+  return PLACE_ODDS[point]
+}
+
+/**
  * Field pays even money except on the outside numbers.
  *
  * A one-roll bet: it is settled on every throw, win or lose, and never rides.
@@ -60,6 +142,12 @@ const NO_BETS: CrapsBets = {
   [CrapsBet.DontPass]: 0,
   [CrapsBet.Odds]: 0,
   [CrapsBet.Field]: 0,
+  [CrapsBet.Place4]: 0,
+  [CrapsBet.Place5]: 0,
+  [CrapsBet.Place6]: 0,
+  [CrapsBet.Place8]: 0,
+  [CrapsBet.Place9]: 0,
+  [CrapsBet.Place10]: 0,
 }
 
 /** A fresh table, before the shooter's first come-out roll. */
@@ -107,6 +195,19 @@ export function canPlaceCrapsBet(state: CrapsState, bet: CrapsBet, amount: numbe
     case CrapsBet.Field:
       // A one-roll bet, so it can be laid at any time.
       return true
+
+    default: {
+      /*
+       * A place bet can be laid at any time — it simply does nothing until
+       * there is a point, because it is off on the come-out. What it cannot be
+       * is an amount that does not pay whole dollars: the ratios are ninths,
+       * sevenths and sixths, so anything but a multiple of the number's unit
+       * would have the table paying out a fraction of a chip.
+       */
+      const number = placeBetNumber(bet)
+      if (number === null) return false
+      return amount % PLACE_UNITS[number] === 0
+    }
   }
 }
 
@@ -179,6 +280,28 @@ export function rollCraps(state: CrapsState): CrapsState {
     bets[bet] = 0
   }
 
+  /**
+   * Pays the place bet on a number the shooter has just hit.
+   *
+   * Paid and taken down rather than paid and left up, which is the house
+   * default. It is the money convention that decides it: a payout on this
+   * table is chips returned *including* the stake, so a bet that stayed up
+   * would have to credit winnings alone and the debit-on-wager,
+   * credit-on-settlement pairing would stop netting out.
+   *
+   * Only ever called while a point is on. On the come-out the place bets are
+   * off, so a number rolling there neither pays nor takes.
+   */
+  function settlePlace(rolled: number): void {
+    if (!isPointNumber(rolled)) return
+
+    const bet = PLACE_BETS[rolled]
+    if (bets[bet] === 0) return
+
+    payouts[bet] = placePayout(bets[bet], rolled)
+    bets[bet] = 0
+  }
+
   if (state.phase === CrapsPhase.ComeOut) {
     if (total === 7 || total === 11) {
       outcome = RollOutcome.Natural
@@ -204,6 +327,7 @@ export function rollCraps(state: CrapsState): CrapsState {
   } else if (point !== null && total === point) {
     const madePoint = point
     outcome = RollOutcome.PointMade
+    settlePlace(total)
     settle(CrapsBet.PassLine, 2)
     settle(CrapsBet.DontPass, 0)
     // Computed rather than scaled, so the ratio stays exact.
@@ -218,10 +342,14 @@ export function rollCraps(state: CrapsState): CrapsState {
     settle(CrapsBet.PassLine, 0)
     settle(CrapsBet.Odds, 0)
     settle(CrapsBet.DontPass, 2)
+    // The seven takes every place bet with it. This is the whole risk of the
+    // bet and the reason it pays better than free odds.
+    for (const bet of PLACE_BET_LIST) settle(bet, 0)
     phase = CrapsPhase.ComeOut
     point = null
   } else {
     outcome = RollOutcome.NoDecision
+    settlePlace(total)
   }
 
   return {

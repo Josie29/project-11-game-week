@@ -151,7 +151,8 @@ Dev-only deep links, stripped from production builds:
 | `?boot=resplit` | a pair, with a third of the same rank behind it |
 | `?boot=push` | two twenties, so a push's wording can be read |
 | `?boot=draw` | a dealer who must draw twice |
-| `?boot=craps` | seated at craps with a pass line down |
+| `?boot=craps` | at the craps rail with a pass line down |
+| `?boot=placed` | craps with a point set and all six numbers covered |
 | `?boot=floor` | standing on the casino floor, between the tables |
 | `?boot=clinic` | standing on Red River Plasma's floor |
 | `?boot=clinicfront` | on the street outside the clinic |

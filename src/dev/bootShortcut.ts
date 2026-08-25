@@ -10,7 +10,8 @@ import { useTimeStore } from '../store/useTimeStore'
 import { TableId } from '../scenes/casinoFloorLayout'
 import { donationTimeline, NurseTask } from '../scenes/clinicRoutine'
 import { MARKER_AMOUNT } from '../world/money'
-import { CrapsBet } from '../scenes/crapsFeltLayout'
+import { PLACE_UNITS, rollCraps } from '../games/craps/engine'
+import { CrapsBet, PLACE_BETS, POINT_NUMBERS, PointNumber } from '../scenes/crapsFeltLayout'
 import { VenueId } from '../world/venues'
 
 /** Wager staked automatically when deep-linking to a dealt table. */
@@ -140,7 +141,10 @@ function applyTimeShortcut(): void {
  *   back untouched can be read rather than waited for.
  * - `?boot=draw` forces the dealer to draw twice, which is the case the staged
  *   reveal exists for and which a random shoe rarely produces on demand.
- * - `?boot=craps` sits at the craps table with a pass-line bet already down.
+ * - `?boot=craps` stands at the craps table with a pass-line bet already down.
+ * - `?boot=placed` stands there with a point set and every number covered,
+ *   which is the only way to see the puck and a stack of chips sharing one box
+ *   — the case the box is split left and right for.
  * - `?boot=floor` stands on the casino floor, between the two tables.
  * - `?boot=clinic` stands on Red River Plasma's floor.
  * - `?boot=drawing` sits in a chair with the needle already in.
@@ -183,6 +187,7 @@ export function applyBootShortcut(): void {
     'push',
     'draw',
     'craps',
+    'placed',
     'broke',
     'clinic',
     'debt',
@@ -303,6 +308,37 @@ export function applyBootShortcut(): void {
   if (boot === 'craps') {
     useGameStore.getState().sitAt(TableId.Craps)
     useCrapsStore.getState().wager(CrapsBet.PassLine, DEMO_BET)
+    return
+  }
+
+  if (boot === 'placed') {
+    useGameStore.getState().sitAt(TableId.Craps)
+    useGameStore.setState({ bankroll: SHOPPING_SPREE })
+
+    /*
+     * Roll through the engine until a point is set, rather than writing one
+     * into the store. The point gates whether the place bets are allowed at
+     * all, so a hand-set point would let this show a state the engine cannot
+     * reach — and this shortcut exists to check a real one.
+     *
+     * `rollCraps` directly rather than the store's `throwDice`, which parks the
+     * result behind the tumble animation and refuses a second call while the
+     * dice are in the air. A boot link wants the settled table, not the throw.
+     *
+     * Rolled with nothing on the line, because a come-out that misses the point
+     * settles the pass line on the way past: staking it first and then rolling
+     * for a point spends the bet more often than not, and the table arrives
+     * with the line empty.
+     */
+    let settled = useCrapsStore.getState().game
+    for (let attempt = 0; attempt < 50 && settled.point === null; attempt++) {
+      settled = rollCraps(settled)
+    }
+    useCrapsStore.setState({ game: settled })
+
+    for (const point of POINT_NUMBERS) {
+      useCrapsStore.getState().wager(PLACE_BETS[point], PLACE_UNITS[point as PointNumber] * 5)
+    }
     return
   }
 

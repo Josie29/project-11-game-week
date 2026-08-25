@@ -6,12 +6,16 @@ import {
   oddsPayout,
   oddsRatio,
   placeCrapsBet,
+  placePayout,
+  placeRatio,
+  placeStakes,
+  PLACE_UNITS,
   rollCraps,
   totalCrapsPayout,
   totalCrapsStake,
 } from '../games/craps/engine'
 import { type CrapsState, CrapsPhase, RollOutcome } from '../games/craps/types'
-import { CrapsBet, POINT_NUMBERS } from '../scenes/crapsFeltLayout'
+import { CrapsBet, PLACE_BETS, POINT_NUMBERS } from '../scenes/crapsFeltLayout'
 
 /**
  * Rolls until the dice show `total`, so a test can exercise one outcome without
@@ -285,5 +289,124 @@ describe('line bets', () => {
     const state = createCrapsGame(5)
     expect(canPlaceCrapsBet(state, CrapsBet.PassLine, 0)).toBe(false)
     expect(canPlaceCrapsBet(state, CrapsBet.PassLine, -10)).toBe(false)
+  })
+})
+
+describe('place bets', () => {
+  /*
+   * The house numbers, not true odds. A place bet is the free-odds bet with the
+   * edge put back in, and getting these backwards would hand the player a
+   * better-than-fair bet on the six and eight — the two numbers they will bet
+   * most.
+   */
+  it('pays the house ratio for every number', () => {
+    expect(placeRatio(4)).toEqual({ numerator: 9, denominator: 5 })
+    expect(placeRatio(10)).toEqual({ numerator: 9, denominator: 5 })
+    expect(placeRatio(5)).toEqual({ numerator: 7, denominator: 5 })
+    expect(placeRatio(9)).toEqual({ numerator: 7, denominator: 5 })
+    expect(placeRatio(6)).toEqual({ numerator: 7, denominator: 6 })
+    expect(placeRatio(8)).toEqual({ numerator: 7, denominator: 6 })
+  })
+
+  /*
+   * The same trap that produced "$537.5" in blackjack and "22.000000000000004"
+   * in free odds, and worse here: 7:6 gives a fraction on every stake that is
+   * not a multiple of six, and $10 is not. These are the stakes the panel
+   * offers, so every one has to pay exactly.
+   */
+  it('pays whole dollars on every stake the table offers', () => {
+    for (const point of POINT_NUMBERS) {
+      for (const stake of placeStakes(point)) {
+        const payout = placePayout(stake, point)
+        expect(Number.isInteger(payout)).toBe(true)
+
+        // And exactly the ratio, not merely a whole number near it.
+        const { numerator, denominator } = placeRatio(point)
+        expect(payout).toBe(stake + (stake * numerator) / denominator)
+      }
+    }
+  })
+
+  /*
+   * The guard that keeps the above true. Without it the panel is the only thing
+   * standing between the player and a stake that pays a fraction, and a panel
+   * is exactly the layer that gets restyled by someone who does not know why
+   * the six is taken in sixes.
+   */
+  it('refuses a stake that is not a multiple of the number\'s unit', () => {
+    const state = rollUntil(createCrapsGame(5), 4)
+
+    expect(canPlaceCrapsBet(state, CrapsBet.Place6, 10)).toBe(false)
+    expect(canPlaceCrapsBet(state, CrapsBet.Place6, 12)).toBe(true)
+    expect(canPlaceCrapsBet(state, CrapsBet.Place5, 6)).toBe(false)
+    expect(canPlaceCrapsBet(state, CrapsBet.Place5, 25)).toBe(true)
+
+    expect(PLACE_UNITS[6]).toBe(6)
+    expect(PLACE_UNITS[5]).toBe(5)
+  })
+
+  it('pays and comes down when its number is rolled', () => {
+    let state = rollUntil(createCrapsGame(5), 4)
+    expect(state.phase).toBe(CrapsPhase.Point)
+    expect(state.point).toBe(4)
+
+    state = placeCrapsBet(state, CrapsBet.Place6, 6)
+    state = rollUntil(state, 6)
+
+    expect(state.lastPayouts[CrapsBet.Place6]).toBe(13)
+    expect(state.bets[CrapsBet.Place6]).toBe(0)
+    // A six that is not the point leaves the point alone.
+    expect(state.point).toBe(4)
+  })
+
+  /*
+   * A place bet on the point number is settled by the same roll that makes the
+   * point. Missing this would silently swallow the place bet on the one number
+   * the shooter is most likely to be chasing.
+   */
+  it('pays when the number rolled is also the point', () => {
+    let state = placeCrapsBet(createCrapsGame(5), CrapsBet.PassLine, 10)
+    state = rollUntil(state, 6)
+    expect(state.point).toBe(6)
+
+    state = placeCrapsBet(state, CrapsBet.Place6, 6)
+    state = rollUntil(state, 6)
+
+    expect(state.lastOutcome).toBe(RollOutcome.PointMade)
+    expect(state.lastPayouts[CrapsBet.Place6]).toBe(13)
+    expect(state.lastPayouts[CrapsBet.PassLine]).toBe(20)
+  })
+
+  it('is taken by the seven, on every number at once', () => {
+    let state = rollUntil(createCrapsGame(5), 4)
+
+    for (const point of POINT_NUMBERS) {
+      state = placeCrapsBet(state, PLACE_BETS[point], PLACE_UNITS[point])
+    }
+    expect(totalCrapsStake(state)).toBe(32)
+
+    state = rollUntil(state, 7)
+
+    expect(state.lastOutcome).toBe(RollOutcome.SevenOut)
+    expect(totalCrapsStake(state)).toBe(0)
+    expect(totalCrapsPayout(state)).toBe(0)
+  })
+
+  /*
+   * Off on the come-out, which is the house default and the reason it is worth
+   * asserting: without it a natural seven would pay the pass line and wipe
+   * every place bet in the same roll, which reads as the table cheating.
+   */
+  it('neither wins nor loses on a come-out roll', () => {
+    let state = placeCrapsBet(createCrapsGame(5), CrapsBet.Place6, 6)
+    expect(state.phase).toBe(CrapsPhase.ComeOut)
+
+    const afterSix = rollUntil(state, 6)
+    expect(afterSix.bets[CrapsBet.Place6]).toBe(6)
+    expect(afterSix.lastPayouts[CrapsBet.Place6]).toBe(0)
+
+    const afterSeven = rollUntil(state, 7)
+    expect(afterSeven.bets[CrapsBet.Place6]).toBe(6)
+    expect(afterSeven.lastPayouts[CrapsBet.Place6]).toBe(0)
   })
 })

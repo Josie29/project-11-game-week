@@ -51,28 +51,66 @@ export const BLACKJACK_ORIGIN: readonly [number, number, number] = [-7.5, 0, 0]
  */
 export const TABLE_FOOTPRINTS: Record<TableId, Footprint> = {
   [TableId.Blackjack]: { minX: -10.8, maxX: -4.2, minZ: -1.8, maxZ: 3.5 },
-  [TableId.Craps]: { minX: -2.1, maxX: 2.1, minZ: -2.2, maxZ: 2.0 },
+  // Two and a half to one now: wide across the room, shallow front to back.
+  // Deeper than the table itself, because this has to cover the boxman behind
+  // it and the shooter standing at the near rail as well as the woodwork.
+  [TableId.Craps]: { minX: -2.85, maxX: 2.85, minZ: -2.0, maxZ: 2.0 },
 }
 
-/** Where you stand to be offered a seat, on each table's player side. */
+/**
+ * Where you stand to be offered a place, on each table's player side.
+ *
+ * The craps spot is off to one end of the near rail rather than the middle of
+ * it, because that is where the shooter stands: they throw the length of the
+ * table, so standing them at the centre would have them lobbing the dice
+ * sideways into the nearest wall.
+ *
+ * This is also where the player is put back on standing up, so it is lined up
+ * with the exit: from here the way out is a straight walk back, with no
+ * sideways correction to overshoot.
+ */
 export const SIT_SPOTS: Record<TableId, readonly [number, number, number]> = {
   [TableId.Blackjack]: [-7.5, 0, 4.3],
-  [TableId.Craps]: [0, 0, 2.6],
+  [TableId.Craps]: [-2.4, 0, 3.2],
 }
 
-/** How close you have to be for the sit prompt to appear. */
-export const SIT_RADIUS = 1.8
+/**
+ * How close you have to be for the prompt to appear, per table.
+ *
+ * Craps reaches further because the table does: it is over five metres end to
+ * end and you play it standing anywhere along the rail, so a radius sized for a
+ * blackjack seat only offers it from one spot on a very long side. It also has
+ * to be walkable *into* — the room is crossed in strides of roughly two metres
+ * on a slow renderer, and a target you can only be offered inside a two-metre
+ * window is one a single stride steps over.
+ */
+export const SIT_RADII: Record<TableId, number> = {
+  [TableId.Blackjack]: 1.8,
+  [TableId.Craps]: 3.2,
+}
 
-/** Where the player's character sits once they take a seat, per table. */
+
+/**
+ * Where the player's character ends up once they take a place, per table.
+ *
+ * Blackjack is a seat. Craps is a spot at the rail: nobody sits at craps, and
+ * the seated pose put the player's head below the rail they were supposedly
+ * throwing over. Standing at the shooter's end also lines them up with where
+ * the dice are released, so the throw reads as theirs.
+ */
 export const SEATS: Record<TableId, readonly [number, number, number]> = {
   [TableId.Blackjack]: [-7.5, 0, 2.95],
-  [TableId.Craps]: [0, 0, 1.8],
+  [TableId.Craps]: [-1.75, 0, 1.58],
 }
+
+/** Which tables the player stands at rather than sits down at. */
+export const STANDING_TABLES: ReadonlySet<TableId> = new Set([TableId.Craps])
 
 /** Where the house staff stand, behind each table. */
 export const DEALER_SPOTS: Record<TableId, readonly [number, number, number]> = {
   [TableId.Blackjack]: [-7.5, 0, -1.35],
-  [TableId.Craps]: [0, 0, -1.9],
+  // The boxman, opposite the shooter across the shallow side of the table.
+  [TableId.Craps]: [0, 0, -1.65],
 }
 
 /**

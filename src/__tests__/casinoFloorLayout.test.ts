@@ -11,7 +11,7 @@ import {
   isOnCasinoFloor,
   ROOM,
   SEATS,
-  SIT_RADIUS,
+  SIT_RADII,
   SIT_SPOTS,
   TABLE_FOOTPRINTS,
   TABLE_IDS,
@@ -82,7 +82,38 @@ describe('casino floor layout', () => {
   // F is ambiguous and the player gets the table they did not walk up to.
   it('keeps the two sit prompts from overlapping', () => {
     const apart = distance2D(SIT_SPOTS[TableId.Blackjack], SIT_SPOTS[TableId.Craps])
-    expect(apart).toBeGreaterThan(SIT_RADIUS * 2)
+    expect(apart).toBeGreaterThan(SIT_RADII[TableId.Blackjack] + SIT_RADII[TableId.Craps])
+  })
+
+  /*
+   * A player crossing the room does it in strides, not along a continuous
+   * track: movement is sampled per frame, so a held key carries them as far as
+   * the frame took. The walkthrough holds each key for 700ms, which at full
+   * walking speed is over five metres in one go.
+   *
+   * Asserted for craps alone, and for a reason: the player walks *into* the
+   * blackjack table and is stopped by its own footprint, so its prompt cannot
+   * be missed. Craps is passed alongside — the crossing runs the length of it
+   * at the blackjack seat's depth — so its window has to be wider than a
+   * stride or the table can be walked clean past and never offered. That is
+   * exactly what happened when its spot moved to the near rail.
+   */
+  it('leaves craps a prompt window wider than one walking stride', () => {
+    // WALK_SPEED 7.5 for the 700ms the walkthrough holds a key.
+    const stride = 7.5 * 0.7
+
+    const [spotX, , spotZ] = SIT_SPOTS[TableId.Craps]
+    const crossingZ = SIT_SPOTS[TableId.Blackjack][2]
+    const offset = Math.abs(crossingZ - spotZ)
+    const radius = SIT_RADII[TableId.Craps]
+
+    const halfWindow = Math.sqrt(Math.max(0, radius * radius - offset * offset))
+    expect(halfWindow * 2).toBeGreaterThan(stride)
+
+    // And the crossing actually passes through it, rather than the window
+    // sitting somewhere the player never walks.
+    expect(spotX).toBeGreaterThan(WALK_BOUNDS.minX)
+    expect(spotX).toBeLessThan(WALK_BOUNDS.maxX)
   })
 
   // You have to be able to stand where the prompt appears. A sit spot inside

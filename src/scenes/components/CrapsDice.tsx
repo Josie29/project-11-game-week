@@ -4,19 +4,19 @@ import { useEffect, useRef, useState } from 'react'
 import { Euler, Group, Quaternion } from 'three'
 import type { DiceRoll } from '../../games/craps/types'
 import {
-  DICE_REST_POSITION as REST_POSITION,
-  DICE_REST_SPACING,
-  DICE_THROW_ORIGIN as THROW_ORIGIN,
-  DICE_THROW_SPACING,
+  DICE_REST_POSITIONS,
+  DICE_THROW_ORIGINS,
+  DICE_THROW_VELOCITIES,
   DIE_HALF,
 } from '../crapsTableLayout'
 import { DIE_FACE_VALUES, FACE_UP_ROTATIONS, getDieFaceTexture } from '../diceTexture'
 
 /*
- * Both spots are pit-relative, so they live in `../crapsTableLayout` and are
- * asserted to be inside the bumper with a die's width to spare. Resizing the
- * pit for a thicker rail is precisely the change that would bury a resting die
- * in a wall, and a die that is inside a wall is a die that is simply not there.
+ * Where the dice start, where they rest and how hard they are thrown all live
+ * in `../crapsTableLayout`, where they are asserted against the pit. They are
+ * pit-relative in a way that is easy to miss: resizing the table is precisely
+ * the change that buries a resting die in a bumper, and a die inside a wall is
+ * a die that is simply not there.
  */
 const DIE_SIZE = DIE_HALF * 2
 
@@ -68,11 +68,11 @@ export function CrapsDice({ roll, rollId }: CrapsDiceProps) {
       const rigid = body.current
       if (!rigid) return
 
+      const origin = DICE_THROW_ORIGINS[index] ?? DICE_THROW_ORIGINS[0]!
+      const velocity = DICE_THROW_VELOCITIES[index] ?? DICE_THROW_VELOCITIES[0]!
+
       // Reset, then throw down-table with a tumble on every axis.
-      rigid.setTranslation(
-        { x: THROW_ORIGIN[0] + index * DICE_THROW_SPACING, y: THROW_ORIGIN[1], z: THROW_ORIGIN[2] },
-        true,
-      )
+      rigid.setTranslation({ x: origin[0], y: origin[1], z: origin[2] }, true)
       rigid.setLinvel({ x: 0, y: 0, z: 0 }, true)
       rigid.setAngvel({ x: 0, y: 0, z: 0 }, true)
       rigid.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true)
@@ -84,8 +84,10 @@ export function CrapsDice({ roll, rollId }: CrapsDiceProps) {
        * dice leave the table before the first frame renders. Setting velocity
        * directly is mass-independent and lands in a range you can reason about.
        */
-      rigid.setLinvel({ x: 0.85 + index * 0.2, y: 0.35, z: 2.0 }, true)
-      rigid.setAngvel({ x: 14 + index * 3, y: -9, z: 11 - index * 4 }, true)
+      rigid.setLinvel({ x: velocity[0], y: velocity[1], z: velocity[2] }, true)
+      // Tumbling mostly about the axes across the throw, so the dice roll along
+      // their travel rather than spinning on the spot like a coin.
+      rigid.setAngvel({ x: -6 - index * 2, y: -9 + index * 3, z: -17 + index * 4 }, true)
     })
     // Bodies live in refs, so the throw depends only on the roll counter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -152,7 +154,7 @@ export function CrapsDice({ roll, rollId }: CrapsDiceProps) {
           friction={0.85}
           linearDamping={0.35}
           angularDamping={0.4}
-          position={[REST_POSITION[0] + index * DICE_REST_SPACING, REST_POSITION[1], REST_POSITION[2]]}
+          position={[...(DICE_REST_POSITIONS[index] ?? DICE_REST_POSITIONS[0]!)]}
         >
           <group ref={index === 0 ? visualA : visualB} name={`craps-die-${index}`}>
             <mesh castShadow receiveShadow>

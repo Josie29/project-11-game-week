@@ -129,7 +129,7 @@ canvas {
   left: 50%;
   bottom: var(--space-4);
   transform: translateX(-50%);
-  width: min(46rem, calc(100vw - 2rem));
+  width: min(70rem, calc(100vw - 2rem));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -287,6 +287,32 @@ kbd {
   display: flex;
   align-items: center;
   gap: var(--space-1);
+}
+
+/*
+ * The craps bar carries two groups of controls — the line bets and the six
+ * place numbers — and stacked they ran to five rows, which covered the near
+ * third of the felt including the pass line. The camera cannot answer that:
+ * it looks at a point and that point is always screen centre, so anything the
+ * bar covers is covered at every distance. Side by side, the bar is as tall as
+ * its taller group instead of the sum of both.
+ */
+.table-ui__bets {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.table-ui__bets > .table-ui__actions {
+  flex: 1 1 0;
+}
+
+@media (min-width: 60rem) {
+  .table-ui__bets {
+    flex-direction: row;
+  }
 }
 
 .table-ui__divider {

@@ -1,14 +1,37 @@
 import { useEffect } from 'react'
-import { canPlaceCrapsBet, oddsRatio, totalCrapsPayout } from '../games/craps/engine'
+import {
+  canPlaceCrapsBet,
+  oddsRatio,
+  placeRatio,
+  placeStakes,
+  totalCrapsPayout,
+} from '../games/craps/engine'
 import { CrapsPhase, RollOutcome } from '../games/craps/types'
 import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
 import { MARKER_AMOUNT } from '../world/money'
-import { CRAPS_BET_LABELS, CrapsBet } from '../scenes/crapsFeltLayout'
+import {
+  CRAPS_BET_LABELS,
+  CrapsBet,
+  PLACE_BETS,
+  POINT_NUMBERS,
+} from '../scenes/crapsFeltLayout'
 import { getVenue, type VenueId } from '../world/venues'
 
 /** Same stakes the blackjack table offers; all pay whole dollars at true odds. */
 const STAKES = [10, 50, 100] as const
+
+/**
+ * The place bets get their own controls, laid out by number rather than by
+ * stake.
+ *
+ * The line bets share one set of round figures, and the place bets cannot: the
+ * six and eight pay in sevenths and are taken in sixes, everything else pays in
+ * fifths and is taken in fives, so a shared "$50" row would offer stakes that
+ * pay a fraction of a chip on half the numbers. Each button carries its own
+ * amount instead, which is also how the table would say it out loud.
+ */
+const PLACE_TIER_LABELS: readonly string[] = ['Place', '\u00d75']
 
 const OUTCOME_LABEL: Readonly<Record<RollOutcome, string>> = {
   [RollOutcome.Natural]: 'Natural — pass line wins',
@@ -141,6 +164,7 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
         </div>
       )}
 
+      <div className="table-ui__bets">
       <div className="table-ui__actions">
         {STAKES.map((amount, index) => (
           <span key={amount} className="table-ui__stake">
@@ -164,6 +188,51 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
             {index < STAKES.length - 1 && <span className="table-ui__divider" />}
           </span>
         ))}
+      </div>
+
+      {/*
+        The six numbers. Off on the come-out, like a real table, which is worth
+        saying rather than leaving the player to notice that nothing happened:
+        without the note, a seven on the come-out paying the pass line while the
+        place bets sit untouched looks like a bug.
+      */}
+      <div className="table-ui__actions">
+        {PLACE_TIER_LABELS.map((label, tier) => (
+          <span key={label} className="table-ui__stake">
+            <span className="table-ui__prompt">{label}</span>
+            {POINT_NUMBERS.map((point) => {
+              const bet = PLACE_BETS[point]
+              const amount = placeStakes(point)[tier]!
+              const onNumber = game.bets[bet]
+              const { numerator, denominator } = placeRatio(point)
+
+              return (
+                <button
+                  key={point}
+                  type="button"
+                  className="button button--bet"
+                  disabled={
+                    isRolling || amount > bankroll || !canPlaceCrapsBet(game, bet, amount)
+                  }
+                  onClick={() => wager(bet, amount)}
+                  title={`Place the ${point} for $${amount} — pays ${numerator} to ${denominator}${
+                    game.phase === CrapsPhase.ComeOut ? ', off until a point is set' : ''
+                  }`}
+                >
+                  {point} <kbd>${amount}</kbd>
+                  {/* What is already on the number, shown once rather than on
+                      every tier — two dollar figures on one button read as two
+                      prices for the same press. */}
+                  {tier === 0 && onNumber > 0 && (
+                    <span className="table-ui__payout">on ${onNumber}</span>
+                  )}
+                </button>
+              )
+            })}
+            {tier < PLACE_TIER_LABELS.length - 1 && <span className="table-ui__divider" />}
+          </span>
+        ))}
+      </div>
       </div>
 
       <div className="table-ui__actions">

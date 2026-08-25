@@ -6,12 +6,7 @@ import { useCrapsStore } from '../../store/useCrapsStore'
 import { buildBandGeometry, buildRingGeometry } from '../bandGeometry'
 import { ChipStack } from './ChipStack'
 import { CrapsDice } from './CrapsDice'
-import {
-  CrapsBet,
-  getCrapsBetRect,
-  POINT_BOX_RECTS,
-  rectCenter,
-} from '../crapsFeltLayout'
+import { betChipSpot, CrapsBet, pointPuckSpot } from '../crapsFeltLayout'
 import { getCrapsFeltTexture } from '../crapsFeltTexture'
 import {
   APRON_BOTTOM_Y,
@@ -358,13 +353,15 @@ export function CrapsTable() {
       </mesh>
 
       {/* The ON puck, parked over the established point. Off to the side and
-          face down while the table is coming out. */}
+          face down while the table is coming out. Sits in the top half of the
+          box, leaving the bottom half for whatever is placed on the number —
+          which is usually the point, because the point is what people back. */}
       {(() => {
         const onPoint = game.point !== null
         const [x, z] = onPoint
           ? (() => {
-              const centre = rectCenter(POINT_BOX_RECTS[game.point!])
-              const world = feltToWorld(centre.u, centre.v)
+              const spot = pointPuckSpot(game.point!)
+              const world = feltToWorld(spot.u, spot.v)
               return [world[0], world[2]] as const
             })()
           : PUCK_OFF_POSITION
@@ -387,8 +384,8 @@ export function CrapsTable() {
         const amount = game.bets[bet]
         if (amount <= 0) return null
 
-        const centre = rectCenter(getCrapsBetRect(bet))
-        return <ChipStack key={bet} amount={amount} position={feltToWorld(centre.u, centre.v)} />
+        const spot = betChipSpot(bet)
+        return <ChipStack key={bet} amount={amount} position={feltToWorld(spot.u, spot.v)} />
       })}
 
       {/*

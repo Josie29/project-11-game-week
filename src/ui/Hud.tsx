@@ -1,4 +1,4 @@
-import { TABLE_LABELS } from '../scenes/casinoFloorLayout'
+import { STANDING_TABLES, TABLE_LABELS } from '../scenes/casinoFloorLayout'
 import { Location, useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
 import { getVenue, VenueKind } from '../world/venues'
@@ -64,7 +64,10 @@ export function Hud() {
         <div className="hud__prompt">
           <strong>{TABLE_LABELS[nearbyTable]}</strong>
           <span>
-            Press <kbd>F</kbd> to sit
+            {/* You stand at craps and sit at blackjack, and the prompt should
+                say which — offering a seat at a table that has none is the kind
+                of small lie that makes the rest read as approximate. */}
+            Press <kbd>F</kbd> to {STANDING_TABLES.has(nearbyTable) ? 'take the rail' : 'sit'}
           </span>
         </div>
       )}

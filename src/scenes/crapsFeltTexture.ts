@@ -1,5 +1,5 @@
 import { CanvasTexture, SRGBColorSpace, type Texture } from 'three'
-import { fieldMultiplier, oddsRatio } from '../games/craps/engine'
+import { placeRatio, fieldMultiplier } from '../games/craps/engine'
 import { type ArcCenter, drawArcText, fillMarkingBand, strokeMarkingArc } from './arcText'
 import {
   CRAPS_BET_LABELS,
@@ -28,12 +28,13 @@ import {
  */
 
 /*
- * Sized to the pit's 3.4 x 2.2 aspect. A texture drawn squarer than the surface
+ * Sized to the pit's 4.5 x 1.8 aspect. A texture drawn squarer than the surface
  * it lands on stretches, and stretched print is the one flaw on a felt that
- * cannot be blamed on the lighting.
+ * cannot be blamed on the lighting — which is why this is re-cut whenever the
+ * table's proportions change rather than left to `repeat` to paper over.
  */
-const WIDTH = 1536
-const HEIGHT = 992
+const WIDTH = 2400
+const HEIGHT = 960
 
 const FELT_LIT = '#1f7d54'
 const FELT_MID = '#136045'
@@ -65,28 +66,33 @@ const SERIF = 'Georgia, "Times New Roman", serif'
  * reasoning as the blackjack felt's centre, mirrored: this felt's near edge is
  * the bottom, so the centre sits above it and the print hangs below.
  */
-const ARC_CENTER: ArcCenter = { x: WIDTH / 2, y: -1180 }
+const ARC_CENTER: ArcCenter = { x: WIDTH / 2, y: -7000 }
 
 /*
  * Radii are set from the band rects they stand in for: at the centre of the
  * felt a radius lands at `ARC_CENTER.y + radius` pixels down the canvas, so the
- * pass line's band runs from v 0.79 to v 0.955 and free odds from 0.685 to
- * 0.775. Toward the ends each arc climbs, which is the point of drawing them —
- * but it also means a radius set by eye pushes the free-odds arc up through the
- * don't-pass bar at the corners, where it looks like a printing error.
+ * pass line's band runs from v 0.855 to v 0.985 and free odds from 0.745 to
+ * 0.825.
+ *
+ * The centre sits much further above the canvas than the blackjack felt's. Two
+ * and a half to one leaves each band about a hundred pixels deep, and toward
+ * the ends an arc climbs by `radius * (1 - cos(spread))` — at a tighter radius
+ * that rise is more than a band is tall, and the pass line's ends bow up
+ * through the free odds. A long radius keeps the bow to something the band can
+ * absorb while still reading as bowed.
  */
-const PASS_OUTER_RADIUS = 2128
-const PASS_INNER_RADIUS = 1964
-const PASS_TEXT_RADIUS = 2046
-const PASS_SPREAD = 0.318
+const PASS_OUTER_RADIUS = 7806
+const PASS_INNER_RADIUS = 7672
+const PASS_TEXT_RADIUS = 7739
+const PASS_SPREAD = 0.1372
 /** Angular step between PASS LINE glyphs. Below glyph width / radius they touch. */
-const PASS_SPACING = 0.0335
+const PASS_SPACING = 0.0213
 
-const ODDS_OUTER_RADIUS = 1949
-const ODDS_INNER_RADIUS = 1860
-const ODDS_TEXT_RADIUS = 1905
-const ODDS_SPREAD = 0.3
-const ODDS_SPACING = 0.017
+const ODDS_OUTER_RADIUS = 7648
+const ODDS_INNER_RADIUS = 7581
+const ODDS_TEXT_RADIUS = 7614
+const ODDS_SPREAD = 0.14
+const ODDS_SPACING = 0.0158
 
 let canvas: HTMLCanvasElement | null = null
 let context: CanvasRenderingContext2D | null = null
@@ -186,28 +192,42 @@ function drawWeave(ctx: CanvasRenderingContext2D): void {
 }
 
 /**
- * Draws the six point boxes across the boxman's end, ruled as one grid.
+ * Draws the six numbered boxes across the boxman's end, ruled as one grid.
  *
- * Each box carries the odds a free-odds bet behind that point pays. The odds
- * are the reason to draw them at all: they are the only place a player can read
- * a point's terms without leaving the table, and they are read off the engine's
- * own ratio table so the felt cannot print something the engine does not pay.
+ * These are the place bets, so each box has to state its own terms: what it
+ * pays and what it is taken in. Both are read off the engine rather than typed
+ * here — the six and eight pay sevenths and are taken in sixes, everything else
+ * pays fifths and is taken in fives, and a felt that printed those the other
+ * way round would be advertising a bet the table does not offer.
+ *
+ * The unit each number is taken in is not printed — it is on the buttons, and
+ * at this size on the felt it was a smudge rather than a fact.
  */
-function drawPointBoxes(ctx: CanvasRenderingContext2D): void {
+function drawPlaceBoxes(ctx: CanvasRenderingContext2D): void {
   for (const point of POINT_NUMBERS) {
     const rect = POINT_BOX_RECTS[point]
     const { x, y, width, height } = toPixels(rect)
 
     drawRuledBox(ctx, rect, RULE, 'rgba(4, 32, 22, 0.32)', HEAVY_RULE_WIDTH)
 
+    /*
+     * Number and odds side by side across the top, chips and puck below them.
+     *
+     * Stacked — number over odds over chips — nothing fits: a box on this table
+     * is about 0.6 wide and 0.45 deep, and a chip stack is 0.3 across, so it
+     * covers two thirds of the box's depth on its own. Centred, it hid the
+     * number; moved up, it hid the odds. Across the top there is width to spare
+     * and the stack sits under both.
+     */
     ctx.fillStyle = GOLD
-    ctx.font = `700 76px ${SERIF}`
-    ctx.fillText(String(point), x + width / 2, y + height * 0.4)
+    ctx.font = `700 80px ${SERIF}`
+    ctx.fillText(String(point), x + width * 0.3, y + height * 0.3)
 
-    const { numerator, denominator } = oddsRatio(point)
-    ctx.fillStyle = RULE_SOFT
-    ctx.font = `600 26px ${SERIF}`
-    ctx.fillText(`${numerator} TO ${denominator}`, x + width / 2, y + height * 0.79)
+    const { numerator, denominator } = placeRatio(point)
+    ctx.fillStyle = RULE
+    ctx.font = `600 27px ${SERIF}`
+    ctx.fillText(`PAYS ${numerator}`, x + width * 0.69, y + height * 0.22)
+    ctx.fillText(`TO ${denominator}`, x + width * 0.69, y + height * 0.4)
   }
 }
 
@@ -339,7 +359,7 @@ function drawPassLine(ctx: CanvasRenderingContext2D): void {
   strokeMarkingArc(ctx, ARC_CENTER, PASS_OUTER_RADIUS, PASS_SPREAD, HEAVY_RULE_WIDTH + 2, GOLD)
   strokeMarkingArc(ctx, ARC_CENTER, PASS_INNER_RADIUS, PASS_SPREAD, HEAVY_RULE_WIDTH + 2, GOLD)
 
-  ctx.font = `700 92px ${SERIF}`
+  ctx.font = `700 96px ${SERIF}`
   ctx.fillStyle = GOLD
   drawArcText(ctx, CRAPS_BET_LABELS[CrapsBet.PassLine], ARC_CENTER, PASS_TEXT_RADIUS, PASS_SPACING)
 }
@@ -366,7 +386,7 @@ function drawFelt(ctx: CanvasRenderingContext2D): void {
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
 
-  drawPointBoxes(ctx)
+  drawPlaceBoxes(ctx)
   drawField(ctx)
   drawDontPass(ctx)
   drawPassLine(ctx)

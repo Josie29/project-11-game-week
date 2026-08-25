@@ -6,7 +6,7 @@
  * lights up somewhere the player did not click, and a pure module is testable
  * under the suite's `node` environment.
  *
- * `u` runs left to right, `v` runs from the boxman's edge (0) to the player's
+ * `u` runs left to right, `v` runs from the boxman's edge (0) to the shooter's
  * edge (1) — the same top-is-dealer convention as the blackjack felt, so both
  * textures survive `flipY` the same way.
  */
@@ -19,22 +19,7 @@ export interface FeltRect {
   readonly v1: number
 }
 
-/**
- * The bets this table accepts.
- *
- * Deliberately the SPEC's simplified set — no come, place, hardway or
- * proposition bets. A real layout carries roughly forty labelled regions;
- * every one omitted here is one the player has no way to wager on, so drawing
- * it would be a lie the pointer picker has to work around.
- */
-export enum CrapsBet {
-  PassLine = 'pass-line',
-  DontPass = 'dont-pass',
-  Odds = 'odds',
-  Field = 'field',
-}
-
-/** The six numbers that can become the point. */
+/** The six numbers that can become the point, and be placed. */
 export enum PointNumber {
   Four = 4,
   Five = 5,
@@ -44,12 +29,44 @@ export enum PointNumber {
   Ten = 10,
 }
 
+/**
+ * The bets this table accepts.
+ *
+ * Still a deliberate subset — no come, hardway or proposition bets. Every one
+ * omitted is one the player has no way to wager on, so drawing it would be a
+ * lie the pointer picker has to work around.
+ *
+ * The place bets were the exception worth making. The six numbered boxes were
+ * already printed across the boxman's end, because a craps layout is not
+ * recognisable without them, and they sat there inert — the felt's largest,
+ * most prominent markings did nothing. Making them live turned the table's
+ * biggest piece of decoration into the bet most players actually make.
+ */
+export enum CrapsBet {
+  PassLine = 'pass-line',
+  DontPass = 'dont-pass',
+  Odds = 'odds',
+  Field = 'field',
+  Place4 = 'place-4',
+  Place5 = 'place-5',
+  Place6 = 'place-6',
+  Place8 = 'place-8',
+  Place9 = 'place-9',
+  Place10 = 'place-10',
+}
+
 /** Printed label for each bet region. */
 export const CRAPS_BET_LABELS: Readonly<Record<CrapsBet, string>> = {
   [CrapsBet.PassLine]: 'PASS LINE',
   [CrapsBet.DontPass]: "DON'T PASS BAR",
   [CrapsBet.Odds]: 'FREE ODDS',
   [CrapsBet.Field]: 'FIELD',
+  [CrapsBet.Place4]: 'PLACE 4',
+  [CrapsBet.Place5]: 'PLACE 5',
+  [CrapsBet.Place6]: 'PLACE 6',
+  [CrapsBet.Place8]: 'PLACE 8',
+  [CrapsBet.Place9]: 'PLACE 9',
+  [CrapsBet.Place10]: 'PLACE 10',
 }
 
 /** Numbers printed inside the field band, in the order they appear. */
@@ -65,74 +82,134 @@ export const POINT_NUMBERS: readonly PointNumber[] = [
   PointNumber.Ten,
 ]
 
-/** Horizontal inset shared by every band, leaving felt visible at the rails. */
-const MARGIN_U = 0.08
-
-/**
- * Bands stack from the boxman's edge to the player's.
- *
- * Ordering is the one thing here that is not cosmetic: pass line sits nearest
- * the player because that is the bet they place most, and free odds sits
- * directly behind it because odds are physically stacked behind a pass-line
- * bet on a real table.
- */
-const BET_RECTS: Readonly<Record<CrapsBet, FeltRect>> = {
-  [CrapsBet.Field]: { u0: MARGIN_U, v0: 0.3, u1: 1 - MARGIN_U, v1: 0.5 },
-  [CrapsBet.DontPass]: { u0: MARGIN_U, v0: 0.54, u1: 1 - MARGIN_U, v1: 0.66 },
-  [CrapsBet.Odds]: { u0: MARGIN_U, v0: 0.68, u1: 1 - MARGIN_U, v1: 0.78 },
-  [CrapsBet.PassLine]: { u0: MARGIN_U, v0: 0.8, u1: 1 - MARGIN_U, v1: 0.96 },
+/** The place bet on each number, so a roll can find the bet it settles. */
+export const PLACE_BETS: Readonly<Record<PointNumber, CrapsBet>> = {
+  [PointNumber.Four]: CrapsBet.Place4,
+  [PointNumber.Five]: CrapsBet.Place5,
+  [PointNumber.Six]: CrapsBet.Place6,
+  [PointNumber.Eight]: CrapsBet.Place8,
+  [PointNumber.Nine]: CrapsBet.Place9,
+  [PointNumber.Ten]: CrapsBet.Place10,
 }
 
+/** Every place bet, for iterating settlement and the panel's controls. */
+export const PLACE_BET_LIST: readonly CrapsBet[] = POINT_NUMBERS.map(
+  (point) => PLACE_BETS[point],
+)
+
+const PLACE_NUMBERS: ReadonlyMap<CrapsBet, PointNumber> = new Map(
+  POINT_NUMBERS.map((point) => [PLACE_BETS[point], point]),
+)
+
 /**
- * Front-to-back pick order.
+ * The number a place bet rides on, or `null` for any other bet.
  *
- * The bands do not overlap today, but ordering the search from the player's
- * edge inward means a future band that does overlap resolves to the nearer —
- * and more frequently wagered — bet rather than whichever was declared first.
+ * A lookup rather than parsing the enum's string value, so renaming a member
+ * cannot silently turn a place bet into a line bet.
  */
-const PICK_ORDER: readonly CrapsBet[] = [
-  CrapsBet.PassLine,
-  CrapsBet.Odds,
-  CrapsBet.DontPass,
-  CrapsBet.Field,
-]
+export function placeBetNumber(bet: CrapsBet): PointNumber | null {
+  return PLACE_NUMBERS.get(bet) ?? null
+}
 
-const POINT_BOX_V0 = 0.06
-const POINT_BOX_V1 = 0.26
-/** Fraction of each box's slot left as a gap, so boxes read as separate. */
-const POINT_BOX_GAP = 0.14
+/** Whether a bet is one of the six place bets. */
+export function isPlaceBet(bet: CrapsBet): boolean {
+  return PLACE_NUMBERS.has(bet)
+}
+
+/** Horizontal inset shared by every band, leaving felt visible at the rails. */
+const MARGIN_U = 0.055
 
 /**
- * Builds the point-number boxes as an evenly divided row.
+ * Where the six numbered boxes sit, across the boxman's end.
  *
- * @returns One rect per point number, keyed for puck placement.
+ * Deeper than they were. The table is a long rectangle now rather than a
+ * squarish one, so a box that keeps its share of the felt's depth is short and
+ * very wide — and these carry a number, its odds and a stack of chips.
+ */
+const PLACE_BOX_V0 = 0.03
+const PLACE_BOX_V1 = 0.28
+/** Fraction of each box's slot left as a gap, so boxes read as separate. */
+const PLACE_BOX_GAP = 0.1
+
+/**
+ * Builds the six numbered boxes as an evenly divided row.
+ *
+ * @returns One rect per point number, keyed for both the chips and the puck.
  */
 function buildPointBoxRects(): Readonly<Record<PointNumber, FeltRect>> {
   const span = 1 - MARGIN_U * 2
   const slot = span / POINT_NUMBERS.length
-  const gap = (slot * POINT_BOX_GAP) / 2
+  const gap = (slot * PLACE_BOX_GAP) / 2
 
   const rects = {} as Record<PointNumber, FeltRect>
   POINT_NUMBERS.forEach((point, index) => {
     const slotStart = MARGIN_U + slot * index
     rects[point] = {
       u0: slotStart + gap,
-      v0: POINT_BOX_V0,
+      v0: PLACE_BOX_V0,
       u1: slotStart + slot - gap,
-      v1: POINT_BOX_V1,
+      v1: PLACE_BOX_V1,
     }
   })
   return rects
 }
 
 /**
- * Where each point number is printed.
+ * Where each point number is printed — and, since the boxes became bettable,
+ * where its place bet lives.
  *
- * Display only — these are not bettable in the SPEC's scope. Exported so the
- * scene can park the ON puck over the established point instead of hard-coding
- * a position that drifts the moment the layout is retuned.
+ * Exported so the scene can park the ON puck over the established point
+ * instead of hard-coding a position that drifts the moment the layout is
+ * retuned.
  */
 export const POINT_BOX_RECTS = buildPointBoxRects()
+
+/**
+ * Bands stack from the boxman's edge to the shooter's.
+ *
+ * Ordering is the one thing here that is not cosmetic: pass line sits nearest
+ * the player because that is the bet they place most, and free odds sits
+ * directly behind it because odds are physically stacked behind a pass-line
+ * bet on a real table.
+ *
+ * Nearest, but not against the wall. The whole layout is pulled toward the
+ * boxman so the pass line stops a sixth of the felt short of the near bumper,
+ * because the rail standing 0.3 above the felt hides everything within about
+ * 0.28 of it at any camera pitch that still shows the table as a table — and
+ * the pass line, the biggest and most-bet marking on a craps layout, was the
+ * thing behind it. No camera fixes that; the print has to move.
+ */
+const LINE_RECTS: Readonly<Record<string, FeltRect>> = {
+  [CrapsBet.Field]: { u0: MARGIN_U, v0: 0.31, u1: 1 - MARGIN_U, v1: 0.46 },
+  [CrapsBet.DontPass]: { u0: MARGIN_U, v0: 0.49, u1: 1 - MARGIN_U, v1: 0.585 },
+  [CrapsBet.Odds]: { u0: MARGIN_U, v0: 0.605, u1: 1 - MARGIN_U, v1: 0.675 },
+  [CrapsBet.PassLine]: { u0: MARGIN_U, v0: 0.7, u1: 1 - MARGIN_U, v1: 0.84 },
+}
+
+function buildBetRects(): Readonly<Record<CrapsBet, FeltRect>> {
+  const rects = { ...LINE_RECTS } as Record<CrapsBet, FeltRect>
+  for (const point of POINT_NUMBERS) {
+    rects[PLACE_BETS[point]] = POINT_BOX_RECTS[point]
+  }
+  return rects
+}
+
+const BET_RECTS = buildBetRects()
+
+/**
+ * Front-to-back pick order.
+ *
+ * Ordering the search from the player's edge inward means a band that overlaps
+ * another resolves to the nearer — and more frequently wagered — bet rather
+ * than whichever was declared first.
+ */
+const PICK_ORDER: readonly CrapsBet[] = [
+  CrapsBet.PassLine,
+  CrapsBet.Odds,
+  CrapsBet.DontPass,
+  CrapsBet.Field,
+  ...PLACE_BET_LIST,
+]
 
 /** Returns the region a bet occupies. */
 export function getCrapsBetRect(bet: CrapsBet): FeltRect {
@@ -142,6 +219,65 @@ export function getCrapsBetRect(bet: CrapsBet): FeltRect {
 /** Returns the centre of a rect, for parking a chip stack or a puck. */
 export function rectCenter(rect: FeltRect): { u: number; v: number } {
   return { u: (rect.u0 + rect.u1) / 2, v: (rect.v0 + rect.v1) / 2 }
+}
+
+/*
+ * The puck and a stack of chips both want the middle of the same box the moment
+ * the point is a number the player has money on — which is the common case,
+ * since the point is what most people back. So the box is split between them.
+ *
+ * Split across, not down. The boxes on a table this shape are wide and shallow:
+ * about 0.6 wide and 0.45 deep in world units, and a 0.2 puck above a 0.3 stack
+ * needs 0.5 of depth to keep them apart. Across, there is room to spare — and
+ * both then sit low in the box, under the printed number rather than over it.
+ */
+const PUCK_BOX_U = 0.26
+const CHIPS_BOX_U = 0.72
+/** How far down the box both of them sit, clear of the number printed above. */
+const BOX_LOWER_V = 0.72
+
+/**
+ * Where along a band the shooter's own chips sit.
+ *
+ * A line bet runs the whole width of the table because a whole rail of players
+ * share it; each one's chips sit on the stretch in front of them, not in the
+ * middle. Stacked centrally they land squarely on the band's own label — a $50
+ * pass line put two green chips through the middle of the word PASS LINE — and
+ * they read as belonging to nobody.
+ *
+ * Matched to where the shooter stands, so the chips are in front of the one
+ * player this table has.
+ */
+const SHOOTER_U = 0.16
+
+/**
+ * Where a bet's chips are stacked.
+ *
+ * The shooter's end of the band for a line bet, and the right of the box for a
+ * place bet, leaving the left of the box for the puck.
+ */
+export function betChipSpot(bet: CrapsBet): { u: number; v: number } {
+  const rect = getCrapsBetRect(bet)
+  if (!isPlaceBet(bet)) return { u: SHOOTER_U, v: (rect.v0 + rect.v1) / 2 }
+
+  return {
+    u: rect.u0 + (rect.u1 - rect.u0) * CHIPS_BOX_U,
+    v: rect.v0 + (rect.v1 - rect.v0) * BOX_LOWER_V,
+  }
+}
+
+/**
+ * Where the ON puck sits once a number is the point: the left of its own box.
+ *
+ * Paired with `betChipSpot` — move one without the other and the puck lands on
+ * the chips, which reads as the point being unreadable exactly when it matters.
+ */
+export function pointPuckSpot(point: PointNumber): { u: number; v: number } {
+  const rect = POINT_BOX_RECTS[point]
+  return {
+    u: rect.u0 + (rect.u1 - rect.u0) * PUCK_BOX_U,
+    v: rect.v0 + (rect.v1 - rect.v0) * BOX_LOWER_V,
+  }
 }
 
 function contains(rect: FeltRect, u: number, v: number): boolean {
