@@ -8,6 +8,7 @@ import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
 import { TableId } from '../scenes/casinoFloorLayout'
+import { donationTimeline, NurseTask } from '../scenes/clinicRoutine'
 import { MARKER_AMOUNT } from '../world/money'
 import { CrapsBet } from '../scenes/crapsFeltLayout'
 import { VenueId } from '../world/venues'
@@ -17,6 +18,9 @@ const DEMO_BET = 50
 
 /** Bankroll handed to `?boot=shop`, enough to afford anything on the rails. */
 const SHOPPING_SPREE = 5000
+
+/** Which recliner `?boot=drawing` uses. Mid-row, so both neighbours are in shot. */
+const DRAWING_CHAIR = 1
 
 /** Where `?boot=shopfront` stands the player. Clear of the door trigger. */
 const SHOPFRONT_VIEWPOINT: readonly [number, number, number] = [4.2, 0, -6]
@@ -135,6 +139,7 @@ function applyTimeShortcut(): void {
  * - `?boot=craps` sits at the craps table with a pass-line bet already down.
  * - `?boot=floor` stands on the casino floor, between the two tables.
  * - `?boot=clinic` stands on Red River Plasma's floor.
+ * - `?boot=drawing` sits in a chair with the needle already in.
  * - `?boot=broke` sits at blackjack with nothing, so the marker is on offer.
  * - `?boot=debt` sits there with nothing *and* a marker outstanding, which is
  *   the state that sends the player to the clinic.
@@ -175,6 +180,7 @@ export function applyBootShortcut(): void {
     'broke',
     'clinic',
     'debt',
+    'drawing',
     'designer',
     'floor',
     'shop',
@@ -231,6 +237,28 @@ export function applyBootShortcut(): void {
   if (boot === 'clinic') {
     useAppearanceStore.getState().completeDesign()
     useGameStore.getState().enterVenue(VenueId.RedRiverPlasma)
+    return
+  }
+
+  if (boot === 'drawing') {
+    /*
+     * Mid-needle, with the phase set directly rather than by running the
+     * sequence.
+     *
+     * `?freeze` holds the game clock but not `setTimeout`, so a capture racing
+     * a real draw lands on a different frame every run — and would pay out
+     * partway through the screenshot.
+     */
+    useAppearanceStore.getState().completeDesign()
+    useGameStore.getState().enterVenue(VenueId.RedRiverPlasma)
+    useGameStore.getState().sitInChair(DRAWING_CHAIR)
+    useGameStore.setState({
+      donation: {
+        chair: DRAWING_CHAIR,
+        startedAt: performance.now() - donationTimeline().needleAt,
+      },
+      nurseTask: NurseTask.Working,
+    })
     return
   }
 

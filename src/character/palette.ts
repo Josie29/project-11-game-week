@@ -43,6 +43,7 @@ export const GARMENT_COLORS: readonly Swatch[] = [
   { id: 'olive', name: 'Olive', hex: '#55573c' },
   { id: 'plum', name: 'Plum', hex: '#4a2a52' },
   { id: 'teal', name: 'Teal', hex: '#1f5560' },
+  { id: 'surgical', name: 'Surgical', hex: '#3f8f88' },
 ]
 
 /** Six hex digits behind a hash. Three-digit shorthand is deliberately not accepted. */

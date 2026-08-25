@@ -43,16 +43,41 @@ export const CAMERA_BOUNDS = {
 
 /** The recliners, in a row down the left-hand wall as in the reference. */
 export const CHAIR_COUNT = 4
-export const CHAIR_Z: readonly number[] = [-2.4, -0.9, 0.6, 2.1]
+/*
+ * Spaced wider than the reference's tight row.
+ *
+ * The gap is set by the sit prompt, not by the furniture: at the original
+ * spacing the radii had to be small enough not to overlap, which left dead
+ * patches of floor between the chairs where nothing could be sat in.
+ */
+export const CHAIR_Z: readonly number[] = [-3.0, -0.6, 1.8, 4.2]
 export const CHAIR_X = -4.1
 
 /** A recliner with its footrest out is long and narrow. */
-export const CHAIR_FOOTPRINT_HALF_X = 1.05
+export const CHAIR_FOOTPRINT_HALF_X = 0.9
 export const CHAIR_FOOTPRINT_HALF_Z = 0.55
 
-/** Where you stand to be offered the chair, out on the floor beside it. */
-export const CHAIR_SIT_X = -2.5
-export const SIT_RADIUS = 0.72
+/**
+ * Where you stand to be offered the chair, out on the floor in front of it.
+ *
+ * Further out than the recliner needs, to leave the nurse somewhere to stand:
+ * she works from the tray side and the two of you would otherwise arrive on the
+ * same square. See `nurseStationFor`.
+ */
+export const CHAIR_SIT_X = -2.6
+/**
+ * Wide enough that the row has no dead patches, and deliberately overlapping.
+ *
+ * Circular prompts along a row cannot be both non-overlapping and gapless, and
+ * gapless is what matters: a tight radius left stretches of floor between the
+ * chairs where nothing was on offer, so walking the row stepped over the prompt
+ * rather than into it.
+ *
+ * Overlap is harmless because `WalkingPlayer` reports the *nearest* target
+ * rather than the first, so a point between two chairs resolves to the one you
+ * are actually closer to.
+ */
+export const SIT_RADIUS = 1.6
 
 /** The check-in desk, by the door. */
 export const DESK: readonly [number, number, number] = [3.4, 0, 3.4]
@@ -77,10 +102,15 @@ export const EXIT_DOOR: readonly [number, number, number] = [0, 0, 6.7]
 export const EXIT_RADIUS = 3
 
 /**
- * Far enough inside that arriving does not re-trigger the exit — and further
- * still, so the trailing camera has somewhere to sit that is not the back wall.
+ * Where the player appears on walking in: beside the nearest recliner.
+ *
+ * Far enough inside that arriving does not re-trigger the exit, and far enough
+ * from the back wall that the trailing camera has somewhere to sit — but also
+ * deliberately within reach of a chair's prompt. It is a room with four chairs
+ * in it; making somebody cross it before anything is on offer is a walk that
+ * says nothing.
  */
-export const ENTRANCE: readonly [number, number, number] = [0, 0, 2.4]
+export const ENTRANCE: readonly [number, number, number] = [-2.2, 0, 4]
 
 /** Chair ids, as the proximity targets and the seat state use them. */
 export const CHAIR_IDS: readonly string[] = Array.from(

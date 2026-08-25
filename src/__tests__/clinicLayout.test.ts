@@ -41,18 +41,37 @@ describe('clinic layout', () => {
     }
   })
 
-  // F donates at whichever chair is nearest. Overlapping sit radii would leave
-  // a patch of floor where the prompt is ambiguous — the same trap the casino
-  // floor's two tables had to be kept out of, and much easier to fall into with
-  // four chairs in a row instead of two tables across a room.
-  it('keeps the four sit prompts from overlapping', () => {
-    for (let i = 0; i < CHAIR_COUNT; i++) {
-      for (let j = i + 1; j < CHAIR_COUNT; j++) {
+  /*
+   * The prompts deliberately overlap, so what has to hold is that they resolve
+   * unambiguously: standing beside a chair must offer *that* chair.
+   *
+   * The earlier rule here was that they must not overlap at all, which forced
+   * the radii small enough to leave dead patches of floor between the chairs —
+   * walking the row stepped over the prompt instead of into it.
+   */
+  it('offers the nearest chair from anywhere along the row', () => {
+    for (let index = 0; index < CHAIR_COUNT; index++) {
+      const [x, , z] = chairSitSpot(index)
+
+      for (let other = 0; other < CHAIR_COUNT; other++) {
+        if (other === index) continue
         expect(
-          gap(chairSitSpot(i), chairSitSpot(j)),
-          `chairs ${i} and ${j} share a prompt`,
-        ).toBeGreaterThan(SIT_RADIUS * 2)
+          gap([x, 0, z], chairSitSpot(index)),
+          `chair ${other}'s prompt wins where chair ${index}'s should`,
+        ).toBeLessThan(gap([x, 0, z], chairSitSpot(other)))
       }
+    }
+  })
+
+  // ...and no dead floor between them: every point along the row has to be in
+  // range of something, or there are places you can stand where the chairs look
+  // like scenery.
+  it('leaves no dead floor between one chair and the next', () => {
+    for (let index = 1; index < CHAIR_COUNT; index++) {
+      expect(
+        gap(chairSitSpot(index), chairSitSpot(index - 1)),
+        `a dead patch between chairs ${index - 1} and ${index}`,
+      ).toBeLessThan(SIT_RADIUS * 2)
     }
   })
 
@@ -88,6 +107,16 @@ describe('clinic layout', () => {
         )
       }
     }
+  })
+
+  // Walking in should put something on offer straight away — a room of four
+  // chairs that makes you cross it before anything happens is a walk that says
+  // nothing.
+  it('spawns the player within reach of a chair', () => {
+    const [x, , z] = ENTRANCE
+    const nearest = Math.min(...CHAIRS.map((index) => gap(ENTRANCE, chairSitSpot(index))))
+
+    expect(nearest, `nothing within reach of (${x}, ${z})`).toBeLessThan(SIT_RADIUS)
   })
 
   // Arriving inside the exit's own trigger bounces the player straight back out

@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { ENTRANCE, SIT_SPOTS, TableId } from '../scenes/casinoFloorLayout'
 import { ENTRANCE as CLINIC_ENTRANCE, chairSitSpot } from '../scenes/clinicLayout'
+import { donationTimeline, NurseTask } from '../scenes/clinicRoutine'
+import { runSequence, type RunningSequence } from './sequence'
 import { DONATION_FEE, MARKER_AMOUNT, splitWinnings } from '../world/money'
 import { VenueId, getVenue, PLAYER_SPAWN } from '../world/venues'
 import { useTimeStore } from './useTimeStore'
@@ -59,6 +61,17 @@ interface GameStore {
   nearbyChair: number | null
   /** Where the player should appear when the clinic floor mounts. */
   clinicPosition: readonly [number, number, number]
+  /**
+   * The draw in progress, or `null`.
+   *
+   * `startedAt` drives the nurse's animation and the panel's wording; the
+   * payout is a scheduled step rather than anything derived from it.
+   */
+  donation: { readonly chair: number; readonly startedAt: number } | null
+  /** What the nurse is doing right now. */
+  nurseTask: NurseTask
+  /** Whether the player is at the clinic's desk, so the receptionist looks up. */
+  nearDesk: boolean
   /** Where the player should appear when the strip mounts. */
   spawnPosition: readonly [number, number, number]
   /**
@@ -87,6 +100,9 @@ interface GameStore {
   sitInChair: (index: number) => void
   leaveChair: () => void
   setNearbyChair: (index: number | null) => void
+  /** Calls the nurse over and starts the draw. Pays only when she finishes. */
+  beginDonation: () => void
+  setNearDesk: (near: boolean) => void
   openDesigner: () => void
   closeDesigner: () => void
   setNearbyVenue: (id: VenueId | null) => void
@@ -113,6 +129,14 @@ interface GameStore {
   resetBankroll: () => void
 }
 
+/**
+ * The draw in flight, held outside the store.
+ *
+ * A timer handle is not state anything renders from, and putting it in the
+ * store would mean every tick of it re-rendering the room.
+ */
+let draw: RunningSequence | null = null
+
 export const useGameStore = create<GameStore>()(
   persist(
     (set, get) => ({
@@ -128,6 +152,9 @@ export const useGameStore = create<GameStore>()(
       atChair: null,
       nearbyChair: null,
       clinicPosition: CLINIC_ENTRANCE,
+      donation: null,
+      nurseTask: NurseTask.Patrolling,
+      nearDesk: false,
       spawnPosition: PLAYER_SPAWN,
       designerReturnTo: Location.Strip,
       initialCameraYaw: 0,
@@ -144,6 +171,8 @@ export const useGameStore = create<GameStore>()(
           atChair: null,
           nearbyChair: null,
           clinicPosition: CLINIC_ENTRANCE,
+          donation: null,
+          nurseTask: NurseTask.Patrolling,
         }),
 
       sitAt: (table) => set({ activeTable: table, nearbyTable: null }),
@@ -172,12 +201,57 @@ export const useGameStore = create<GameStore>()(
 
       sitInChair: (index) => set({ atChair: index, nearbyChair: null }),
 
-      /** Stands the player up beside the chair they were in. */
+      beginDonation: () => {
+        const { atChair, donation } = get()
+        if (atChair === null || donation !== null) return
+
+        const timeline = donationTimeline()
+        const chair = atChair
+
+        draw?.cancel()
+        set({
+          donation: { chair, startedAt: performance.now() },
+          nurseTask: NurseTask.Approaching,
+        })
+
+        draw = runSequence(
+          [
+            { at: timeline.arriveAt, run: () => set({ nurseTask: NurseTask.Working }) },
+            {
+              at: timeline.completeAt,
+              run: () => {
+                /*
+                 * Paid and stamped together, at the end.
+                 *
+                 * Stamping the day up front would burn it for nothing when
+                 * somebody stands up mid-needle. Doing both here means leaving
+                 * early costs exactly nothing, which is what makes staying a
+                 * choice rather than a formality.
+                 */
+                get().donate()
+                set({ donation: null, nurseTask: NurseTask.Returning })
+              },
+            },
+          ],
+          // Getting out of the chair abandons the rest. Without this the money
+          // arrives after the player has walked off, from a nurse who is no
+          // longer beside anybody.
+          { isStillValid: () => get().atChair === chair && get().donation !== null },
+        )
+      },
+
+      /** Stands the player up beside the chair they were in, cancelling any draw. */
       leaveChair: () => {
         const { atChair } = get()
+
+        draw?.cancel()
+        draw = null
+
         set({
           atChair: null,
           nearbyChair: null,
+          donation: null,
+          nurseTask: NurseTask.Returning,
           clinicPosition: atChair === null ? CLINIC_ENTRANCE : chairSitSpot(atChair),
         })
       },
@@ -185,6 +259,12 @@ export const useGameStore = create<GameStore>()(
       setNearbyChair: (index) => {
         if (get().nearbyChair === index) return
         set({ nearbyChair: index })
+      },
+
+      setNearDesk: (near) => {
+        // Called from the render loop, so bail out unless it actually changed.
+        if (get().nearDesk === near) return
+        set({ nearDesk: near })
       },
 
       openDesigner: () => {
@@ -215,6 +295,8 @@ export const useGameStore = create<GameStore>()(
           nearbyTable: null,
           atChair: null,
           nearbyChair: null,
+          donation: null,
+          nurseTask: NurseTask.Patrolling,
           spawnPosition: [x + offsetX, y, z],
         })
       },

@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
+import { NurseTask } from '../scenes/clinicRoutine'
 import { canDonate, DONATION_FEE, nextDonationClock } from '../world/money'
 
 /*
@@ -14,7 +15,9 @@ import { canDonate, DONATION_FEE, nextDonationClock } from '../world/money'
 export function ClinicPanel() {
   const bankroll = useGameStore((state) => state.bankroll)
   const lastDonationDay = useGameStore((state) => state.lastDonationDay)
-  const donate = useGameStore((state) => state.donate)
+  const beginDonation = useGameStore((state) => state.beginDonation)
+  const donation = useGameStore((state) => state.donation)
+  const nurseTask = useGameStore((state) => state.nurseTask)
   const leaveChair = useGameStore((state) => state.leaveChair)
   const day = useTimeStore((state) => state.day)
 
@@ -34,13 +37,24 @@ export function ClinicPanel() {
   return (
     <div className="table-ui">
       <div className="clinic">
-        {accepted ? (
+        {donation !== null ? (
+          /*
+           * Narrated rather than a spinner, because the wait is the feature:
+           * the money lands when she finishes, and Get up stays live the whole
+           * time so leaving is a real choice rather than a formality.
+           */
+          <span className="clinic__line">
+            {nurseTask === NurseTask.Approaching
+              ? 'She is coming over.'
+              : 'Hold still. Nearly there.'}
+          </span>
+        ) : accepted ? (
           <>
             <span className="clinic__line">
               They will take a pint today. It pays{' '}
               <strong className="clinic__fee">${DONATION_FEE}</strong>.
             </span>
-            <button type="button" className="button button--primary" onClick={donate}>
+            <button type="button" className="button button--primary" onClick={beginDonation}>
               Donate
             </button>
           </>

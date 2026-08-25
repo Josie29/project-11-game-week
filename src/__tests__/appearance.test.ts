@@ -4,6 +4,9 @@ import {
   Garment,
   garmentPalette,
   HairStyle,
+  NURSE_APPEARANCE,
+  PLAYER_GARMENTS,
+  RECEPTIONIST_APPEARANCE,
   resolveAppearance,
   sanitizeAppearance,
 } from '../character/appearance'
@@ -128,6 +131,52 @@ describe('shadeHex', () => {
   it('rejects anything that is not a six-digit hex colour', () => {
     expect(() => shadeHex('#fff', 0.2)).toThrow(TypeError)
     expect(() => shadeHex('red', 0.2)).toThrow(TypeError)
+  })
+})
+
+describe('PLAYER_GARMENTS', () => {
+  // Scrubs are a uniform. The designer used to offer `Object.values(Garment)`,
+  // so adding a member silently made it a player outfit — and a player in
+  // scrubs is indistinguishable from the nurse standing next to them.
+  it('excludes the staff uniform', () => {
+    expect(PLAYER_GARMENTS).not.toContain(Garment.Scrubs)
+  })
+
+  // ...but everything else stays offered. A garment quietly dropped from the
+  // list is one the player can never pick and nothing would complain.
+  it('offers every garment that is not a uniform', () => {
+    const uniforms = new Set([Garment.Scrubs])
+    const expected = Object.values(Garment).filter((garment) => !uniforms.has(garment))
+
+    expect([...PLAYER_GARMENTS].sort()).toEqual(expected.sort())
+  })
+
+  it('offers only real garments', () => {
+    for (const garment of PLAYER_GARMENTS) {
+      expect(Object.values(Garment)).toContain(garment)
+    }
+  })
+})
+
+describe('staff presets', () => {
+  // Two people in the same uniform read as one person duplicated unless
+  // everything else about them differs.
+  it('makes the two clinic staff tell apart', () => {
+    expect(RECEPTIONIST_APPEARANCE.garment).toBe(Garment.Scrubs)
+    expect(NURSE_APPEARANCE.garment).toBe(Garment.Scrubs)
+
+    expect(NURSE_APPEARANCE.silhouette).not.toBe(RECEPTIONIST_APPEARANCE.silhouette)
+    expect(NURSE_APPEARANCE.hairStyle).not.toBe(RECEPTIONIST_APPEARANCE.hairStyle)
+    expect(NURSE_APPEARANCE.hairColor).not.toBe(RECEPTIONIST_APPEARANCE.hairColor)
+    expect(NURSE_APPEARANCE.skinTone).not.toBe(RECEPTIONIST_APPEARANCE.skinTone)
+  })
+
+  // A preset naming a swatch that does not exist falls back silently, so both
+  // staff would turn up in the palette's first colour and match after all.
+  it('resolves both presets to real colours', () => {
+    for (const preset of [RECEPTIONIST_APPEARANCE, NURSE_APPEARANCE]) {
+      expect(sanitizeAppearance(preset)).toEqual(preset)
+    }
   })
 })
 

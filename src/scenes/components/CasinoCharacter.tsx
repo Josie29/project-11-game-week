@@ -6,9 +6,15 @@ import { Garment, resolveAppearance, type Appearance } from '../../character/app
 import { findItem, ItemShape, Slot, type EquippedItems } from '../../character/catalog'
 import { metricsFor, PROPORTIONS } from '../../character/proportions'
 import { useBlackjackStore } from '../../store/useBlackjackStore'
-import { GESTURES, REST_POSE } from '../gestures'
+import { GESTURES, Gesture, REST_POSE } from '../gestures'
 import { Accessory } from './character/Accessory'
 import { Hair } from './character/Hair'
+
+/** A gesture and when it started, for a caller driving an arm themselves. */
+export interface ArmSignal {
+  readonly gesture: Gesture | null
+  readonly startedAt: number
+}
 
 /** Moulded ivory, as the dummies in `art/refs/shop_exterior_wide.png` are. */
 const MANNEQUIN_FORM = '#ded5c8'
@@ -64,6 +70,23 @@ interface CasinoCharacterProps {
    * gesture animates without re-rendering the whole body every frame.
    */
   gestureSource?: 'player' | 'dealer' | undefined
+  /**
+   * Drives the right arm directly, instead of from a store.
+   *
+   * `gestureSource` reads `useBlackjackStore`, which is the wrong store for
+   * anyone who is not at a card table — the clinic's nurse has her own timing
+   * and no hand to signal with. Passing the gesture and its start time makes
+   * the arm drivable by any caller. Takes precedence over `gestureSource`.
+   *
+   * Named for the signal rather than the pose because `pose` is already the
+   * local the frame loop resolves it into.
+   *
+   * A ref rather than a value, for the same reason `speedRef` is one: the frame
+   * loop reads it every frame, and a plain prop would be whatever it was at the
+   * last render — so a caller that changes it without re-rendering, which is the
+   * entire point, would never be seen.
+   */
+  armSignal?: RefObject<ArmSignal> | undefined
 }
 
 /**
@@ -89,6 +112,7 @@ export function CasinoCharacter({
   staff = false,
   mannequin = false,
   gestureSource,
+  armSignal,
 }: CasinoCharacterProps) {
   const { silhouette, hairStyle, hair, skin, garment, colors } = resolveAppearance(appearance)
   const body = PROPORTIONS[silhouette]
@@ -137,11 +161,16 @@ export function CasinoCharacter({
 
     // Read the signal imperatively — subscribing would re-render the figure on
     // every gesture change for no benefit.
-    const store = gestureSource ? useBlackjackStore.getState() : null
-    const activeGesture =
-      gestureSource === 'dealer' ? (store?.dealerGesture ?? null) : (store?.activeGesture ?? null)
-    const gestureStartedAt =
-      gestureSource === 'dealer'
+    const signalled = armSignal?.current ?? null
+    const store = gestureSource && !signalled ? useBlackjackStore.getState() : null
+    const activeGesture = signalled
+      ? signalled.gesture
+      : gestureSource === 'dealer'
+        ? (store?.dealerGesture ?? null)
+        : (store?.activeGesture ?? null)
+    const gestureStartedAt = signalled
+      ? signalled.startedAt
+      : gestureSource === 'dealer'
         ? (store?.gestureStartedAtDealer ?? 0)
         : (store?.gestureStartedAt ?? 0)
 

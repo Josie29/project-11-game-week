@@ -1,4 +1,4 @@
-import { Garment, HairStyle, type Appearance } from '../character/appearance'
+import { Garment, HairStyle, PLAYER_GARMENTS, type Appearance } from '../character/appearance'
 import { GARMENT_COLORS, HAIR_COLORS, SKIN_TONES, type Swatch } from '../character/palette'
 import { Silhouette } from '../character/proportions'
 import { useAppearanceStore } from '../store/useAppearanceStore'
@@ -35,6 +35,8 @@ const GARMENT_LABELS: Record<Garment, string> = {
   [Garment.CocktailDress]: 'Cocktail dress',
   [Garment.ShirtAndSkirt]: 'Shirt & skirt',
   [Garment.TeeAndJeans]: 'Tee & jeans',
+  // Never shown: scrubs are staff uniform and are not in `PLAYER_GARMENTS`.
+  [Garment.Scrubs]: 'Scrubs',
 }
 
 interface ChoiceRowProps<T extends string> {
@@ -154,7 +156,7 @@ export function CharacterDesigner() {
 
       <ChoiceRow
         label="Clothes"
-        options={Object.values(Garment)}
+        options={PLAYER_GARMENTS}
         labels={GARMENT_LABELS}
         value={appearance.garment}
         onPick={(garment) => update({ garment })}

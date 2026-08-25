@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { STARTING_BANKROLL, useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
+import { donationTimeline, NurseTask } from '../scenes/clinicRoutine'
 import { DONATION_FEE, MARKER_AMOUNT } from '../world/money'
 
 /*
@@ -12,7 +13,13 @@ import { DONATION_FEE, MARKER_AMOUNT } from '../world/money'
  */
 
 function reset(): void {
-  useGameStore.setState({ bankroll: STARTING_BANKROLL, debt: 0, lastDonationDay: null })
+  useGameStore.setState({
+    bankroll: STARTING_BANKROLL,
+    debt: 0,
+    lastDonationDay: null,
+    atChair: null,
+    donation: null,
+  })
   useTimeStore.setState({ day: 0 })
 }
 
@@ -93,6 +100,89 @@ describe('donations', () => {
 
     expect(useGameStore.getState().bankroll).toBe(DONATION_FEE)
     expect(useGameStore.getState().debt).toBe(MARKER_AMOUNT)
+  })
+})
+
+describe('the draw', () => {
+  beforeEach(() => {
+    reset()
+    vi.useFakeTimers()
+    useGameStore.setState({ atChair: 0, donation: null, nurseTask: NurseTask.Patrolling })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('pays nothing until the nurse has finished', () => {
+    useGameStore.setState({ bankroll: 0 })
+    useGameStore.getState().beginDonation()
+
+    const { needleAt, completeAt } = donationTimeline()
+
+    vi.advanceTimersByTime(needleAt)
+    expect(useGameStore.getState().bankroll).toBe(0)
+    expect(useGameStore.getState().lastDonationDay).toBeNull()
+
+    vi.advanceTimersByTime(completeAt - needleAt)
+    expect(useGameStore.getState().bankroll).toBe(DONATION_FEE)
+    expect(useGameStore.getState().lastDonationDay).toBe(0)
+  })
+
+  /*
+   * The case the guard exists for, and the one no screenshot can show.
+   *
+   * Standing up mid-needle has to cost nothing and pay nothing. Without the
+   * guard the money arrives seconds later, from a nurse who is no longer beside
+   * anybody — and with the day stamped up front instead, leaving would burn the
+   * donation for nothing.
+   */
+  it('pays nothing and spends no day if the player gets up mid-draw', () => {
+    useGameStore.setState({ bankroll: 0 })
+    useGameStore.getState().beginDonation()
+
+    vi.advanceTimersByTime(donationTimeline().needleAt)
+    useGameStore.getState().leaveChair()
+
+    vi.advanceTimersByTime(20_000)
+
+    expect(useGameStore.getState().bankroll).toBe(0)
+    expect(useGameStore.getState().lastDonationDay).toBeNull()
+    expect(useGameStore.getState().donation).toBeNull()
+  })
+
+  // ...and having walked away, sitting down again offers it afresh.
+  it('can be started again after being abandoned', () => {
+    useGameStore.setState({ bankroll: 0 })
+    useGameStore.getState().beginDonation()
+    useGameStore.getState().leaveChair()
+
+    useGameStore.setState({ atChair: 2 })
+    useGameStore.getState().beginDonation()
+    vi.advanceTimersByTime(donationTimeline().completeAt)
+
+    expect(useGameStore.getState().bankroll).toBe(DONATION_FEE)
+  })
+
+  // Mashing the button must not stack sequences and pay several times over.
+  it('ignores a second start while one is running', () => {
+    useGameStore.setState({ bankroll: 0 })
+    useGameStore.getState().beginDonation()
+    useGameStore.getState().beginDonation()
+    useGameStore.getState().beginDonation()
+
+    vi.advanceTimersByTime(donationTimeline().completeAt + 5000)
+
+    expect(useGameStore.getState().bankroll).toBe(DONATION_FEE)
+  })
+
+  it('does nothing at all unless the player is in a chair', () => {
+    useGameStore.setState({ bankroll: 0, atChair: null })
+    useGameStore.getState().beginDonation()
+
+    expect(useGameStore.getState().donation).toBeNull()
+    vi.advanceTimersByTime(20_000)
+    expect(useGameStore.getState().bankroll).toBe(0)
   })
 })
 

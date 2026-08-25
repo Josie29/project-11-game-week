@@ -20,13 +20,29 @@ export enum HairStyle {
   Coils = 'coils',
 }
 
-/** The four starter outfits on `art/refs/character_sheet.png`. */
+/** The four starter outfits on `art/refs/character_sheet.png`, plus a uniform. */
 export enum Garment {
   Suit = 'suit',
   CocktailDress = 'cocktail-dress',
   ShirtAndSkirt = 'shirt-and-skirt',
   TeeAndJeans = 'tee-and-jeans',
+  /** Clinic uniform. Staff only — see `PLAYER_GARMENTS`. */
+  Scrubs = 'scrubs',
 }
+
+/**
+ * What the designer offers.
+ *
+ * Explicit rather than `Object.values(Garment)`, because scrubs are a uniform.
+ * A player in scrubs is indistinguishable from the nurse, and the designer
+ * would have picked the new member up silently the moment it was added.
+ */
+export const PLAYER_GARMENTS: readonly Garment[] = [
+  Garment.Suit,
+  Garment.CocktailDress,
+  Garment.ShirtAndSkirt,
+  Garment.TeeAndJeans,
+]
 
 export interface Appearance {
   readonly silhouette: Silhouette
@@ -47,6 +63,33 @@ export const DEFAULT_APPEARANCE: Appearance = {
   skinTone: 'honey',
   garment: Garment.TeeAndJeans,
   garmentColor: 'midnight',
+}
+
+/** Red River Plasma's receptionist, working the terminal behind the desk. */
+export const RECEPTIONIST_APPEARANCE: Appearance = {
+  silhouette: Silhouette.Feminine,
+  hairStyle: HairStyle.Updo,
+  hairColor: 'coffee',
+  skinTone: 'umber',
+  garment: Garment.Scrubs,
+  garmentColor: 'surgical',
+}
+
+/**
+ * The nurse who walks the room and does the draw.
+ *
+ * Deliberately unlike the receptionist in build, hair and skin. Two staff in
+ * the same uniform read as one person duplicated unless everything else differs.
+ */
+export const NURSE_APPEARANCE: Appearance = {
+  silhouette: Silhouette.Androgynous,
+  // A ponytail rather than a bob: she is seen from behind for most of the
+  // procedure, and a bob in a pale colour reads as a slab from back there.
+  hairStyle: HairStyle.Ponytail,
+  hairColor: 'silver',
+  skinTone: 'sand',
+  garment: Garment.Scrubs,
+  garmentColor: 'teal',
 }
 
 /**
@@ -129,6 +172,20 @@ export function garmentPalette(garment: Garment, primary: string): GarmentPalett
         shoes: SHOE_BLACK,
         hasSkirt: true,
       }
+    case Garment.Scrubs:
+      return {
+        // Tunic and trousers the same colour, as a uniform is. No lapels, no
+        // tie, no contrast panel — the whole point is that it is not an outfit.
+        primary,
+        primaryTrim: shadeHex(primary, -0.1),
+        secondary: shadeHex(primary, -0.06),
+        // The V-neck, a shade lighter so the neckline reads at all.
+        shirt: shadeHex(primary, 0.18),
+        accent: shadeHex(primary, -0.18),
+        shoes: '#e8e6e0',
+        hasSkirt: false,
+      }
+
     case Garment.TeeAndJeans:
       return {
         primary,

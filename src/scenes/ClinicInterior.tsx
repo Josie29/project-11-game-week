@@ -27,6 +27,7 @@ import {
   WALL_HEIGHT,
 } from './clinicLayout'
 import { CasinoCharacter } from './components/CasinoCharacter'
+import { ClinicStaff } from './components/ClinicStaff'
 import { WalkingPlayer, type ProximityTarget } from './components/WalkingPlayer'
 
 /*
@@ -146,6 +147,18 @@ export function ClinicInterior() {
 
   const solids = useMemo(() => obstacles(), [])
 
+  /*
+   * The desk, checked separately from the chairs.
+   *
+   * On its own channel because `onNearest` reports only the closest match:
+   * folding the desk in with the recliners would let standing at the desk
+   * suppress a chair's sit prompt.
+   */
+  const glanceTargets = useMemo<readonly ProximityTarget[]>(
+    () => [{ id: 'desk', position: [DESK[0], 0, DESK[2]], radius: 3.2 }],
+    [],
+  )
+
   function handleNearest(id: string | null): void {
     const store = useGameStore.getState()
 
@@ -155,6 +168,10 @@ export function ClinicInterior() {
     }
 
     store.setNearbyChair(id === null ? null : chairIndex(id))
+  }
+
+  function handleGlance(id: string | null): void {
+    useGameStore.getState().setNearDesk(id === 'desk')
   }
 
   return (
@@ -221,6 +238,8 @@ export function ClinicInterior() {
       {CHAIR_Z.map((z) => (
         <Recliner key={z} z={z} />
       ))}
+
+      <ClinicStaff />
 
       {/* Check-in desk, with a monitor on it. */}
       <group position={[DESK[0], 0, DESK[2]]}>
@@ -289,6 +308,8 @@ export function ClinicInterior() {
           targets={targets}
           onNearest={handleNearest}
           obstacles={solids}
+          glanceTargets={glanceTargets}
+          onGlance={handleGlance}
           distance={4.2}
           pitch={0.46}
           cameraBounds={CAMERA_BOUNDS}

@@ -15,6 +15,10 @@ export enum Gesture {
   DealerPay = 'dealerPay',
   /** Dealer reaches out and draws a losing wager back to the rack. */
   DealerSweep = 'dealerSweep',
+  /** Nurse dabs the crook of the donor's arm with a swab. */
+  SwabArm = 'swabArm',
+  /** Nurse sets the needle and holds it there. */
+  InsertNeedle = 'insertNeedle',
 }
 
 /** Right-arm joint rotations, in radians. */
@@ -204,6 +208,54 @@ export const GESTURES: Record<Gesture, GestureDefinition> = {
         shoulderPitch: (-1.42 + 0.5 * drag) * reach,
         shoulderRoll: REST_POSE.shoulderRoll + 0.3 * (1 - drag) * reach,
         elbowPitch: (-0.3 - 0.7 * drag) * reach,
+      }
+    },
+  },
+
+  /*
+   * Swab: a short reach across to the donor's arm and two quick dabs. Faster
+   * and shallower than a dealer's reach — the arm being worked on is right
+   * there beside her, not across a table.
+   */
+  [Gesture.SwabArm]: {
+    durationMs: 700,
+    pose: (t) => {
+      const reach = reachEnvelope(t)
+      const dabWindow = smoothstep(0.25, 0.35, t) * (1 - smoothstep(0.65, 0.75, t))
+      const dab = Math.sin(t * Math.PI * 4) * 0.2 * dabWindow
+
+      return {
+        shoulderPitch: (-1.05 + dab) * reach,
+        shoulderRoll: REST_POSE.shoulderRoll - 0.34 * reach,
+        elbowPitch: (-0.78 - dab) * reach,
+      }
+    },
+  },
+
+  /*
+   * The needle: one slow, steady reach that arrives and stays. No oscillation
+   * anywhere in it — every other gesture on this project has a wobble, and this
+   * is the one that must not, because a shaking hand holding a needle reads as
+   * a mistake rather than as care.
+   */
+  [Gesture.InsertNeedle]: {
+    /*
+     * Long enough to cover the whole draw, not just the moment of insertion.
+     *
+     * Every other gesture here is a signal that happens and is over; this one
+     * has to still be happening two seconds later. At a signal's duration her
+     * arm dropped back to her side while the bag was still filling, which read
+     * as her having wandered off mid-procedure.
+     */
+    durationMs: 3000,
+    pose: (t) => {
+      // Reaches in over the first third and simply holds for the rest.
+      const settle = smoothstep(0, 0.34, t)
+
+      return {
+        shoulderPitch: -1.16 * settle,
+        shoulderRoll: REST_POSE.shoulderRoll - 0.3 * settle,
+        elbowPitch: -0.92 * settle,
       }
     },
   },

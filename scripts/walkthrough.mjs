@@ -55,7 +55,7 @@ page.on('pageerror', (error) => failures.push(String(error)))
  */
 async function walk(keys, ms) {
   await page.keyboard.press('KeyR')
-  await page.waitForTimeout(80)
+  await page.waitForTimeout(40)
 
   for (const key of keys) await page.keyboard.down(key)
   await page.waitForTimeout(ms)
@@ -67,7 +67,7 @@ async function isVisible(text) {
 }
 
 /** Walks in short bursts until `text` is gone, or gives up. */
-async function walkUntilGone(keys, text, { burstMs = 320, bursts = 30 } = {}) {
+async function walkUntilGone(keys, text, { burstMs = 700, bursts = 30 } = {}) {
   for (let i = 0; i < bursts; i++) {
     if (!(await isVisible(text))) return
     await walk(keys, burstMs)
@@ -84,7 +84,7 @@ async function walkUntilGone(keys, text, { burstMs = 320, bursts = 30 } = {}) {
  * order of magnitude between runs, so the same hold lands somewhere different
  * every time. Stepping and checking is slower and does not care.
  */
-async function walkUntil(keys, text, { burstMs = 320, bursts = 30 } = {}) {
+async function walkUntil(keys, text, { burstMs = 700, bursts = 30 } = {}) {
   for (let i = 0; i < bursts; i++) {
     if (await isVisible(text)) return
     await walk(keys, burstMs)
@@ -129,7 +129,7 @@ try {
   //    calls `enterVenue` in the same frame it sets `nearbyVenue`, so for an
   //    available venue the prompt is replaced by the interior before it ever
   //    paints — it only really shows for a venue that is closed.
-  for (let i = 0; i < 6; i++) await walk(['KeyW', 'KeyD'], 320)
+  for (let i = 0; i < 6; i++) await walk(['KeyW', 'KeyD'], 700)
   await capture('3-approaching')
 
   await walkUntil(['KeyW', 'KeyD'], 'The Gilded Hanger')
@@ -161,7 +161,7 @@ try {
   await page.keyboard.press('Escape')
   await page.waitForTimeout(600)
 
-  for (let i = 0; i < 30; i++) await walk(['KeyA'], 320)
+  for (let i = 0; i < 30; i++) await walk(['KeyA'], 700)
   await walkUntil(['KeyW'], 'F to sit at a table', { bursts: 45 })
 
   //    Inside now, and W plus A heads for the blackjack table.
@@ -190,20 +190,26 @@ try {
   await page.waitForTimeout(700)
   await walkUntilGone(['KeyS', 'KeyD'], 'F to sit at a table', { bursts: 30 })
 
-  for (let i = 0; i < 34; i++) await walk(['KeyD'], 320)
+  for (let i = 0; i < 34; i++) await walk(['KeyD'], 700)
   await walkUntil(['KeyW'], 'F to use a chair', { bursts: 45 })
   await capture('9-clinic')
 
   // 8. Sell a pint. This is the answer to going broke, so it has to work from
   //    the street and not only from a deep link.
-  await walkUntil(['KeyW', 'KeyA'], 'Donation chair', { bursts: 20 })
+  //    Walking in lands beside a recliner, so the prompt is already up.
+  await expectText('Donation chair', 'arriving in the clinic')
   await page.keyboard.press('KeyF')
   await page.waitForTimeout(700)
   await expectText('Donate', 'sitting in the chair')
 
+  //    The nurse has to walk over, swab and draw before the money lands, so
+  //    this waits on the result rather than on a fixed delay. Waiting at all is
+  //    the point — an instant payout would mean the sequence was decorative.
   await page.getByRole('button', { name: 'Donate' }).click()
-  await page.waitForTimeout(900)
-  await expectText('already given today', 'after donating')
+  await page
+    .getByText('already given today', { exact: false })
+    .first()
+    .waitFor({ timeout: 30000 })
   await capture('10-donated')
 
   if (failures.length > 0) {

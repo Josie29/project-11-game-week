@@ -80,8 +80,29 @@ const FOLLOW_DEAD_ZONE = MathUtils.degToRad(35)
  * scripted walkthrough hit this first: two seconds of held W put the player
  * past the end of the strip. Clamping trades a little lost ground on a bad
  * frame for never losing control of where you are.
+ *
+ * A quarter of a second, not a tenth. The tighter figure meant anyone rendering
+ * below ten frames a second walked slower than intended — the game quietly got
+ * harder on a weak machine — and it pinned the headless walkthrough, which runs
+ * at about three, to a crawl. Four frames a second is still far below anything
+ * a stall produces.
  */
-const MAX_STEP_SECONDS = 0.1
+const MAX_STEP_SECONDS = 0.25
+
+/**
+ * Longest distance the walk moves before checking what it has walked into.
+ *
+ * Obstacles are resolved by pushing the player back out of them, which only
+ * works if they are *inside* one when it is checked. A frame that moves further
+ * than an obstacle is deep steps clean over it and lands on the far side — the
+ * player walks through a blackjack table or a row of recliners, and the slower
+ * the machine the more reliably it happens.
+ *
+ * A quarter of a unit is comfortably under the thinnest thing in either room
+ * (the clinic's desk, at 0.7 deep). This is the same class of bug the craps
+ * dice have, and it has the same answer: substep rather than trust one big one.
+ */
+const MAX_SUBSTEP = 0.25
 
 export interface WalkBounds {
   readonly minX: number
@@ -120,6 +141,16 @@ interface WalkingPlayerProps {
   onNearest?: ((id: string | null) => void) | undefined
   /** Rectangles the player cannot walk into. */
   obstacles?: readonly Obstacle[] | undefined
+  /**
+   * A second, independent set of proximity checks.
+   *
+   * Reported separately from `targets` because `onNearest` gives only the
+   * closest match: folding the clinic's desk in with the recliners would let
+   * standing near the desk suppress a chair's sit prompt. These are for things
+   * that want to *notice* the player rather than offer them something.
+   */
+  glanceTargets?: readonly ProximityTarget[] | undefined
+  onGlance?: ((id: string | null) => void) | undefined
   distance?: number | undefined
   pitch?: number | undefined
   /**
@@ -170,6 +201,8 @@ export function WalkingPlayer({
   targets,
   onNearest,
   obstacles,
+  glanceTargets,
+  onGlance,
   distance = DEFAULT_DISTANCE,
   pitch = DEFAULT_PITCH,
   cameraBounds,
@@ -235,19 +268,28 @@ export function WalkingPlayer({
 
     if (isMoving) {
       direction.normalize().multiplyScalar(WALK_SPEED * Math.min(delta, MAX_STEP_SECONDS))
-      group.position.x += direction.x
-      group.position.z += direction.z
 
-      group.position.x = MathUtils.clamp(group.position.x, bounds.minX, bounds.maxX)
-      group.position.z = MathUtils.clamp(group.position.z, bounds.minZ, bounds.maxZ)
+      // Walked in substeps, resolving collisions after each. See `MAX_SUBSTEP`.
+      const distance = Math.hypot(direction.x, direction.z)
+      const steps = Math.max(1, Math.ceil(distance / MAX_SUBSTEP))
+      const stepX = direction.x / steps
+      const stepZ = direction.z / steps
 
-      // Then out of anything solid. Applied after the wall clamp so a table
-      // pressed against a wall cannot push the player through it.
-      if (obstacles) {
-        for (const obstacle of obstacles) {
-          const [pushedX, pushedZ] = pushOut(obstacle, group.position.x, group.position.z)
-          group.position.x = pushedX
-          group.position.z = pushedZ
+      for (let step = 0; step < steps; step++) {
+        group.position.x += stepX
+        group.position.z += stepZ
+
+        group.position.x = MathUtils.clamp(group.position.x, bounds.minX, bounds.maxX)
+        group.position.z = MathUtils.clamp(group.position.z, bounds.minZ, bounds.maxZ)
+
+        // Then out of anything solid. Applied after the wall clamp so a table
+        // pressed against a wall cannot push the player through it.
+        if (obstacles) {
+          for (const obstacle of obstacles) {
+            const [pushedX, pushedZ] = pushOut(obstacle, group.position.x, group.position.z)
+            group.position.x = pushedX
+            group.position.z = pushedZ
+          }
         }
       }
 
@@ -293,29 +335,39 @@ export function WalkingPlayer({
       ),
     )
 
-    if (!onNearest) return
+    /** The nearest match in range, or null. Nearest rather than first, so
+        overlapping ranges resolve to the thing actually walked up to. */
+    const nearestOf = (candidates: readonly ProximityTarget[]): string | null => {
+      let bestId: string | null = null
+      let bestGap = Infinity
 
-    let nearestId: string | null = null
-    let nearestDistance = Infinity
+      for (const target of candidates) {
+        const dx = group.position.x - target.position[0]
+        const dz = group.position.z - target.position[2]
+        const gap = Math.hypot(dx, dz)
 
-    for (const target of targets ?? []) {
-      const dx = group.position.x - target.position[0]
-      const dz = group.position.z - target.position[2]
-      const gap = Math.hypot(dx, dz)
-
-      // Nearest wins rather than first, so overlapping ranges resolve to the
-      // thing actually walked up to.
-      if (gap <= target.radius && gap < nearestDistance) {
-        nearestId = target.id
-        nearestDistance = gap
+        if (gap <= target.radius && gap < bestGap) {
+          bestId = target.id
+          bestGap = gap
+        }
       }
+
+      return bestId
     }
 
-    onNearest(nearestId)
+    if (onNearest) onNearest(nearestOf(targets ?? []))
+    if (onGlance) onGlance(nearestOf(glanceTargets ?? []))
   })
 
   return (
-    <group ref={groupRef} position={[spawn[0], spawn[1], spawn[2]]} rotation={[0, facing, 0]}>
+    <group
+      // Named so `npm run locate` can answer "where is the player actually
+      // standing", which is otherwise unanswerable from outside the scene.
+      name="player"
+      ref={groupRef}
+      position={[spawn[0], spawn[1], spawn[2]]}
+      rotation={[0, facing, 0]}
+    >
       <CasinoCharacter appearance={appearance} equipped={equipped} speedRef={speedRef} />
     </group>
   )

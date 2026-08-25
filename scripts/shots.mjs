@@ -42,6 +42,7 @@ const SCENES = [
   { name: 'shopfront', path: '/?boot=shopfront&look=-90&time=21:00&freeze', settleMs: 2600 },
   { name: 'clinicfront', path: '/?boot=clinicfront&look=-90&time=21:00&freeze', settleMs: 2600 },
   { name: 'clinic', path: '/?boot=clinic&time=21:00&freeze', settleMs: 2600 },
+  { name: 'drawing', path: '/?boot=drawing&time=21:00&freeze', settleMs: 2600 },
   // The two halves of being broke: a marker on offer, and a marker already
   // taken. Neither is reachable without actually losing everything.
   { name: 'broke', path: '/?boot=broke&time=21:00&freeze', settleMs: 1800 },
