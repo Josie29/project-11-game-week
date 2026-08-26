@@ -1,7 +1,7 @@
 import { MeshReflectorMaterial, PerspectiveCamera } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
-import { DoubleSide, PerspectiveCamera as PerspectiveCameraImpl, Vector3 } from 'three'
+import { PerspectiveCamera as PerspectiveCameraImpl, Vector3 } from 'three'
 import { findItem, type ShopItem } from '../character/catalog'
 import { isFitting, wornInSlot } from '../character/fitting'
 import { WINDOW_DISPLAY } from '../character/windowDisplay'
@@ -945,25 +945,18 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
               depthWrite={false}
             />
           </mesh>
-          {[-1, 1].map((side) => (
-            <mesh
-              key={`pane-${side}`}
-              position={[(side * (box.maxX - box.minX)) / 2, (CASE_DECK_Y + CASE_GLASS_Y) / 2, 0]}
-              rotation={[0, Math.PI / 2, 0]}
-            >
-              <planeGeometry args={[box.maxZ - box.minZ, CASE_GLASS_Y - CASE_DECK_Y]} />
-              <meshStandardMaterial
-                color={CASE_GLASS}
-                roughness={0.06}
-                metalness={0.2}
-                transparent
-                opacity={0.18}
-                depthWrite={false}
-                side={DoubleSide}
-              />
-            </mesh>
-          ))}
+          {/*
+            Glass on the top only, not the sides.
 
+            The sides looked better and cost four transparent draws per case,
+            and transparency is the expensive kind: no early-z, and blending
+            every fragment behind it. On a loaded machine that was the
+            difference between the walkthrough reaching the till at beat 8 and
+            walking past it — that beat is the most frame-rate-sensitive in the
+            suite, because the walk is a fixed number of key bursts and slower
+            frames cover less ground. The brass frame and the lit deck are what
+            say "case"; the side glass was saying it a second time.
+          */}
           {/* Brass corner posts, joining the edge rails into a frame. */}
           {[-1, 1].map((sx) =>
             [-1, 1].map((sz) => (
