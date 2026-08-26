@@ -9,6 +9,7 @@ import {
   totalStaked,
 } from '../games/blackjack/engine'
 import { type Hand, PlayerAction, RoundOutcome, RoundPhase } from '../games/blackjack/types'
+import { useSharedBlackjack } from '../net/useSharedBlackjack'
 import { useBlackjackStore } from '../store/useBlackjackStore'
 import { useGameStore } from '../store/useGameStore'
 import { MARKER_AMOUNT } from '../world/money'
@@ -86,8 +87,13 @@ interface BlackjackPanelProps {
  */
 export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
   const game = useBlackjackStore((state) => state.game)
-  const placeWager = useBlackjackStore((state) => state.placeWager)
-  const takeAction = useBlackjackStore((state) => state.takeAction)
+  /*
+   * Shared tables hand the wager and the action to the room instead of applying
+   * them here. Alone, `shared` is false and this reduces to exactly what it was.
+   */
+  const table = useSharedBlackjack()
+  const placeWager = table.wager
+  const takeAction = table.act
   const nextRound = useBlackjackStore((state) => state.nextRound)
   const resetRound = useBlackjackStore((state) => state.reset)
 
@@ -113,7 +119,15 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
   const dealerShowing = dealerVisible.length > 0 ? dealerScore.total : null
 
   const isBetting = game.phase === RoundPhase.Betting
-  const isPlayerTurn = game.phase === RoundPhase.PlayerTurn
+  /*
+   * Whose turn it is, not just whether anybody's is.
+   *
+   * Casino blackjack goes one player at a time from first base round to third
+   * base, so at a shared table the buttons have to be dead for four of the five
+   * people looking at them. Alone, `isMyTurn` is always true and this is the
+   * same condition it always was.
+   */
+  const isPlayerTurn = game.phase === RoundPhase.PlayerTurn && table.isMyTurn
   const isSettled = game.phase === RoundPhase.Settled
   /** The round is over *and* the dealer has finished showing their hand. */
   const isResolved = isSettled && revealComplete

@@ -45,6 +45,18 @@ export interface RoomHandlers {
   /** A player moved. `at` is local time, so clock skew never matters. */
   readonly onPose: (id: string, snapshot: Snapshot) => void
   readonly onLeave: (id: string) => void
+  /** A wager landed. Relayed as it arrives so chips appear one at a time. */
+  readonly onBet?: (table: string, id: string, amount: number) => void
+  /** The table has been dealt: one seed for the shoe, wagers in seat order. */
+  readonly onDeal?: (
+    table: string,
+    seed: number,
+    bets: readonly { id: string; amount: number }[],
+  ) => void
+  /** Somebody acted. Order of arrival is the order every client applies. */
+  readonly onAction?: (table: string, id: string, action: string) => void
+  /** A turn clock ran out. */
+  readonly onExpired?: (table: string) => void
   /** This client's own id in the room, assigned by the server on join. */
   readonly onSelf?: (id: string) => void
   /** Called on connect and disconnect, so the HUD can say which. */
@@ -75,6 +87,10 @@ export interface RoomConnection {
   setSeated: (seated: boolean, table: TableId | null) => void
   /** Re-announces identity, e.g. after a wardrobe change. */
   announce: (identity: LocalIdentity) => void
+  /** Puts a wager in. The room deals once every seat has one. */
+  sendBet: (amount: number) => void
+  /** Sends an action for the room to order and echo back. */
+  sendAction: (action: string) => void
   /** Asks the room to throw. It refuses unless it is this player's turn. */
   requestRoll: () => void
   /** Gives up the dice. The room decides who gets them next. */
@@ -204,6 +220,48 @@ export function joinRoom(
         return
       }
 
+      case 'bet': {
+        const amount = Number(message.amount)
+        if (typeof message.table === 'string' && typeof message.id === 'string' &&
+            Number.isInteger(amount) && amount >= 0) {
+          handlers.onBet?.(message.table, message.id, amount)
+        }
+        return
+      }
+
+      case 'deal': {
+        /*
+         * Coerced before it reaches the engine, not after. `placeBets` and
+         * `createShoe` both throw on nonsense, and an unhandled throw inside a
+         * socket handler takes the client down — the same rule that keeps the
+         * dice sane on the way in.
+         */
+        const seed = Number(message.seed)
+        const raw = Array.isArray(message.bets) ? message.bets : []
+        const bets = raw
+          .map((entry) => entry as Record<string, unknown>)
+          .filter((entry) => typeof entry.id === 'string' && Number.isInteger(Number(entry.amount)))
+          .map((entry) => ({ id: entry.id as string, amount: Number(entry.amount) }))
+
+        if (typeof message.table === 'string' && Number.isFinite(seed) && bets.length > 0) {
+          handlers.onDeal?.(message.table, seed >>> 0, bets)
+        }
+        return
+      }
+
+      case 'action': {
+        if (typeof message.table === 'string' && typeof message.id === 'string' &&
+            typeof message.action === 'string') {
+          handlers.onAction?.(message.table, message.id, message.action)
+        }
+        return
+      }
+
+      case 'expired': {
+        if (typeof message.table === 'string') handlers.onExpired?.(message.table)
+        return
+      }
+
       case 'left': {
         if (typeof message.id === 'string') handlers.onLeave(message.id)
         return
@@ -263,6 +321,18 @@ export function joinRoom(
         socket.send(JSON.stringify({ t: 'seat', seated, table }))
       }
     },
+    sendBet: (amount) => {
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ t: 'bet', amount }))
+      }
+    },
+
+    sendAction: (action) => {
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ t: 'action', action }))
+      }
+    },
+
     requestRoll: () => {
       if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ t: 'roll' }))
     },
