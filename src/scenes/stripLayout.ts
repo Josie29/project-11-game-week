@@ -109,6 +109,19 @@ export const CROSS_SOUTH_Z = CROSS_SOUTH_KERB - CROSS_HALF_WIDTH
 export const CROSS_REACH = 70
 
 /**
+ * Pavement between the cross street's far kerb and the closing block.
+ *
+ * It has two jobs beyond realism. Looking back up the street at dusk the
+ * junction was a black band — wet asphalt with no neon over it to reflect —
+ * under a wall of towers that appeared to be floating on it; a lit pavement in
+ * front of the buildings is what puts them on the ground. And its width is what
+ * sets the towers back: at four units they filled the upper half of the frame
+ * and read as a cliff, which is the same complaint as the one this whole
+ * junction exists to answer.
+ */
+export const CROSS_PAVEMENT = 9
+
+/**
  * The wall of towers across each junction.
  *
  * Five wide rather than the strip's two, because these have to close the view
@@ -118,12 +131,22 @@ export const CROSS_REACH = 70
  */
 export const END_BLOCK_X: readonly number[] = [-16, -8, 0, 8, 16]
 
+/** The far kerb of a cross street: where its pavement begins. */
+export function crossFarKerb(side: 1 | -1): number {
+  return side > 0 ? CROSS_NORTH_Z + CROSS_HALF_WIDTH : CROSS_SOUTH_Z - CROSS_HALF_WIDTH
+}
+
+/**
+ * The two rows of the closing block, derived from the pavement in front of it.
+ *
+ * Set back further than the first version, which put the towers five units past
+ * the kerb: from the other end of the street they filled the upper half of the
+ * frame and read as a cliff rather than as the next block along. Distance is
+ * what makes them scenery.
+ */
 export function endBlockRows(side: 1 | -1): readonly number[] {
-  const kerb = side > 0 ? CROSS_NORTH_Z + CROSS_HALF_WIDTH : CROSS_SOUTH_Z - CROSS_HALF_WIDTH
-  return [
-    kerb + side * (ROW_HALF_DEPTH + 1.5),
-    kerb + side * (ROW_HALF_DEPTH + 1.5 + BLOCK_DEPTH),
-  ]
+  const face = crossFarKerb(side) + side * CROSS_PAVEMENT
+  return [face + side * ROW_HALF_DEPTH, face + side * (ROW_HALF_DEPTH + BLOCK_DEPTH)]
 }
 
 /**

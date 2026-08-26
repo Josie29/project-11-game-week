@@ -164,11 +164,14 @@ const KEYFRAMES: readonly Keyframe[] = [
        * light and a useless one for a sun: the strip is a canyon seventeen
        * metres wide between facades fifteen high, so anything below about sixty
        * degrees of elevation to either side is behind a building. The only two
-       * lines of sight out of it are along the road. Sunrise takes the far one,
-       * which puts the disc at the end of the boulevard and stretches every
-       * tower's shadow down it toward the player.
+       * lines of sight out of it are along the road, and they are narrow: eight
+       * degrees off the axis and the disc is behind a tower again. It also has
+       * to clear the closing block at the far junction — but only by four
+       * degrees, so it can stay as low as a sunrise should be. Sunrise takes the
+       * far sightline, which puts the disc at the end of the boulevard and
+       * stretches every tower's shadow down it toward the player.
        */
-      keyPosition: [-9, 6, -28],
+      keyPosition: [-4, 7, -30],
       fogColor: '#7a6a86',
       fogNear: 30,
       fogFar: 138,
@@ -200,7 +203,7 @@ const KEYFRAMES: readonly Keyframe[] = [
     },
     light: {
       ambientColor: '#c6d8f0',
-      ambientIntensity: 0.7,
+      ambientIntensity: 0.9,
       keyColor: '#ffeccd',
       keyIntensity: 2.1,
       // Risen, but still off to the east and not yet overhead.
@@ -237,7 +240,10 @@ const KEYFRAMES: readonly Keyframe[] = [
        * a shaded one is what carries the daylight.
        */
       ambientColor: '#c3d2e8',
-      ambientIntensity: 0.72,
+      // Enough fill that a shadow is a shade rather than a hole. Below about
+      // this the closing block's shadow across the junction came out as a solid
+      // black bar with no road under it.
+      ambientIntensity: 0.95,
       keyColor: '#fff2d8',
       keyIntensity: 2.4,
       // Off to one side rather than overhead: a sun directly above throws its
@@ -294,7 +300,7 @@ const KEYFRAMES: readonly Keyframe[] = [
     },
     light: {
       ambientColor: '#c8d2e2',
-      ambientIntensity: 0.74,
+      ambientIntensity: 0.92,
       keyColor: '#ffeccb',
       keyIntensity: 2.2,
       // Past the meridian and heading west, so the shadows have turned round.
@@ -326,7 +332,7 @@ const KEYFRAMES: readonly Keyframe[] = [
       keyIntensity: 0.9,
       // ...and sunset takes the near one, so it sits over the junction behind
       // you and the shadows run away down the street instead.
-      keyPosition: [10, 6, 27],
+      keyPosition: [5, 7, 29],
       fogColor: '#6b3f63',
       fogNear: 28,
       fogFar: 142,

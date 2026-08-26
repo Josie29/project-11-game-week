@@ -16,7 +16,9 @@ import {
   BUILDING_WIDTH,
   CROSS_HALF_WIDTH,
   CROSS_NORTH_Z,
+  CROSS_PAVEMENT,
   CROSS_REACH,
+  crossFarKerb,
   CROSS_SOUTH_Z,
   END_BLOCK_X,
   endBlockRows,
@@ -99,16 +101,12 @@ export function StreetEnd({ side, neonLevel }: StreetEndProps) {
         />
       </mesh>
 
-      {/* Pavement on the far side, in front of the closing block. */}
+      {/* Pavement on the far side, standing the closing block on the ground. */}
       <mesh
-        position={[
-          0,
-          SIDEWALK_HEIGHT / 2,
-          crossZ + side * (CROSS_HALF_WIDTH + (BUILDING_DEPTH / 2 + 1.5) / 2),
-        ]}
+        position={[0, SIDEWALK_HEIGHT / 2, crossFarKerb(side) + (side * CROSS_PAVEMENT) / 2]}
         receiveShadow
       >
-        <boxGeometry args={[CROSS_REACH, SIDEWALK_HEIGHT, BUILDING_DEPTH / 2 + 1.5]} />
+        <boxGeometry args={[CROSS_REACH, SIDEWALK_HEIGHT, CROSS_PAVEMENT]} />
         <meshStandardMaterial color={light.sidewalkColor} roughness={0.85} />
       </mesh>
 

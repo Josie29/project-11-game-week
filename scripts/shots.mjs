@@ -37,6 +37,19 @@ const SCENES = [
   { name: 'strip-dawn', path: '/?boot=strip&time=05:30&freeze', settleMs: 2400 },
   { name: 'strip-noon', path: '/?boot=strip&time=12:00&freeze', settleMs: 2400 },
   { name: 'strip-dusk', path: '/?boot=strip&time=19:00&freeze', settleMs: 2400 },
+  /*
+   * Both ends of the street, at noon and at night.
+   *
+   * These are the acceptance shots for the junctions, and they exist because
+   * the ends of the world were the worst-looking part of the strip for months
+   * without ever appearing in a capture: the road and both pavements used to
+   * stop in mid-air against open sky some way past the last building, and the
+   * only way to see it was to drive a browser twenty-six bursts down the road
+   * by hand. Noon is the merciless one — at night the fog hides a great deal.
+   */
+  { name: 'strip-south-end', path: '/?boot=southend&time=12:00&freeze', settleMs: 2600 },
+  { name: 'strip-north-end', path: '/?boot=northend&look=180&time=12:00&freeze', settleMs: 2600 },
+  { name: 'strip-south-end-night', path: '/?boot=southend&time=21:00&freeze', settleMs: 2600 },
   // Face-on, because the play camera sees every facade at a glancing angle and
   // a sliver of shop window cannot tell a built storefront from a broken one.
   { name: 'shopfront', path: '/?boot=shopfront&look=-90&time=21:00&freeze', settleMs: 2600 },

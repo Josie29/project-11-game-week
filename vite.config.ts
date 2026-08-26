@@ -2,6 +2,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+/** This file's own directory, with a trailing slash. */
+const PROJECT_ROOT = new URL('.', import.meta.url).pathname
+
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -13,8 +16,17 @@ export default defineConfig({
        * index.html — triggered a full page reload here, which is fatal to a
        * capture: `npm run shot` waits for a canvas, and a forced reload throws
        * the canvas away while it is waiting.
+       *
+       * Anchored to this file's own directory rather than written as a bare
+       * `'**' + '/.claude/**'` glob, which is what it was first and which is a
+       * trap. A dev server started *inside* a worktree has
+       * `.claude/worktrees/<name>/` in the path of every one of its own source
+       * files, so that glob told it to ignore the entire project. It went on
+       * serving whatever it had already transformed, which is indistinguishable
+       * from code that does not run: an hour went into a component that was
+       * fine and had simply never been reloaded.
        */
-      ignored: ['**/.claude/**'],
+      ignored: [(file: string) => file.startsWith(`${PROJECT_ROOT}.claude/`)],
     },
   },
   test: {

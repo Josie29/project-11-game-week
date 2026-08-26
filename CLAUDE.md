@@ -126,6 +126,16 @@ seen, which is why doors now take a keypress.
 visual work is done.** An entire session's worth of table work shipped with
 four visible bugs in it because it was written without ever being viewed.
 
+**Check that the dev server is serving what you just wrote.** Vite caches
+transformed modules and only invalidates them on a watcher event, so anything
+that stops the watcher seeing a file makes the server go on serving the last
+version indefinitely — which is indistinguishable from code that does not run.
+An hour went into a `Celestial` component that was correct from the first draft
+and had simply never been reloaded, because a `'**' + '/.claude/**'` ignore glob
+added for the *main* checkout also matched every source file of a dev server
+started inside a worktree. `npm run locate` is the quickest way to tell the two
+apart: an object that is absent from the scene graph is not a rendering problem.
+
 **Geometry is only correct relative to the camera that sees it.** A scene with a
 fixed camera can render a hand-placed object perfectly and show nothing. The
 line from the needle to the blood bag was twice the right shape in the right
@@ -136,6 +146,14 @@ not just in the world. Where a fixed camera and a piece of geometry have to
 agree, both belong in the layout module so a test can hold them to it — two
 constants in two files that quietly disagree is not something a later reader
 would think to look for.
+
+The street is a canyon and that constrains anything in the sky. Facades seventeen
+metres apart and fifteen high hide everything below about sixty degrees of
+elevation to either side; the only clear sightlines are along the road, and they
+are about eight degrees wide. The sun and moon in `Celestial` sit on the key
+light's own direction, so making them visible meant moving the *light* — sunrise
+and sunset now sit on the street's axis, which is also where the long shadows
+come from.
 
 The script drives headless Chrome, so it works regardless of window focus, and
 it reports frames rendered — a blank capture cannot pass as a success. It takes
@@ -164,6 +182,8 @@ Dev-only deep links, stripped from production builds:
 | `?boot=shopfront` | at the shop's door, prompt up, to look at the storefront |
 | `?boot=dressed` | the shop, every wardrobe slot filled |
 | `?boot=strip` | the street, with the first-run designer skipped |
+| `?boot=northend` | at the north junction, where the strip meets its cross street |
+| `?boot=southend` | the same at the south end |
 | `?look=DEGREES` | swings the strip camera round before it settles |
 | `?time=HH:MM` | opens at that hour, clock still running |
 | `?freeze` | holds the clock, so a capture is reproducible |
@@ -239,8 +259,17 @@ the first 420 ms of a round.
   keyframed separately from the facades and neon, and for a while 07:00 showed
   daylit buildings under a night sky.
 - **Table geometry lives in `src/scenes/tableLayout.ts`**, not in components.
-  Shop geometry lives in `src/scenes/shopLayout.ts` and body geometry in
+  Shop geometry lives in `src/scenes/shopLayout.ts`, the street in
+  `src/scenes/stripLayout.ts`, and body geometry in
   `src/character/proportions.ts`, on the same principle.
+
+  The strip's is the clearest case for why. Its walk limit and its last building
+  row were two unrelated numbers, so the player could walk six units past the
+  last thing there was to look at, onto a road that ran on another thirty-eight
+  before ending in mid-air against open sky. Nothing was broken and no test
+  could have said so — there was no relationship to assert. The limit is derived
+  from a kerb now. `BLOCK_DEPTH` is the same story: the towers, the doors and
+  the road markings had all silently agreed on 8 for months.
 - **Characters are procedural primitives** with named joint groups, so gestures
   can be authored directly, and now so the player can be built at runtime from a
   saved appearance.

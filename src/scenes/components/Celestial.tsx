@@ -32,6 +32,8 @@ const MOON_COLOR = '#e8ecff'
 const MOON_HALO = '#9fb0e0'
 
 interface DiscProps {
+  /** `sky:sun` or `sky:moon`, so `npm run locate` can find them. */
+  name: string
   position: readonly [number, number, number]
   radius: number
   color: string
@@ -40,11 +42,11 @@ interface DiscProps {
   opacity: number
 }
 
-function Disc({ position, radius, color, halo, opacity }: DiscProps) {
+function Disc({ name, position, radius, color, halo, opacity }: DiscProps) {
   if (opacity <= 0.01) return null
 
   return (
-    <group position={[position[0], position[1], position[2]]}>
+    <group name={name} position={[position[0], position[1], position[2]]}>
       {/*
         The body. `fog={false}` because it is beyond the fog's far plane and
         would otherwise be erased by it, and `toneMapped={false}` so it stays the
@@ -91,6 +93,7 @@ export function Celestial() {
   const minute = bucket * SKY_BUCKET_MINUTES
   const daylight = quantize(daylightAt(minute), 0.05)
 
+  console.log('[celestial]', { minute, daylight, dir: keyDirection(minute) })
   const [dx, dy, dz] = keyDirection(minute)
   const at: readonly [number, number, number] = [
     dx * CELESTIAL_RADIUS,
@@ -99,15 +102,25 @@ export function Celestial() {
   ]
 
   return (
-    <>
-      <Disc position={at} radius={SUN_RADIUS} color={SUN_COLOR} halo={SUN_HALO} opacity={daylight} />
+    // Named, so `npm run locate sky:` can answer "is it not drawing, or is it
+    // drawing somewhere I cannot see?" — which are the same screenshot.
+    <group name="sky:celestial">
       <Disc
+        name="sky:sun"
+        position={at}
+        radius={SUN_RADIUS}
+        color={SUN_COLOR}
+        halo={SUN_HALO}
+        opacity={daylight}
+      />
+      <Disc
+        name="sky:moon"
         position={at}
         radius={MOON_RADIUS}
         color={MOON_COLOR}
         halo={MOON_HALO}
         opacity={1 - daylight}
       />
-    </>
+    </group>
   )
 }
