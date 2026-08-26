@@ -112,6 +112,15 @@ const SCENES = [
   // The walkable casino floor. Every other casino link sits the player at a
   // table, so without this the room itself is never captured.
   { name: 'casino-floor', path: '/?boot=floor&time=21:00&freeze', settleMs: 2600 },
+  // ...and the far end of it. The waterfall is eighteen metres from the door,
+  // and this script can press a key but not hold one, so `casino-floor` alone
+  // would leave the thing the room is built around checked only from as far
+  // away as it is possible to stand.
+  { name: 'casino-water', path: '/?boot=water&time=21:00&freeze', settleMs: 2600 },
+  // ...and the ceiling, which needs `?tilt=` for the same reason `casino-water`
+  // needs its own boot link: the play camera looks *down*, so the vault is
+  // above the top of the frame from every position a capture can reach.
+  { name: 'casino-vault', path: '/?boot=floor&tilt=-6&time=21:00&freeze', settleMs: 2600 },
   { name: 'blackjack-bet', path: '/?boot=casino&time=21:00&freeze', settleMs: 1800 },
   { name: 'blackjack-dealt', path: '/?boot=table&time=21:00&freeze', settleMs: 1800 },
   { name: 'blackjack-settled', path: '/?boot=settled&time=21:00&freeze', settleMs: 2600 },

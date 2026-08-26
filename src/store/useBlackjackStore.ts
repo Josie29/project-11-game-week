@@ -3,8 +3,14 @@ import {
   act,
   activeHand,
   createGame,
+  handsOf,
+  actAs,
+  placeBets,
+  createShoe,
+  createGameFromShoe,
   placeBet,
   startNextRound,
+  totalPaid,
   totalStaked,
 } from '../games/blackjack/engine'
 import { type GameState, PlayerAction, RoundPhase } from '../games/blackjack/types'
@@ -65,6 +71,24 @@ interface BlackjackStore {
   placeWager: (amount: number) => void
   takeAction: (action: PlayerAction) => void
   nextRound: () => void
+
+  /**
+   * Which seat this client is playing. Zero when alone.
+   *
+   * Everything about money reads this: a client debits and credits its own seat
+   * and nobody else's, which is what keeps five people at one table out of each
+   * other's bankrolls without the server ever holding a balance.
+   */
+  mySeatIndex: number
+  /** Who is in which seat this round, in seat order, from the room's deal. */
+  seatIds: readonly string[]
+
+  /** Starts a shared round: one shoe from the room's seed, one wager per seat. */
+  applyDeal: (seed: number, bets: readonly { id: string; amount: number }[], selfId: string | null) => void
+  /** Applies somebody's action, refusing it if it is not their turn. */
+  applyAction: (senderId: string, action: PlayerAction) => void
+  /** The turn clock ran out. Stand, which can neither bust nor spend. */
+  applyExpiry: () => void
   /** Clears the table when the player walks out mid-round. */
   reset: () => void
 }
@@ -175,7 +199,7 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
             // The dealer pays only once the hand is finished. Paying at
             // settlement put chips on the felt while they were still turning
             // cards over, which reads as the result being decided in advance.
-            if (settled.totalPayout > 0) {
+            if (totalPaid(settled) > 0) {
               set({
                 chipPhase: ChipPhase.Paying,
                 dealerGesture: Gesture.DealerPay,
@@ -211,7 +235,7 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
     set({ dealerCardsShown: 2, holeCardUp: false, revealComplete: false })
     startReveal(next)
 
-    if (next.totalPayout <= 0) return
+    if (totalPaid(next, get().mySeatIndex) <= 0) return
 
     /*
      * The stake goes back whole and only the winnings meet the marker. Passing
@@ -222,7 +246,7 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
      */
     const credited = useGameStore
       .getState()
-      .creditWinnings(next.totalPayout, totalStaked(next))
+      .creditWinnings(totalPaid(next), totalStaked(next))
 
     // Held back from the stash until the chips are raked in. The chips
     // themselves are placed by the dealer at the end of the reveal, not here.
@@ -322,6 +346,76 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
       )
     },
 
+    mySeatIndex: 0,
+    seatIds: [],
+
+    applyDeal: (seed, bets, selfId) => {
+      cancelPending()
+      cancelReveal()
+
+      const seatIds = bets.map((bet) => bet.id)
+      const mySeatIndex = selfId === null ? 0 : Math.max(0, seatIds.indexOf(selfId))
+
+      /*
+       * The shoe is built here rather than sent. Every client runs the same
+       * `createShoe` on the same seed, so the order of all three hundred and
+       * twelve cards is agreed without any of them crossing the wire.
+       */
+      const dealt = placeBets(
+        createGameFromShoe(createShoe(seed), bets.length),
+        bets.map((bet) => bet.amount),
+      )
+
+      // Only this player's wager leaves this player's bankroll.
+      const mine = bets[mySeatIndex]?.amount ?? 0
+      if (mine > 0) useGameStore.getState().adjustBankroll(-mine)
+
+      set({
+        game: dealt,
+        seatIds,
+        mySeatIndex,
+        roundId: get().roundId + 1,
+        activeGesture: Gesture.PushChips,
+        gestureStartedAt: performance.now(),
+        chipPhase: ChipPhase.Wagering,
+      })
+      creditIfSettled(dealt)
+    },
+
+    applyAction: (senderId, action) => {
+      const { game, seatIds, mySeatIndex } = get()
+      const seatIndex = seatIds.indexOf(senderId)
+      if (seatIndex === -1) return
+
+      /*
+       * Applied on the echo, including this player's own action.
+       *
+       * Applying locally and then receiving the relay would order this client's
+       * move differently from everybody else's, and the shoe would drift apart
+       * on the first hit. The room's order is the order.
+       */
+      let next: GameState
+      try {
+        next = actAs(game, seatIndex, action)
+      } catch {
+        // Out of turn, or illegal. Every client refuses it identically, which
+        // is exactly why the room never had to know whose turn it was.
+        return
+      }
+
+      const extraStake = totalStaked(next, mySeatIndex) - totalStaked(game, mySeatIndex)
+      if (extraStake > 0) useGameStore.getState().adjustBankroll(-extraStake)
+
+      set({ game: next })
+      creditIfSettled(next)
+    },
+
+    applyExpiry: () => {
+      const { game } = get()
+      if (game.phase !== RoundPhase.PlayerTurn) return
+      get().applyAction(get().seatIds[game.activeSeatIndex] ?? '', PlayerAction.Stand)
+    },
+
     nextRound: () => {
       const { game, revealComplete } = get()
       if (game.phase !== RoundPhase.Settled) return
@@ -334,8 +428,8 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
 
       // Whoever is owed something reaches for it. With a split these can both
       // happen at once — one hand won, the other did not.
-      const anyWon = game.hands.some((hand) => hand.payout > 0)
-      const anyLost = game.hands.some((hand) => hand.payout <= 0)
+      const anyWon = handsOf(game).some((hand) => hand.payout > 0)
+      const anyLost = handsOf(game).some((hand) => hand.payout <= 0)
       const now = performance.now()
 
       set({

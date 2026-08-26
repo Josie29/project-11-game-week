@@ -36,7 +36,7 @@ export enum PlayerAction {
 export enum RoundPhase {
   /** Awaiting a wager. No cards are on the table. */
   Betting = 'betting',
-  /** Cards are dealt and the player is choosing actions. */
+  /** Cards are dealt and a seat is choosing actions. */
   PlayerTurn = 'playerTurn',
   /** The round is over and `outcome` and `payout` are populated. */
   Settled = 'settled',
@@ -59,7 +59,7 @@ export interface HandValue {
 }
 
 /**
- * One player hand. A round holds several of these once the player splits.
+ * One player hand. A seat holds several of these once it splits.
  */
 export interface Hand {
   readonly cards: readonly Card[]
@@ -90,16 +90,38 @@ export interface Hand {
   readonly isFinished: boolean
 }
 
+/**
+ * One position at the table: everything that belongs to a single player.
+ *
+ * A seat owns hands, not cards — the cards themselves come out of the table's
+ * one shoe, which is the whole reason this type exists. Dice are independent of
+ * decisions, so every craps client can run its own engine on the same roll and
+ * agree; a shoe is not, because `shoeIndex` advances every time *anyone* hits,
+ * doubles or splits. Five private engines would deal five different tables.
+ */
+export interface Seat {
+  /** One entry before a split, two after. Empty until the deal. */
+  readonly hands: readonly Hand[]
+  /** Which of this seat's hands it is acting on. */
+  readonly activeHandIndex: number
+  /** Sum of this seat's hand payouts, populated at settlement. */
+  readonly totalPayout: number
+}
+
+/**
+ * The table: one shoe, one dealer, and the seats playing against them.
+ *
+ * Solo play is the one-seat case and nothing more — there is no separate
+ * single-player path to drift out of step with the shared one.
+ */
 export interface GameState {
   readonly phase: RoundPhase
   readonly shoe: readonly Card[]
   /** Index of the next card to be dealt from `shoe`. */
   readonly shoeIndex: number
-  /** One entry before a split, two after. */
-  readonly hands: readonly Hand[]
-  /** Which hand the player is currently acting on. */
-  readonly activeHandIndex: number
   readonly dealerHand: readonly Card[]
-  /** Sum of every hand's payout, populated at settlement. */
-  readonly totalPayout: number
+  /** Always at least one. Seat count is fixed when the table is created. */
+  readonly seats: readonly Seat[]
+  /** Which seat is currently acting. */
+  readonly activeSeatIndex: number
 }

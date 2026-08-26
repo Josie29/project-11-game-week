@@ -1,7 +1,10 @@
 import { create } from 'zustand'
 import { getLocalTransform } from '../net/localTransform'
 import { TableId } from '../scenes/casinoFloorLayout'
+import { PlayerAction } from '../games/blackjack/types'
+import { useBlackjackStore } from './useBlackjackStore'
 import { useCrapsStore } from './useCrapsStore'
+import { useGameStore } from './useGameStore'
 import {
   isMultiplayerConfigured,
   joinRoom,
@@ -60,6 +63,10 @@ interface PresenceStore {
   passDice: () => void
   /** Publishes the table for whoever walks up next. */
   publishTable: (value: unknown) => void
+  /** Puts a blackjack wager in. The room deals once every seat has one. */
+  sendBet: (amount: number) => void
+  /** Sends a blackjack action for the room to order and echo back. */
+  sendAction: (action: string) => void
   setSeated: (seated: boolean, table: TableId | null) => void
 }
 
@@ -108,6 +115,8 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     requestRoll: () => connection?.requestRoll(),
     passDice: () => connection?.passDice(),
     publishTable: (value) => connection?.publishTable(value),
+    sendBet: (amount) => connection?.sendBet(amount),
+    sendAction: (action) => connection?.sendAction(action),
 
     enterRoom: (roomId, bounds, identity) => {
       /*
@@ -160,6 +169,23 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
 
         onSelf: (id) => set({ selfId: id }),
 
+        /*
+         * The blackjack table, dealt from a seed every client shares.
+         *
+         * Routed straight through rather than held here: the presence store
+         * knows who is in the room, and what a shoe is belongs in the game
+         * store that already owns one.
+         */
+        onDeal: (_table, seed, bets) => {
+          useBlackjackStore.getState().applyDeal(seed, bets, usePresenceStore.getState().selfId)
+        },
+
+        onAction: (_table, id, action) => {
+          useBlackjackStore.getState().applyAction(id, action as PlayerAction)
+        },
+
+        onExpired: () => useBlackjackStore.getState().applyExpiry(),
+
         onShooter: (_table, id) => set({ shooterId: id }),
 
         /*
@@ -186,6 +212,21 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
        * a table sends nothing, so the room hibernates.
        */
       sender = setInterval(() => {
+        /*
+         * A seated player transmits nothing at all.
+         *
+         * `WalkingPlayer` unmounts when you sit down, so the transform it feeds
+         * this loop stops being written — and for somebody who arrived already
+         * seated it was never written at all, leaving it at the origin. The
+         * craps table is deliberately *at* the world origin, so the result was
+         * a figure standing in the middle of the felt.
+         *
+         * `shouldSend` already keeps a stationary player quiet; this keeps a
+         * seated one honest, and costs nothing either way.
+         */
+        const game = useGameStore.getState()
+        if (game.activeTable !== null || game.atChair !== null) return
+
         const pose = getLocalTransform()
         if (!shouldSend(lastSent, pose)) return
 

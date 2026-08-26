@@ -3,6 +3,9 @@ import { useMemo, useRef } from 'react'
 import type { Group } from 'three'
 import { poseBuffer, usePresenceStore } from '../../store/usePresenceStore'
 import { INTERPOLATION_DELAY_MS, interpolateAt, type RemoteIdentity } from '../../world/presence'
+import { BLACKJACK_ORIGIN, TableId } from '../casinoFloorLayout'
+import { PLAYER_SEATS } from '../tableLayout'
+import { useBlackjackStore } from '../../store/useBlackjackStore'
 import { CasinoCharacter } from './CasinoCharacter'
 import { Nameplate } from './Nameplate'
 
@@ -16,8 +19,27 @@ import { Nameplate } from './Nameplate'
  * somebody else.
  */
 
+/**
+ * Where a seated peer belongs, or null if they are not sitting anywhere known.
+ *
+ * A seated player deliberately sends no poses — that is what keeps the room
+ * hibernating and the bill at zero — so there is nothing to interpolate and the
+ * figure has to be placed rather than tracked. Their seat is already known from
+ * the roster the deal was dealt against, and the stool that goes with it is
+ * `PLAYER_SEATS[seat]` in the table's own frame.
+ */
+function seatedAt(player: RemoteIdentity, seatIds: readonly string[]): [number, number, number] | null {
+  if (!player.seated || player.table !== TableId.Blackjack) return null
+
+  const seat = seatIds.indexOf(player.id)
+  const stool = seat === -1 ? undefined : PLAYER_SEATS[seat]
+  if (!stool) return null
+
+  return [BLACKJACK_ORIGIN[0] + stool.x, 0, BLACKJACK_ORIGIN[2] + stool.z]
+}
+
 /** One remote figure, moved every frame from its own snapshot buffer. */
-function RemotePlayer({ player }: { player: RemoteIdentity }) {
+function RemotePlayer({ player, seatIds }: { player: RemoteIdentity; seatIds: readonly string[] }) {
   const groupRef = useRef<Group>(null)
   const speedRef = useRef(0)
 
@@ -31,7 +53,39 @@ function RemotePlayer({ player }: { player: RemoteIdentity }) {
      * figure in visible steps; rendering between the two that straddle a moment
      * slightly in the past turns the same packets into continuous motion.
      */
+    /*
+     * Sitting down wins over any pose.
+     *
+     * The last pose a player sent is wherever they were standing when they took
+     * the seat, which is beside the table rather than at it. Once they are in a
+     * seat the seat is the truth.
+     */
+    const seat = seatedAt(player, seatIds)
+    if (seat) {
+      group.visible = true
+      group.position.set(seat[0], 0, seat[2])
+      // Facing the dealer, which is the way the stool faces.
+      group.rotation.y = Math.PI
+      speedRef.current = 0
+      return
+    }
+
     const pose = interpolateAt(poseBuffer(player.id), performance.now() - INTERPOLATION_DELAY_MS)
+
+    /*
+     * Hidden until they have actually said where they are.
+     *
+     * A group with no pose applied sits at its own default, which is the world
+     * origin — and the craps table is deliberately *at* the world origin, so
+     * the failure mode was a stranger standing in the middle of the felt. A
+     * player who has sent nothing yet is far better drawn nowhere than drawn
+     * somewhere false: they appear the moment their first pose lands.
+     *
+     * It happens at all because a seated player deliberately transmits nothing
+     * — `shouldSend` is what keeps the room hibernating and the bill at zero —
+     * so somebody who arrives already sitting has no pose to draw.
+     */
+    group.visible = pose !== null
     if (!pose) return
 
     group.position.set(pose.x, 0, pose.z)
@@ -62,6 +116,8 @@ function RemotePlayer({ player }: { player: RemoteIdentity }) {
  */
 export function RemotePlayers() {
   const peers = usePresenceStore((state) => state.peers)
+  // Who is in which seat, from the same roster the round was dealt against.
+  const seatIds = useBlackjackStore((state) => state.seatIds)
 
   // Keyed by id so a join or leave re-renders, but a *pose* never does — those
   // are read straight out of the buffer inside `useFrame`.
@@ -70,7 +126,7 @@ export function RemotePlayers() {
   return (
     <>
       {players.map((player) => (
-        <RemotePlayer key={player.id} player={player} />
+        <RemotePlayer key={player.id} player={player} seatIds={seatIds} />
       ))}
     </>
   )

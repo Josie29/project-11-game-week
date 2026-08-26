@@ -165,6 +165,29 @@ agree, both belong in the layout module so a test can hold them to it — two
 constants in two files that quietly disagree is not something a later reader
 would think to look for.
 
+**Width across the view is not framing, and the subtended angle alone will say
+it is.** The Golden Ace's waterfall passed `waterfallSubtendedAngle` at 22.6
+degrees and was still cropped: the walking camera looked *down* at 37 degrees,
+so the top of the frame landed on the back wall at about `y = 1.5` and five of
+the cascade's six metres were being drawn off the top of the screen every frame.
+The measure that catches it is `waterfallHeadroom` — the frustum's top edge on
+the surface the thing is drawn on, which needs the field of view, which is why
+`PLAY_FOV` sits in `src/world/camera.ts` next to `CAMERA_LOOK_HEIGHT` rather
+than as a literal in `App.tsx`. Anything tall gets both checks. The fix was to
+flatten the camera from 0.42 to 0.14 — a room with two storeys of architecture
+in it wants a camera that looks at the room, not at the carpet.
+
+**A point light close to a lit surface is a visible object.** Three point lights
+placed within a metre of the waterfall's stone wall each burned a small very
+bright spot into it, and the bloom pass turned all three into glowing spheres —
+a vertical line of cyan orbs hanging down the middle of the cascade, from a
+lighting file containing nothing but lights. Two fixes and both are worth
+knowing: hold the light back from what it lights, and where a surface is meant
+to be dark and needs no shading at all, take it out of the lighting's reach with
+`meshBasicMaterial`. The same effect at a grazing angle is a specular disc on
+water — the pool needed roughness 0.78 before the blackjack seat stopped showing
+a second small sun floating on it.
+
 The street is a canyon and that constrains anything in the sky. Facades seventeen
 metres apart and fifteen high hide everything below about sixty degrees of
 elevation to either side; the only clear sightlines are along the road, and they
@@ -191,6 +214,7 @@ Dev-only deep links, stripped from production builds:
 | `?boot=craps` | at the craps rail with a pass line down |
 | `?boot=placed` | craps with a point set and all six numbers covered |
 | `?boot=floor` | standing on the casino floor, between the tables |
+| `?boot=water` | at the pool at the far end of the same room, under the waterfall |
 | `?boot=clinic` | standing on Red River Plasma's floor |
 | `?boot=clinicfront` | at the clinic's door, prompt up |
 | `?boot=broke` | at blackjack with nothing, marker on offer |
@@ -210,7 +234,8 @@ Dev-only deep links, stripped from production builds:
 | `?mp=1` | re-enables multiplayer under a `?boot=` link, which otherwise suppresses it |
 | `?boot=northend` | at the north junction, where the strip meets its cross street |
 | `?boot=southend` | the same at the south end |
-| `?look=DEGREES` | swings the strip camera round before it settles |
+| `?look=DEGREES` | swings the walking camera round before it settles |
+| `?tilt=DEGREES` | tilts it up or down; negative looks up, at a ceiling |
 | `?time=HH:MM` | opens at that hour, clock still running |
 | `?freeze` | holds the clock, so a capture is reproducible |
 
@@ -236,6 +261,13 @@ stripped from production builds, so the screen a real player actually meets is
 reachable only from a bare `/`. `npm run walkthrough` clicks through it for that
 reason; bypassing it there would have left the first screen of the game as the
 one screen nothing checks.
+
+`?tilt=` exists for the axis `?look=` does not cover, and the Golden Ace's vault
+is why. The play camera looks *down* at the player, so the top of the frame
+lands on the far wall well below the springing line: a two-storey coffered
+ceiling was rendering every frame into nobody's view, and no regression shot
+could have said so. A player drags to look up. A capture cannot, and a ceiling
+nothing can photograph is a ceiling nobody can tell is broken.
 
 `?look=` exists because the play camera trails the player down the street, so
 every facade is seen at a glancing angle. A shop window is a bright sliver from

@@ -8,6 +8,7 @@ import { Control } from '../../world/controls'
 import { useOrbitInput } from '../useOrbitInput'
 import { setLocalTransform } from '../../net/localTransform'
 import { CasinoCharacter } from './CasinoCharacter'
+import { CAMERA_LOOK_HEIGHT } from '../../world/camera'
 
 /*
  * The walking rig: a third-person character with a trailing, self-orienting
@@ -35,7 +36,6 @@ const WALK_SPEED = 7.5
  */
 const DEFAULT_DISTANCE = 7.1
 const DEFAULT_PITCH = 0.17
-const CAMERA_LOOK_HEIGHT = 2.2
 
 /*
  * Pitch limits. The floor is negative so the view can tilt up at the blade
@@ -234,11 +234,14 @@ export function WalkingPlayer({
    * the wrong thing.
    */
   const initialYaw = useGameStore.getState().initialCameraYaw
+  // `?tilt=` overrides the scene's own pitch, and only ever does under a dev
+  // deep link — it is null in every real session.
+  const seededPitch = useGameStore.getState().initialCameraPitch
 
   // Drag to look, scroll to zoom, R to reset — the same control as the table,
   // sharing its implementation.
   const { orbit, lastInputAt } = useOrbitInput(
-    { yaw: initialYaw, pitch, distance },
+    { yaw: initialYaw, pitch: seededPitch ?? pitch, distance },
     {
       minPitch: MIN_PITCH,
       maxPitch: MAX_PITCH,

@@ -7,7 +7,12 @@ import {
   createGameFromShoe,
   createShoe,
   handValue,
+  handsOf,
   placeBet,
+  actAs,
+  placeBets,
+  startNextRound,
+  totalPaid,
   totalStaked,
 } from '../games/blackjack/engine'
 import {
@@ -40,11 +45,40 @@ function stackedShoe(
   return [player[0], dealer[0], player[1], dealer[1], ...rest]
 }
 
-/** Reads a hand by index, failing loudly rather than returning undefined. */
-function handAt(state: GameState, index: number): Hand {
-  const hand = state.hands[index]
-  if (!hand) throw new Error(`Expected a hand at index ${index}`)
+/**
+ * Builds a shoe for a table of several seats.
+ *
+ * Deal order runs across the seats and then the dealer, twice, so each seat's
+ * two cards are a whole pass apart in the shoe. Written out per seat here
+ * because a stacked shoe that has to be interleaved by hand is unreadable, and
+ * an unreadable stacked shoe is a test asserting the wrong thing.
+ */
+function stackedTableShoe(
+  seats: readonly (readonly [Card, Card])[],
+  dealer: readonly [Card, Card],
+  rest: readonly Card[] = [],
+): Card[] {
+  return [
+    ...seats.map((seat) => seat[0]),
+    dealer[0],
+    ...seats.map((seat) => seat[1]),
+    dealer[1],
+    ...rest,
+  ]
+}
+
+/** Reads a seat's hand by index, failing loudly rather than returning undefined. */
+function handAt(state: GameState, index: number, seatIndex = 0): Hand {
+  const hand = handsOf(state, seatIndex)[index]
+  if (!hand) throw new Error(`Expected a hand at index ${index} of seat ${seatIndex}`)
   return hand
+}
+
+/** Which hand a seat is acting on. */
+function activeHandIndexAt(state: GameState, seatIndex = 0): number {
+  const seat = state.seats[seatIndex]
+  if (!seat) throw new Error(`Expected a seat at index ${seatIndex}`)
+  return seat.activeHandIndex
 }
 
 describe('handValue', () => {
@@ -113,7 +147,7 @@ describe('settlement', () => {
     expect(settled.phase).toBe(RoundPhase.Settled)
     expect(handAt(settled, 0).outcome).toBe(RoundOutcome.PlayerBlackjack)
     // Stake (10) plus 3:2 winnings (15).
-    expect(settled.totalPayout).toBe(25)
+    expect(totalPaid(settled)).toBe(25)
   })
 
   // Two naturals is a push, not a player win. Players notice immediately when a
@@ -127,7 +161,7 @@ describe('settlement', () => {
     const settled = placeBet(createGameFromShoe(shoe), 10)
 
     expect(handAt(settled, 0).outcome).toBe(RoundOutcome.Push)
-    expect(settled.totalPayout).toBe(10) // Stake refunded, nothing won.
+    expect(totalPaid(settled)).toBe(10) // Stake refunded, nothing won.
   })
 
   // Busting ends the hand there and then. If the dealer kept drawing they could
@@ -142,7 +176,7 @@ describe('settlement', () => {
     const settled = act(placeBet(createGameFromShoe(shoe), 10), PlayerAction.Hit)
 
     expect(handAt(settled, 0).outcome).toBe(RoundOutcome.PlayerBust)
-    expect(settled.totalPayout).toBe(0)
+    expect(totalPaid(settled)).toBe(0)
     expect(settled.dealerHand).toHaveLength(2)
   })
 })
@@ -182,8 +216,8 @@ describe('payout arithmetic', () => {
     for (const bet of [1, 3, 5, 7, 25, 33, 99]) {
       const settled = act(placeBet(createGameFromShoe(shoe), bet), PlayerAction.Stand)
 
-      expect(Number.isInteger(settled.totalPayout)).toBe(true)
-      expect(settled.totalPayout).toBe(bet * 2)
+      expect(Number.isInteger(totalPaid(settled))).toBe(true)
+      expect(totalPaid(settled)).toBe(bet * 2)
     }
   })
 })
@@ -207,7 +241,7 @@ describe('double down', () => {
     expect(handAt(settled, 0).cards).toHaveLength(3)
     expect(settled.phase).toBe(RoundPhase.Settled)
     expect(handAt(settled, 0).outcome).toBe(RoundOutcome.PlayerWin)
-    expect(settled.totalPayout).toBe(40) // Doubled stake returned twice over.
+    expect(totalPaid(settled)).toBe(40) // Doubled stake returned twice over.
   })
 
   // Doubling is an opening-two-cards move only; permitting it later would be a
@@ -242,11 +276,11 @@ describe('split', () => {
 
     const split = act(opened, PlayerAction.Split)
 
-    expect(split.hands).toHaveLength(2)
+    expect(handsOf(split)).toHaveLength(2)
     expect(totalStaked(split)).toBe(20)
     expect(handAt(split, 0).cards).toHaveLength(2)
     expect(handAt(split, 1).cards).toHaveLength(2)
-    expect(split.activeHandIndex).toBe(0)
+    expect(activeHandIndexAt(split)).toBe(0)
   })
 
   // Equal value is not a pair. Allowing K,Q to split would be a rules break
@@ -315,14 +349,14 @@ describe('split', () => {
     expect(handAt(afterBust, 0).outcome).toBe(RoundOutcome.PlayerBust)
     // Control must have moved on rather than ending the round.
     expect(afterBust.phase).toBe(RoundPhase.PlayerTurn)
-    expect(afterBust.activeHandIndex).toBe(1)
+    expect(activeHandIndexAt(afterBust)).toBe(1)
 
     const settled = act(afterBust, PlayerAction.Stand)
 
     expect(settled.phase).toBe(RoundPhase.Settled)
     expect(handAt(settled, 1).outcome).toBe(RoundOutcome.PlayerWin)
     // Only the surviving hand pays; the busted one returns nothing.
-    expect(settled.totalPayout).toBe(20)
+    expect(totalPaid(settled)).toBe(20)
   })
 
   /*
@@ -351,9 +385,9 @@ describe('split', () => {
 
     const resplit = act(split, PlayerAction.Split)
 
-    expect(resplit.hands).toHaveLength(3)
+    expect(handsOf(resplit)).toHaveLength(3)
     expect(totalStaked(resplit)).toBe(30)
-    expect(resplit.activeHandIndex).toBe(0)
+    expect(activeHandIndexAt(resplit)).toBe(0)
 
     // The hand that was not being split must come through untouched. Rebuilding
     // the hand list from the split instead of splicing into it destroyed it.
@@ -366,7 +400,7 @@ describe('split', () => {
 
     expect(settled.phase).toBe(RoundPhase.Settled)
     // Three hands, three dealer busts, even money on each.
-    expect(settled.totalPayout).toBe(60)
+    expect(totalPaid(settled)).toBe(60)
   })
 
   // Splitting a hand that is not the first one. This is where rebuilding the
@@ -387,17 +421,17 @@ describe('split', () => {
     const split = act(placeBet(createGameFromShoe(shoe), 10), PlayerAction.Split)
     const onSecond = act(split, PlayerAction.Stand)
 
-    expect(onSecond.activeHandIndex).toBe(1)
+    expect(activeHandIndexAt(onSecond)).toBe(1)
     expect(canSplit(onSecond)).toBe(true)
 
     const resplit = act(onSecond, PlayerAction.Split)
 
-    expect(resplit.hands).toHaveLength(3)
+    expect(handsOf(resplit)).toHaveLength(3)
     // The stood-on hand keeps its cards and stays finished.
     expect(handAt(resplit, 0).cards.map((c) => c.rank)).toEqual([Rank.Eight, Rank.Ten])
     expect(handAt(resplit, 0).isFinished).toBe(true)
     // And play resumes on the split, not back at the top of the list.
-    expect(resplit.activeHandIndex).toBe(1)
+    expect(activeHandIndexAt(resplit)).toBe(1)
   })
 
   // Three hands, not four: the fourth betting spot lands on the player's stash.
@@ -416,7 +450,7 @@ describe('split', () => {
 
     const resplit = act(act(placeBet(createGameFromShoe(shoe), 10), PlayerAction.Split), PlayerAction.Split)
 
-    expect(resplit.hands).toHaveLength(3)
+    expect(handsOf(resplit)).toHaveLength(3)
     expect(handValue(handAt(resplit, 0).cards).total).toBe(16) // 8,8 — a pair.
     expect(canSplit(resplit)).toBe(false)
   })
@@ -439,7 +473,245 @@ describe('shoe', () => {
   it('starts a seeded game awaiting a bet', () => {
     const game = createGame(42)
     expect(game.phase).toBe(RoundPhase.Betting)
-    expect(game.hands).toHaveLength(0)
+    expect(handsOf(game)).toHaveLength(0)
     expect(totalStaked(game)).toBe(0)
+  })
+})
+
+/*
+ * Nothing below is reachable from the game yet — one player sits at the table
+ * and every test above it is the one-seat case. They are here because the shoe
+ * is the thing several players have to share and the thing no screenshot can
+ * check: a table dealing two players the same card, or paying one seat out of
+ * another's stake, renders exactly like a table doing it right.
+ */
+describe('seats', () => {
+  // The whole reason the table holds seats rather than a hand list. If two
+  // seats drew from the same index, two players would be dealt the same card
+  // and each would see a different table.
+  it('deals every seat its own cards from the one shoe', () => {
+    const shoe = stackedTableShoe(
+      [
+        [card(Rank.Ten, Suit.Spades), card(Rank.Eight, Suit.Spades)], // Seat one, 18.
+        [card(Rank.Nine, Suit.Hearts), card(Rank.Two, Suit.Hearts)], // Seat two, 11.
+      ],
+      [card(Rank.Ten, Suit.Diamonds), card(Rank.Seven, Suit.Diamonds)], // Dealer 17.
+    )
+
+    const dealt = placeBets(createGameFromShoe(shoe, 2), [10, 25])
+
+    expect(handAt(dealt, 0, 0).cards).toEqual([
+      card(Rank.Ten, Suit.Spades),
+      card(Rank.Eight, Suit.Spades),
+    ])
+    expect(handAt(dealt, 0, 1).cards).toEqual([
+      card(Rank.Nine, Suit.Hearts),
+      card(Rank.Two, Suit.Hearts),
+    ])
+    // Six cards off the shoe and no card dealt twice: two seats, two rounds of
+    // the table, plus the dealer's two.
+    expect(dealt.shoeIndex).toBe(6)
+    expect(new Set(shoe.slice(0, 6).map((c) => `${c.rank}${c.suit}`)).size).toBe(6)
+  })
+
+  // Each seat carries its own wager. Reading the table's total staked as one
+  // seat's would charge a player for a hand somebody else is holding.
+  it('stakes each seat separately', () => {
+    const shoe = stackedTableShoe(
+      [
+        [card(Rank.Ten, Suit.Spades), card(Rank.Eight, Suit.Spades)],
+        [card(Rank.Nine, Suit.Hearts), card(Rank.Two, Suit.Hearts)],
+      ],
+      [card(Rank.Ten, Suit.Diamonds), card(Rank.Seven, Suit.Diamonds)],
+    )
+
+    const dealt = placeBets(createGameFromShoe(shoe, 2), [10, 25])
+
+    expect(totalStaked(dealt, 0)).toBe(10)
+    expect(totalStaked(dealt, 1)).toBe(25)
+  })
+
+  // Splitting grows one seat's hand list. Splicing into the table's would put
+  // the extra hand in front of whoever happened to sit next, and would move the
+  // hand indices out from under every seat after it.
+  it('splits one seat without disturbing the next', () => {
+    const shoe = stackedTableShoe(
+      [
+        [card(Rank.Eight, Suit.Spades), card(Rank.Eight, Suit.Hearts)], // Seat one splits.
+        [card(Rank.Ten, Suit.Diamonds), card(Rank.Nine, Suit.Diamonds)], // Seat two, 19.
+      ],
+      [card(Rank.Ten, Suit.Clubs), card(Rank.Seven, Suit.Clubs)], // Dealer 17, stands.
+      [card(Rank.Three), card(Rank.Four)], // The two cards the split draws.
+    )
+
+    const split = act(placeBets(createGameFromShoe(shoe, 2), [10, 25]), PlayerAction.Split)
+
+    expect(handsOf(split, 0)).toHaveLength(2)
+    expect(totalStaked(split, 0)).toBe(20)
+
+    // Seat two is untouched: one hand, the cards it was dealt, its own stake.
+    expect(handsOf(split, 1)).toHaveLength(1)
+    expect(handAt(split, 0, 1).cards).toEqual([
+      card(Rank.Ten, Suit.Diamonds),
+      card(Rank.Nine, Suit.Diamonds),
+    ])
+    expect(totalStaked(split, 1)).toBe(25)
+
+    // And the split did not hand the turn over, either.
+    expect(split.activeSeatIndex).toBe(0)
+  })
+
+  // Turn order is the engine's to keep. A seat acting early takes the card off
+  // the shoe that belongs to the seat before it, which is a card two players
+  // have now both been promised.
+  it('passes the turn along only once a seat has finished', () => {
+    const shoe = stackedTableShoe(
+      [
+        [card(Rank.Ten, Suit.Spades), card(Rank.Eight, Suit.Spades)], // Seat one, 18.
+        [card(Rank.Nine, Suit.Hearts), card(Rank.Two, Suit.Hearts)], // Seat two, 11.
+      ],
+      [card(Rank.Ten, Suit.Diamonds), card(Rank.Seven, Suit.Diamonds)], // Dealer 17.
+      [card(Rank.Five, Suit.Clubs)], // Seat two hits to 16.
+    )
+
+    const dealt = placeBets(createGameFromShoe(shoe, 2), [10, 25])
+    expect(dealt.activeSeatIndex).toBe(0)
+
+    const passed = act(dealt, PlayerAction.Stand)
+    expect(passed.activeSeatIndex).toBe(1)
+
+    // The action lands on the seat whose turn it is, not on the first seat.
+    const hit = act(passed, PlayerAction.Hit)
+    expect(handAt(hit, 0, 1).cards).toHaveLength(3)
+    expect(handAt(hit, 0, 0).cards).toHaveLength(2)
+  })
+
+  // Money is settled per seat. Summing the table's payouts into one figure is
+  // how a losing player gets paid out of the winner's stake.
+  it('settles each seat against the dealer on its own', () => {
+    const shoe = stackedTableShoe(
+      [
+        [card(Rank.Ten, Suit.Spades), card(Rank.King, Suit.Spades)], // Seat one, 20 — beats 18.
+        [card(Rank.Ten, Suit.Hearts), card(Rank.Five, Suit.Hearts)], // Seat two, 15 — loses.
+      ],
+      [card(Rank.Ten, Suit.Diamonds), card(Rank.Eight, Suit.Diamonds)], // Dealer 18, stands.
+    )
+
+    const dealt = placeBets(createGameFromShoe(shoe, 2), [10, 25])
+    const settled = act(act(dealt, PlayerAction.Stand), PlayerAction.Stand)
+
+    expect(settled.phase).toBe(RoundPhase.Settled)
+    expect(handAt(settled, 0, 0).outcome).toBe(RoundOutcome.PlayerWin)
+    expect(handAt(settled, 0, 1).outcome).toBe(RoundOutcome.DealerWin)
+    expect(totalPaid(settled, 0)).toBe(20) // Stake back, even money on it.
+    expect(totalPaid(settled, 1)).toBe(0) // And nothing of it goes to seat two.
+  })
+
+  // A natural is settled where it is dealt, and the table plays on. Ending the
+  // round on it — which is exactly what one seat does — would take the other
+  // players' hands away before they had a decision.
+  it('lets the table play on when one seat is dealt a natural', () => {
+    const shoe = stackedTableShoe(
+      [
+        [card(Rank.Ace, Suit.Spades), card(Rank.King, Suit.Spades)], // Seat one, natural.
+        [card(Rank.Ten, Suit.Hearts), card(Rank.Six, Suit.Hearts)], // Seat two, 16.
+      ],
+      [card(Rank.Nine, Suit.Clubs), card(Rank.Seven, Suit.Clubs)], // Dealer 16, must draw.
+      [card(Rank.Five, Suit.Diamonds)], // Dealer draws to 21.
+    )
+
+    const dealt = placeBets(createGameFromShoe(shoe, 2), [10, 25])
+
+    expect(dealt.phase).toBe(RoundPhase.PlayerTurn)
+    expect(dealt.activeSeatIndex).toBe(1) // Straight past the seat with nothing to decide.
+    expect(handAt(dealt, 0, 0).outcome).toBe(RoundOutcome.PlayerBlackjack)
+
+    const settled = act(dealt, PlayerAction.Stand)
+
+    expect(settled.phase).toBe(RoundPhase.Settled)
+    expect(settled.dealerHand).toHaveLength(3)
+    expect(totalPaid(settled, 0)).toBe(25) // 3:2 on 10, stake included.
+    expect(totalPaid(settled, 1)).toBe(0)
+  })
+
+  // A dealer natural takes every seat at once and buys the dealer no cards.
+  it('settles the whole table on a dealer natural', () => {
+    const shoe = stackedTableShoe(
+      [
+        [card(Rank.Ten, Suit.Spades), card(Rank.Six, Suit.Spades)],
+        [card(Rank.Nine, Suit.Hearts), card(Rank.Nine, Suit.Clubs)],
+      ],
+      [card(Rank.Ace, Suit.Diamonds), card(Rank.King, Suit.Diamonds)],
+    )
+
+    const settled = placeBets(createGameFromShoe(shoe, 2), [10, 25])
+
+    expect(settled.phase).toBe(RoundPhase.Settled)
+    expect(handAt(settled, 0, 0).outcome).toBe(RoundOutcome.DealerWin)
+    expect(handAt(settled, 0, 1).outcome).toBe(RoundOutcome.DealerWin)
+    expect(settled.shoeIndex).toBe(6) // The dealer never drew.
+  })
+
+  // A seat index has to mean the same player next round, so the table clears
+  // its seats rather than rebuilding them. Rebuilding from the wagers would
+  // reseat everybody the moment one player sat a round out.
+  it('keeps its seats between rounds', () => {
+    const shoe = stackedTableShoe(
+      [
+        [card(Rank.Ten, Suit.Spades), card(Rank.King, Suit.Spades)],
+        [card(Rank.Ten, Suit.Hearts), card(Rank.Five, Suit.Hearts)],
+      ],
+      [card(Rank.Ten, Suit.Diamonds), card(Rank.Eight, Suit.Diamonds)],
+    )
+
+    const settled = act(
+      act(placeBets(createGameFromShoe(shoe, 2), [10, 25]), PlayerAction.Stand),
+      PlayerAction.Stand,
+    )
+    const next = startNextRound(settled, 1)
+
+    expect(next.seats).toHaveLength(2)
+    expect(handsOf(next, 0)).toHaveLength(0)
+    expect(handsOf(next, 1)).toHaveLength(0)
+    expect(totalPaid(next, 0)).toBe(0)
+  })
+
+  // Refusing the ambiguous call rather than guessing. `placeBet` naming one
+  // amount at a table of five would either bet for everyone or deal four
+  // players in for nothing, and both are worse than an error.
+  it('refuses a wager that does not say what every seat is betting', () => {
+    const table = createGameFromShoe(createShoe(7), 2)
+
+    expect(() => placeBet(table, 10)).toThrow(/one-seat table/)
+    expect(() => placeBets(table, [10])).toThrow(/Expected 2 wagers/)
+  })
+})
+
+describe('turn order', () => {
+  // Casino blackjack is one player at a time, first base to third base. A
+  // client whose turn it is not could otherwise call `act` and play the
+  // active seat's hand from three places away — the hand is not theirs, and
+  // the card it draws comes off a shoe everybody shares.
+  it('refuses a seat that is not the one acting', () => {
+    const state = placeBets(createGame(7, 3), [25, 25, 25])
+    expect(state.activeSeatIndex).toBe(0)
+
+    expect(() => actAs(state, 1, PlayerAction.Hit)).toThrow(/seat 0/)
+    expect(() => actAs(state, 2, PlayerAction.Stand)).toThrow(/seat 0/)
+    expect(() => actAs(state, 0, PlayerAction.Stand)).not.toThrow()
+  })
+
+  // The turn moves on only when a seat has no hand left awaiting a decision,
+  // which is what makes a split whole: you finish both halves before the next
+  // player is dealt to, exactly as at a real table.
+  it('passes to the next seat in order, once the seat before it is done', () => {
+    let state = placeBets(createGame(7, 3), [25, 25, 25])
+
+    state = actAs(state, 0, PlayerAction.Stand)
+    expect(state.activeSeatIndex).toBe(1)
+    expect(() => actAs(state, 0, PlayerAction.Hit)).toThrow()
+
+    state = actAs(state, 1, PlayerAction.Stand)
+    expect(state.activeSeatIndex).toBe(2)
   })
 })
