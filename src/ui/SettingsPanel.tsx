@@ -33,6 +33,17 @@ export function SettingsPanel() {
    */
   const [confirmingReset, setConfirmingReset] = useState(false)
 
+  /*
+   * The mode the player has picked but not yet saved.
+   *
+   * Seeded from the live value and thrown away with the component, so closing
+   * the panel on an unsaved choice discards it — which is what "Save changes"
+   * promises by existing. Nothing reaches the store, and therefore nothing
+   * reaches the socket, until it is pressed.
+   */
+  const [pendingMode, setPendingMode] = useState(mode)
+  const modeChanged = pendingMode !== mode
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') closeSettings()
@@ -79,7 +90,38 @@ export function SettingsPanel() {
 
         <section className="welcome__section">
           <h3 className="welcome__legend">How to play</h3>
-          <ModeChoice value={mode} onPick={setMode} />
+
+          {/*
+            Chosen, then saved — the same two steps the welcome screen has,
+            where picking a mode does nothing until "Enter the strip" is pressed.
+            Applying on click would have made one control behave two ways in the
+            two places it appears.
+
+            It also earns the pause on its own. Switching to Multiplayer starts
+            broadcasting this player's name and character to a room full of
+            strangers, and the welcome screen promises a guest that nothing is
+            sent anywhere — so the moment that stops being true is worth a
+            deliberate press rather than a stray click.
+          */}
+          <ModeChoice value={pendingMode} onPick={setPendingMode} />
+
+          {modeChanged && (
+            <div className="settings__pending">
+              <p className="welcome__note settings__unsaved">Not applied yet.</p>
+              <div className="welcome__choices">
+                <button type="button" className="button" onClick={() => setPendingMode(mode)}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="button button--primary"
+                  onClick={() => setMode(pendingMode)}
+                >
+                  Save changes
+                </button>
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="welcome__section">
