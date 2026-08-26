@@ -139,8 +139,17 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
         const pose = getLocalTransform()
         if (!shouldSend(lastSent, pose)) return
 
-        lastSent = { ...pose }
-        connection?.send(pose)
+        /*
+         * Only recorded once it has actually gone out.
+         *
+         * The first tick fires about eighty milliseconds after joining, which
+         * beats a real WebSocket handshake but not a local one. Recording the
+         * pose regardless meant `shouldSend` went quiet for ever afterwards, so
+         * a player who connected and stood still was never transmitted at all —
+         * invisible to the room until they happened to walk. It passed against
+         * a local worker and failed against a deployed one.
+         */
+        if (connection?.send(pose) === true) lastSent = { ...pose }
       }, SEND_INTERVAL_MS)
     },
 

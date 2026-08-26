@@ -60,21 +60,49 @@ async function peers(page) {
   })
 }
 
-async function openPlayer(browser, name) {
+/**
+ * Whether the dev bridge is available.
+ *
+ * `?boot=` links and `window.presenceStore` are both stripped from production
+ * builds, so against a deployed URL this script cannot introspect anything —
+ * it has to walk in through the front door and be judged by eye, exactly as
+ * `npm run walkthrough` is.
+ */
+async function hasDevBridge(page) {
+  return page.evaluate(() => Boolean(window.presenceStore))
+}
+
+async function openPlayer(browser, name, look) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 } })
   const page = await context.newPage()
 
-  // `?boot=strip` skips the first-run designer, which a fresh profile would
-  // otherwise open instead of the street.
-  await page.goto(`${BASE}/?boot=strip&mp=1&time=21:00&freeze`, { waitUntil: 'networkidle' })
+  // `?boot=strip` skips the first-run designer where it exists; in production it
+  // is stripped, and the designer is walked through below instead.
+  const suffix = look === undefined ? '' : `&look=${look}`
+  await page.goto(`${BASE}/?boot=strip&mp=1&time=21:00&freeze${suffix}`, {
+    waitUntil: 'networkidle',
+  })
   await page.waitForSelector('canvas', { timeout: 15_000 })
 
-  // Name them apart, so the nameplate is checkable and not just the count.
-  await page.evaluate((playerName) => {
-    window.appearanceStore?.getState().setPlayerName(playerName)
-  }, name)
+  const dev = await hasDevBridge(page)
 
-  return { context, page }
+  if (dev) {
+    // Name them apart, so the nameplate is checkable and not just the count.
+    await page.evaluate((playerName) => {
+      window.appearanceStore?.getState().setPlayerName(playerName)
+    }, name)
+  } else {
+    /*
+     * Production: the designer opens instead of the street. Type the name into
+     * the field a player would use, then leave — which also exercises the name
+     * entry itself, something the dev path skips entirely.
+     */
+    await page.getByRole('textbox', { name: /your name/i }).fill(name)
+    await page.getByRole('button', { name: 'Hit the strip' }).click()
+    await page.getByText('WASD to walk').waitFor({ timeout: 15_000 })
+  }
+
+  return { context, page, dev }
 }
 
 async function main() {
@@ -86,6 +114,28 @@ async function main() {
   const bob = await openPlayer(browser, 'Bob')
 
   await alice.page.waitForTimeout(CONNECT_MS)
+
+  if (!alice.dev) {
+    /*
+     * Production. Nothing is introspectable, so the only honest check is the
+     * one a person makes: walk one player and look at the other's screen. The
+     * captures are the result — read them, do not just count the exit code.
+     */
+    console.log('production build: no dev bridge, capturing for visual review')
+
+    await alice.page.keyboard.down('w')
+    await alice.page.waitForTimeout(WALK_MS)
+    await alice.page.keyboard.up('w')
+    await bob.page.waitForTimeout(1_500)
+
+    await alice.page.screenshot({ path: `${OUT}/alice.png` })
+    await bob.page.screenshot({ path: `${OUT}/bob.png` })
+
+    check('both players reached the strip', true)
+    await browser.close()
+    console.log(`\n2 players → ${OUT}  (look at bob.png: Alice should be there, named)`)
+    return
+  }
 
   const aliceSees = await peers(alice.page)
   const bobSees = await peers(bob.page)

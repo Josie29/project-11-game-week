@@ -52,8 +52,14 @@ export interface LocalIdentity {
 }
 
 export interface RoomConnection {
-  /** Sends a pose. Cheap to call; the caller decides how often. */
-  send: (pose: Pose) => void
+  /**
+   * Sends a pose. Cheap to call; the caller decides how often.
+   *
+   * @returns True if it actually went out. False while the socket is still
+   *   opening or has dropped — the caller must not record the pose as sent, or
+   *   a player who joins and stands still is never transmitted at all.
+   */
+  send: (pose: Pose) => boolean
   /** Tells the room the player sat down or stood up. */
   setSeated: (seated: boolean) => void
   /** Re-announces identity, e.g. after a wardrobe change. */
@@ -191,9 +197,9 @@ export function joinRoom(
 
   return {
     send: (pose) => {
-      if (socket?.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ t: 'move', ...pose }))
-      }
+      if (socket?.readyState !== WebSocket.OPEN) return false
+      socket.send(JSON.stringify({ t: 'move', ...pose }))
+      return true
     },
     setSeated: (seated) => {
       current = { ...current, seated }
