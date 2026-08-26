@@ -2,6 +2,7 @@ import { PerspectiveCamera, RoundedBox } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useMemo, useRef } from 'react'
 import { PerspectiveCamera as PerspectiveCameraImpl, Vector2, Vector3 } from 'three'
+import { SeatedLegs } from '../character/proportions'
 import { useAppearanceStore } from '../store/useAppearanceStore'
 import { useGameStore } from '../store/useGameStore'
 import { INTERACT_KEY } from '../world/controls'
@@ -28,10 +29,14 @@ import {
   EXIT_DOOR_HEIGHT,
   EXIT_DOOR_WIDTH,
   EXIT_RADIUS,
+  FOOTREST_CENTER,
+  FOOTREST_SIZE,
+  FOOTREST_TILT,
   IV_BAG_LOCAL,
   obstacles,
   RECLINER_TURN,
   ROOM,
+  SEATED_DONOR_Z,
   SIT_RADIUS,
   SKIRTING_DEPTH,
   SKIRTING_HEIGHT,
@@ -340,13 +345,17 @@ function Recliner({ z, drawing = false }: ReclinerProps) {
         />
       </RoundedBox>
 
-      {/* Footrest, out. This is what makes the footprint long. */}
+      {/*
+        Footrest, out. This is what makes the footprint long — and what the
+        donor's legs have to land on, which is why its geometry is in the layout
+        rather than written here.
+      */}
       <RoundedBox
-        args={[0.62, 0.15, 0.6]}
+        args={[...FOOTREST_SIZE]}
         radius={0.055}
         smoothness={3}
-        position={[0, 0.38, 0.62]}
-        rotation={[0.12, 0, 0]}
+        position={[...FOOTREST_CENTER]}
+        rotation={[FOOTREST_TILT, 0, 0]}
         castShadow
       >
         <meshStandardMaterial
@@ -964,8 +973,27 @@ export function ClinicInterior() {
       ) : (
         <>
           <ChairCamera chair={atChair} />
-          <group position={[CHAIR_X + 0.1, 0, CHAIR_Z[atChair] ?? 0]} rotation={[0, Math.PI / 2, 0]}>
-            <CasinoCharacter appearance={appearance} equipped={equipped} seated />
+          {/*
+            The donor, laid back with their legs along the footrest.
+
+            `SeatedLegs.Extended` rather than the default, and that is the whole
+            difference between sitting in a recliner and perching on it: the
+            stool pose hangs the shins straight down, which on a chair with its
+            footrest out ran both legs through the cushion.
+
+            The chair's turn is applied here, so `SEATED_DONOR_Z` — a forward
+            offset in the chair's own space — arrives on the world x axis.
+          */}
+          <group
+            position={[CHAIR_X + SEATED_DONOR_Z, 0, CHAIR_Z[atChair] ?? 0]}
+            rotation={[0, Math.PI / 2, 0]}
+          >
+            <CasinoCharacter
+              appearance={appearance}
+              equipped={equipped}
+              seated
+              legs={SeatedLegs.Extended}
+            />
           </group>
         </>
       )}

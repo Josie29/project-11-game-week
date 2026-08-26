@@ -4,7 +4,12 @@ import { DoubleSide, Group, MathUtils } from 'three'
 import { anchorFor, type Anchor } from '../../character/anchors'
 import { Garment, resolveAppearance, type Appearance } from '../../character/appearance'
 import { findItem, ItemShape, Slot, type EquippedItems } from '../../character/catalog'
-import { metricsFor, PROPORTIONS } from '../../character/proportions'
+import {
+  metricsFor,
+  PROPORTIONS,
+  SEATED_LEG_PITCH,
+  SeatedLegs,
+} from '../../character/proportions'
 import { useBlackjackStore } from '../../store/useBlackjackStore'
 import { GESTURES, Gesture, REST_POSE } from '../gestures'
 import { Accessory } from './character/Accessory'
@@ -55,8 +60,15 @@ interface CasinoCharacterProps {
   speedRef?: RefObject<number> | undefined
   /** Poses the arms forward over the table, as a dealer stands. */
   dealerPose?: boolean | undefined
-  /** Sits the figure on a stool: hips dropped, thighs forward, shins down. */
+  /** Sits the figure down: hips dropped to seat height, thighs forward. */
   seated?: boolean | undefined
+  /**
+   * How the legs are arranged once seated. Ignored when standing.
+   *
+   * Defaults to the stool, which is what every seat in the game was until the
+   * clinic got recliners. See `SeatedLegs`.
+   */
+  legs?: SeatedLegs | undefined
   /** Adds the house name badge. House employees only. */
   staff?: boolean | undefined
   /**
@@ -117,6 +129,7 @@ export function CasinoCharacter({
   speedRef,
   dealerPose = false,
   seated = false,
+  legs = SeatedLegs.Hanging,
   staff = false,
   mannequin = false,
   gestureSource,
@@ -225,9 +238,16 @@ export function CasinoCharacter({
   })
 
   const hipY = seated ? body.seatedHipY : metrics.hipY
-  // Seated: thigh swings forward and the knee folds it back down.
-  const thighPitch = seated ? -Math.PI / 2 : 0
-  const kneePitch = seated ? Math.PI / 2 : 0
+  /*
+   * Seated: the thigh swings forward and the knee decides what happens next —
+   * folded back down for a stool, barely bent for a recliner's footrest. The
+   * angles live in `proportions.ts` so `seatedAnklePosition` can be held against
+   * the furniture the legs are supposed to land on.
+   */
+  const seatPitch = SEATED_LEG_PITCH[legs]
+  const thighPitch = seated ? seatPitch.thigh : 0
+  const kneePitch = seated ? seatPitch.knee : 0
+  const anklePitch = seated ? seatPitch.ankle : 0
 
   const worn = {
     head: findItem(equipped?.[Slot.Head]),
@@ -341,13 +361,23 @@ export function CasinoCharacter({
   }
 
   /** One shoe, either the garment's own or a purchased pair. */
+  /*
+   * The shoe, positioned relative to the ankle rather than to the knee.
+   *
+   * The offsets used to carry `-body.shin` so they read from the shin group's
+   * own origin, which is the knee. That is fine while the ankle never bends —
+   * and the moment it did, rotating the foot swung it through an arc a whole
+   * shin long instead of turning it on the spot, which put both shoes inside the
+   * footrest cushion. Its caller now sits at the ankle, so these are small
+   * numbers about a foot rather than large ones about a leg.
+   */
   const renderShoe = (): ReactNode =>
     worn.feet ? (
-      <group name="worn:feet" position={[0, -body.shin + 0.035, 0.05]}>
+      <group name="worn:feet" position={[0, 0.035, 0.05]}>
         <Accessory item={worn.feet} body={body} />
       </group>
     ) : (
-      <mesh position={[0, -body.shin + 0.02, 0.05]} castShadow>
+      <mesh position={[0, 0.02, 0.05]} castShadow>
         <boxGeometry args={[0.115, 0.07, 0.22]} />
         <meshStandardMaterial color={colors.shoes} roughness={0.45} />
       </mesh>
@@ -372,7 +402,10 @@ export function CasinoCharacter({
               <capsuleGeometry args={[0.085, body.shin - 0.1, 4, 8]} />
               <meshStandardMaterial color={legColor} roughness={0.85} />
             </mesh>
-            {renderShoe()}
+            {/* The ankle, which only bends when the leg is laid out. */}
+            <group position={[0, -body.shin, 0]} rotation={[anklePitch, 0, 0]}>
+              {renderShoe()}
+            </group>
           </group>
         </group>
       ))}

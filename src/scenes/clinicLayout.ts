@@ -92,6 +92,64 @@ export const RECLINER_TURN = Math.PI / 2
 /** The tray the donor's arm rests on, in the chair's own space. */
 export const TRAY_LOCAL: readonly [number, number, number] = [0.62, 0.56, 0.02]
 
+/**
+ * The footrest, in the chair's own space.
+ *
+ * Here rather than in the component because the donor's legs have to land on it,
+ * and a piece of furniture and the pose that uses it are exactly the "two
+ * constants in two files that quietly disagree" case. They did disagree: the
+ * seated pose is authored for a casino stool, where the shins hang straight
+ * down, and used unchanged on a recliner it ran both legs through the cushion.
+ */
+export const FOOTREST_CENTER: readonly [number, number, number] = [0, 0.38, 0.62]
+export const FOOTREST_SIZE: readonly [number, number, number] = [0.62, 0.15, 0.6]
+/** Raked up a little at the far end, as an extended footrest is. */
+export const FOOTREST_TILT = 0.12
+
+/** The centre of the footrest's top face, as `[z, y]` in the chair's space. */
+function footrestTopCenter(): readonly [number, number] {
+  const [, centreY, centreZ] = FOOTREST_CENTER
+  const half = FOOTREST_SIZE[1] / 2
+
+  // The tilt carries the top face forward as well as up.
+  return [centreZ + half * Math.sin(FOOTREST_TILT), centreY + half * Math.cos(FOOTREST_TILT)]
+}
+
+/** How high the footrest's top face is at a given z, in the chair's space. */
+export function footrestSurfaceY(z: number): number {
+  const [topZ, topY] = footrestTopCenter()
+  return topY + (z - topZ) * Math.tan(FOOTREST_TILT)
+}
+
+/**
+ * Whether a point rests on the footrest.
+ *
+ * The sixth of these predicates, and the first about a *pose* rather than a
+ * prop. Paired, like the others, with a test that feeds it a point it must
+ * reject — the pose this replaced put the ankle a quarter of a metre below the
+ * cushion, so a predicate that said yes to that would prove nothing.
+ *
+ * @param z Forward position in the chair's own space.
+ * @param y Height in the same space.
+ * @param tolerance How far off the surface still counts as resting on it.
+ */
+export function isOnFootrest(z: number, y: number, tolerance = 0.06): boolean {
+  const [topZ] = footrestTopCenter()
+  const reach = (FOOTREST_SIZE[2] / 2) * Math.cos(FOOTREST_TILT)
+
+  if (z < topZ - reach || z > topZ + reach) return false
+  return Math.abs(y - footrestSurfaceY(z)) <= tolerance
+}
+
+/**
+ * How far forward on the seat the donor's hips sit.
+ *
+ * Was 0.1, which put a fully extended leg past the end of the footrest. Pulled
+ * back so every silhouette's ankle lands on it with room to spare — the
+ * feminine figure has the longest legs and is the one that sets this.
+ */
+export const SEATED_DONOR_Z = 0.02
+
 /** Where the IV stand carries its bag, in the chair's own space. */
 export const IV_BAG_LOCAL: readonly [number, number, number] = [-0.5, 1.5, -0.2]
 

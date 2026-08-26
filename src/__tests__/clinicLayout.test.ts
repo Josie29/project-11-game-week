@@ -1,4 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import {
+  seatedAnklePosition,
+  SeatedLegs,
+  Silhouette,
+} from '../character/proportions'
 import { footprintsOverlap, isInside } from '../scenes/casinoFloorLayout'
 import {
   benchFootprint,
@@ -17,9 +22,12 @@ import {
   EXIT_DOOR,
   EXIT_DOOR_CLEARANCE,
   EXIT_RADIUS,
+  footrestSurfaceY,
   isOnClinicFloor,
+  isOnFootrest,
   obstacles,
   ROOM,
+  SEATED_DONOR_Z,
   SIT_RADIUS,
   TROFFER_LENGTH,
   TROFFER_WIDTH,
@@ -328,6 +336,47 @@ describe('clinic layout', () => {
       expect(prop.along - prop.width / 2, `${prop.id} runs off its wall`).toBeGreaterThan(low)
       expect(prop.along + prop.width / 2, `${prop.id} runs off its wall`).toBeLessThan(high)
     }
+  })
+
+  /*
+   * The recliner is the one seat in the game with a footrest, and the seated
+   * pose was authored for a casino stool — where the shins hang straight down
+   * and the feet reach a footring. Used unchanged here it ran both of the
+   * donor's legs down through the footrest cushion, in the one view of this
+   * room the player actually sits and looks at.
+   *
+   * Three silhouettes with three different leg lengths means "the legs reach the
+   * footrest" is three separate claims, and a single capture only ever shows one
+   * of them.
+   */
+  it('rests every silhouette\'s legs on the footrest', () => {
+    for (const silhouette of Object.values(Silhouette)) {
+      const [z, y] = seatedAnklePosition(silhouette, SeatedLegs.Extended, SEATED_DONOR_Z)
+
+      expect(
+        isOnFootrest(z, y),
+        `${silhouette} ankle at z ${z.toFixed(3)}, y ${y.toFixed(3)} misses the footrest ` +
+          `(surface is at ${footrestSurfaceY(z).toFixed(3)})`,
+      ).toBe(true)
+    }
+  })
+
+  /*
+   * ...and the guard, which is the pose this replaced.
+   *
+   * A predicate that accepted the stool pose too would have passed on the bug it
+   * exists to catch: those shins finish a quarter of a metre under the cushion.
+   */
+  it('rejects the stool pose on a recliner', () => {
+    for (const silhouette of Object.values(Silhouette)) {
+      const [z, y] = seatedAnklePosition(silhouette, SeatedLegs.Hanging, SEATED_DONOR_Z)
+
+      expect(isOnFootrest(z, y), `${silhouette} hanging shins pass as resting`).toBe(false)
+    }
+
+    // ...and it rejects a point well past the end of the footrest, so "on the
+    // footrest" cannot be satisfied by hanging in the air beyond it.
+    expect(isOnFootrest(3, footrestSurfaceY(3))).toBe(false)
   })
 
   // Two things on the same wall at the same height overlap into one smear.
