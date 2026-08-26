@@ -2,6 +2,7 @@ import { Garment, HairStyle, PLAYER_GARMENTS, type Appearance } from '../charact
 import { GARMENT_COLORS, HAIR_COLORS, SKIN_TONES, type Swatch } from '../character/palette'
 import { Silhouette } from '../character/proportions'
 import { useAppearanceStore } from '../store/useAppearanceStore'
+import { FALLBACK_NAME, MAX_NAME_LENGTH } from '../world/presence'
 import { useGameStore } from '../store/useGameStore'
 
 /*
@@ -108,6 +109,9 @@ export function CharacterDesigner() {
 
   const update = (patch: Partial<Appearance>) => setAppearance({ ...appearance, ...patch })
 
+  const playerName = useAppearanceStore((state) => state.playerName)
+  const setPlayerName = useAppearanceStore((state) => state.setPlayerName)
+
   const done = () => {
     completeDesign()
     closeDesigner()
@@ -123,6 +127,27 @@ export function CharacterDesigner() {
             : 'You can change all of this later at the shop on the strip.'}
         </p>
       </header>
+
+      {/*
+        Name first, because it is the only thing here anyone else reads. The
+        rest of this screen decides what you look like; this decides what you
+        are called when somebody passes you on the street.
+      */}
+      <fieldset className="designer__field">
+        <legend className="designer__legend">Name</legend>
+        <input
+          className="designer__name"
+          type="text"
+          value={playerName}
+          maxLength={MAX_NAME_LENGTH}
+          spellCheck={false}
+          autoComplete="off"
+          placeholder={FALLBACK_NAME}
+          aria-label="Your name, shown above your character to other players"
+          onChange={(event) => setPlayerName(event.target.value)}
+        />
+        <p className="designer__hint">Shown over your head to anyone else on the strip.</p>
+      </fieldset>
 
       <ChoiceRow
         label="Build"
