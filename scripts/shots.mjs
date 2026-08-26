@@ -33,6 +33,15 @@ const SCENES = [
   // profile, so `hasDesigned` is false and a bare `/` opens the character
   // designer instead of the street — every strip regression shot would have
   // come back as a picture of a menu.
+  /*
+   * The welcome screen, held up rather than skipped.
+   *
+   * `?boot=welcome` resets `hasWelcomed` instead of merely declining to clear
+   * it, which is redundant here — a fresh profile has it false already — and is
+   * the whole point anywhere else. This is the one capture a human opens the
+   * link for by hand, in a browser that has been through the screen before.
+   */
+  { name: 'welcome', path: '/?boot=welcome&time=21:00&freeze', settleMs: 2400 },
   { name: 'strip', path: '/?boot=strip&time=21:00&freeze', settleMs: 2400 },
   { name: 'strip-dawn', path: '/?boot=strip&time=05:30&freeze', settleMs: 2400 },
   { name: 'strip-noon', path: '/?boot=strip&time=12:00&freeze', settleMs: 2400 },
