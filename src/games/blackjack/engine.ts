@@ -8,6 +8,7 @@ import {
   Rank,
   RoundOutcome,
   RoundPhase,
+  type Seat,
   Suit,
 } from './types'
 
@@ -43,7 +44,7 @@ function blackjackPayout(bet: number): number {
 }
 
 /**
- * Hands a player may hold at once, so the pair split off a split hand can be
+ * Hands one seat may hold at once, so the pair split off a split hand can be
  * split again.
  *
  * Three, not the four some houses allow, and the limit is the felt rather than
@@ -108,14 +109,53 @@ export function isBust(cards: readonly Card[]): boolean {
   return handValue(cards).total > BLACKJACK
 }
 
-/** Total currently staked across every hand. */
-export function totalStaked(state: GameState): number {
-  return state.hands.reduce((sum, hand) => sum + hand.bet, 0)
+/** An empty seat, and the shape a seat is cleared back to between rounds. */
+const EMPTY_SEAT: Seat = { hands: [], activeHandIndex: 0, totalPayout: 0 }
+
+/**
+ * Shared empty list, so `handsOf` on a seat that does not exist returns the
+ * same reference every time and cannot make a memo or an effect fire.
+ */
+const NO_HANDS: readonly Hand[] = []
+
+/*
+ * Every reader below takes a seat index that defaults to the solo case, which
+ * is what keeps the single-player call sites — the store, the panel, the felt
+ * — reading exactly as they did before the table grew seats. Anything playing
+ * more than one seat passes the index explicitly.
+ */
+
+/** One seat, or undefined if the table has no seat at that index. */
+export function seatAt(
+  state: GameState,
+  seatIndex: number = state.activeSeatIndex,
+): Seat | undefined {
+  return state.seats[seatIndex]
 }
 
-/** The hand the player is acting on, or undefined once the round is over. */
-export function activeHand(state: GameState): Hand | undefined {
-  return state.hands[state.activeHandIndex]
+/** A seat's hands, or an empty list if there is no such seat. */
+export function handsOf(state: GameState, seatIndex = 0): readonly Hand[] {
+  return state.seats[seatIndex]?.hands ?? NO_HANDS
+}
+
+/** Total currently staked across one seat's hands. */
+export function totalStaked(state: GameState, seatIndex = 0): number {
+  return handsOf(state, seatIndex).reduce((sum, hand) => sum + hand.bet, 0)
+}
+
+/** Chips returned to one seat, stakes included. Zero until settlement. */
+export function totalPaid(state: GameState, seatIndex = 0): number {
+  return state.seats[seatIndex]?.totalPayout ?? 0
+}
+
+/** The hand a seat is acting on, or undefined once its round is over. */
+export function activeHand(
+  state: GameState,
+  seatIndex: number = state.activeSeatIndex,
+): Hand | undefined {
+  const seat = state.seats[seatIndex]
+  if (seat === undefined) return undefined
+  return seat.hands[seat.activeHandIndex]
 }
 
 /** Builds an ordered, unshuffled shoe of `deckCount` standard decks. */
@@ -160,33 +200,72 @@ function draw(
   return { card, nextIndex: index + 1 }
 }
 
-/** Creates a fresh game with a shuffled shoe, ready to accept a wager. */
-export function createGame(seed: number): GameState {
-  return createGameFromShoe(createShoe(seed))
+/**
+ * Creates a fresh table with a shuffled shoe, ready to accept wagers.
+ *
+ * @param seed Seed for the shuffle.
+ * @param seatCount How many seats the table has. One is solo play.
+ */
+export function createGame(seed: number, seatCount = 1): GameState {
+  return createGameFromShoe(createShoe(seed), seatCount)
 }
 
 /**
- * Creates a game from an explicit shoe.
+ * Creates a table from an explicit shoe.
  *
  * Exposed so tests can stack known cards instead of hunting for a seed that
- * produces a particular hand. Deal order is player, dealer, player, dealer — so
- * `shoe[0]` and `shoe[2]` reach the player and `shoe[1]` and `shoe[3]` the dealer.
+ * produces a particular hand. Deal order runs across the seats and then the
+ * dealer, twice — so at a one-seat table `shoe[0]` and `shoe[2]` reach the
+ * player and `shoe[1]` and `shoe[3]` the dealer, exactly as before seats
+ * existed.
+ *
+ * @param shoe Cards to deal from, in order.
+ * @param seatCount How many seats the table has. Fixed for the table's life:
+ *   `startNextRound` clears the seats rather than replacing them, so a seat
+ *   index means the same player from one round to the next.
+ * @throws {RangeError} If `seatCount` is not a positive integer.
  */
-export function createGameFromShoe(shoe: readonly Card[]): GameState {
+export function createGameFromShoe(shoe: readonly Card[], seatCount = 1): GameState {
+  if (!Number.isInteger(seatCount) || seatCount < 1) {
+    throw new RangeError(`A table needs at least one seat, received ${seatCount}`)
+  }
+
   return {
     phase: RoundPhase.Betting,
     shoe,
     shoeIndex: 0,
-    hands: [],
-    activeHandIndex: 0,
     dealerHand: [],
-    totalPayout: 0,
+    seats: Array.from({ length: seatCount }, () => EMPTY_SEAT),
+    activeSeatIndex: 0,
   }
 }
 
-/** Returns a copy of `state` with one hand replaced. */
-function withHand(state: GameState, index: number, hand: Hand): GameState {
-  return { ...state, hands: state.hands.map((existing, i) => (i === index ? hand : existing)) }
+/**
+ * Reads a seat that the caller has already established must exist.
+ *
+ * @throws {RangeError} If there is no seat at that index, which means a bug
+ *   rather than a state a player can reach.
+ */
+function requireSeat(state: GameState, seatIndex: number): Seat {
+  const seat = state.seats[seatIndex]
+  if (seat === undefined) {
+    throw new RangeError(`No seat at index ${seatIndex} of ${state.seats.length}`)
+  }
+  return seat
+}
+
+/** Returns a copy of `state` with one seat replaced. */
+function withSeat(state: GameState, seatIndex: number, seat: Seat): GameState {
+  return { ...state, seats: state.seats.map((existing, i) => (i === seatIndex ? seat : existing)) }
+}
+
+/** Returns a copy of `state` with one hand of one seat replaced. */
+function withHand(state: GameState, seatIndex: number, handIndex: number, hand: Hand): GameState {
+  const seat = requireSeat(state, seatIndex)
+  return withSeat(state, seatIndex, {
+    ...seat,
+    hands: seat.hands.map((existing, i) => (i === handIndex ? hand : existing)),
+  })
 }
 
 /** Marks a hand done, optionally with a known result. */
@@ -194,99 +273,136 @@ function finishHand(hand: Hand, outcome: RoundOutcome | null, payout: number): H
   return { ...hand, outcome, payout, isFinished: true }
 }
 
-/** Closes the round, summing what every hand returned. */
+/** Closes the round, summing what every hand returned for the seat that holds it. */
 function settleRound(state: GameState): GameState {
   return {
     ...state,
     phase: RoundPhase.Settled,
-    totalPayout: state.hands.reduce((sum, hand) => sum + hand.payout, 0),
+    seats: state.seats.map((seat) => ({
+      ...seat,
+      totalPayout: seat.hands.reduce((sum, hand) => sum + hand.payout, 0),
+    })),
   }
 }
 
 /**
- * Places a wager and deals the opening four cards.
+ * Takes a wager from every seat and deals the opening cards.
  *
- * If either side has a natural the round settles immediately without a player
- * turn, which is why the returned phase may already be `Settled`.
+ * The deal runs across the seats and then to the dealer, twice, which is the
+ * order a real table uses and the only order in which one shoe can serve
+ * several players. At a one-seat table it reduces to player, dealer, player,
+ * dealer — the same four cards off the same shoe as before seats existed.
  *
- * @param state Game in `RoundPhase.Betting`.
- * @param amount Wager in chips. Must be positive.
- * @throws {Error} If the game is not awaiting a bet or the amount is not positive.
+ * Naturals are settled here, before anyone acts. If that leaves no seat with a
+ * hand to play — which at a one-seat table is any natural at all, and at a full
+ * one is a dealer natural — the returned phase is already `Settled`.
+ *
+ * @param state Table in `RoundPhase.Betting`.
+ * @param bets One wager per seat, in seat order. Each must be positive.
+ * @throws {Error} If the table is not awaiting bets, if the number of wagers
+ *   does not match the number of seats, or if any wager is not positive.
  */
-export function placeBet(state: GameState, amount: number): GameState {
+export function placeBets(state: GameState, bets: readonly number[]): GameState {
   if (state.phase !== RoundPhase.Betting) {
     throw new Error(`Cannot bet during phase "${state.phase}"`)
   }
-  if (!Number.isFinite(amount) || amount <= 0) {
-    throw new Error(`Bet must be a positive number, received ${amount}`)
+  if (bets.length !== state.seats.length) {
+    throw new Error(`Expected ${state.seats.length} wagers, received ${bets.length}`)
+  }
+  for (const amount of bets) {
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error(`Bet must be a positive number, received ${amount}`)
+    }
   }
 
   let index = state.shoeIndex
-  const playerCards: Card[] = []
+  const seatCards: Card[][] = bets.map(() => [])
   const dealerHand: Card[] = []
 
-  // Standard deal order: player, dealer, player, dealer.
-  for (let i = 0; i < 2; i++) {
-    const toPlayer = draw(state.shoe, index)
-    playerCards.push(toPlayer.card)
-    index = toPlayer.nextIndex
+  for (let pass = 0; pass < 2; pass++) {
+    for (const cards of seatCards) {
+      const toSeat = draw(state.shoe, index)
+      cards.push(toSeat.card)
+      index = toSeat.nextIndex
+    }
 
     const toDealer = draw(state.shoe, index)
     dealerHand.push(toDealer.card)
     index = toDealer.nextIndex
   }
 
-  const hand: Hand = {
-    cards: playerCards,
-    bet: amount,
-    outcome: null,
-    payout: 0,
-    fromSplit: false,
-    isFinished: false,
-  }
+  const dealerNatural = isNaturalBlackjack(dealerHand)
+
+  const seats = seatCards.map((cards, seatIndex): Seat => {
+    // Every seat is dealt exactly one hand; splits come later.
+    const bet = bets[seatIndex] ?? 0
+    const hand: Hand = {
+      cards,
+      bet,
+      outcome: null,
+      payout: 0,
+      fromSplit: false,
+      isFinished: false,
+    }
+
+    let settled = hand
+    if (isNaturalBlackjack(cards)) {
+      settled = dealerNatural
+        ? finishHand(hand, RoundOutcome.Push, bet)
+        : finishHand(hand, RoundOutcome.PlayerBlackjack, blackjackPayout(bet))
+    } else if (dealerNatural) {
+      settled = finishHand(hand, RoundOutcome.DealerWin, 0)
+    }
+
+    return { hands: [settled], activeHandIndex: 0, totalPayout: 0 }
+  })
 
   const dealt: GameState = {
     ...state,
     phase: RoundPhase.PlayerTurn,
     shoeIndex: index,
-    hands: [hand],
-    activeHandIndex: 0,
     dealerHand,
-    totalPayout: 0,
+    seats,
+    activeSeatIndex: 0,
   }
 
-  const playerNatural = isNaturalBlackjack(playerCards)
-  const dealerNatural = isNaturalBlackjack(dealerHand)
-
-  if (playerNatural && dealerNatural) {
-    return settleRound(withHand(dealt, 0, finishHand(hand, RoundOutcome.Push, amount)))
-  }
-  if (playerNatural) {
-    return settleRound(
-      withHand(
-        dealt,
-        0,
-        finishHand(hand, RoundOutcome.PlayerBlackjack, blackjackPayout(amount)),
-      ),
-    )
-  }
-  if (dealerNatural) {
-    return settleRound(withHand(dealt, 0, finishHand(hand, RoundOutcome.DealerWin, 0)))
-  }
-
-  return dealt
+  // Hands the deal already decided leave nothing to act on, so the same
+  // advance the player's turn uses settles the round without the dealer
+  // drawing — a dealt natural never buys the dealer another card.
+  return advanceOrResolve(dealt)
 }
 
 /**
- * Plays out the dealer hand and scores every hand still in contention.
+ * Places the one wager at a solo table and deals.
+ *
+ * The single-seat shorthand for `placeBets`, and the only form the store, the
+ * panel and the `?boot=` links use.
+ *
+ * @param state Table in `RoundPhase.Betting`, with exactly one seat.
+ * @param amount Wager in chips. Must be positive.
+ * @throws {Error} If the table has more than one seat, in which case the caller
+ *   has to say what every seat is betting.
+ */
+export function placeBet(state: GameState, amount: number): GameState {
+  if (state.seats.length !== 1) {
+    throw new Error(`placeBet is for a one-seat table; this one has ${state.seats.length}`)
+  }
+  return placeBets(state, [amount])
+}
+
+/**
+ * Plays out the dealer hand and scores every hand still in contention, at
+ * every seat.
  *
  * The dealer draws while below 17 and stands on soft 17 — because `handValue`
  * already returns the best total, a plain `total < 17` test yields
- * stand-on-soft-17. If every player hand has already busted the dealer does not
- * draw at all; there is nothing left to beat.
+ * stand-on-soft-17. If no hand anywhere at the table is still live the dealer
+ * does not draw at all; there is nothing left to beat. That is a table-wide
+ * test rather than a per-seat one, because there is one dealer hand: a seat
+ * that busted out cannot decide whether the seat beside it sees another card.
  */
 function resolveDealer(state: GameState): GameState {
-  const contested = state.hands.some((hand) => hand.outcome === null)
+  const contested = state.seats.some((seat) => seat.hands.some((hand) => hand.outcome === null))
   if (!contested) return settleRound(state)
 
   const dealerHand = [...state.dealerHand]
@@ -301,46 +417,65 @@ function resolveDealer(state: GameState): GameState {
   const dealerTotal = handValue(dealerHand).total
   const dealerBusted = dealerTotal > BLACKJACK
 
-  const hands = state.hands.map((hand) => {
-    if (hand.outcome !== null) return hand // Already busted or settled on the deal.
+  const seats = state.seats.map((seat) => ({
+    ...seat,
+    hands: seat.hands.map((hand) => {
+      if (hand.outcome !== null) return hand // Already busted or settled on the deal.
 
-    const playerTotal = handValue(hand.cards).total
+      const playerTotal = handValue(hand.cards).total
 
-    if (dealerBusted) return finishHand(hand, RoundOutcome.DealerBust, hand.bet * 2)
-    if (playerTotal > dealerTotal) return finishHand(hand, RoundOutcome.PlayerWin, hand.bet * 2)
-    if (playerTotal < dealerTotal) return finishHand(hand, RoundOutcome.DealerWin, 0)
-    return finishHand(hand, RoundOutcome.Push, hand.bet)
-  })
+      if (dealerBusted) return finishHand(hand, RoundOutcome.DealerBust, hand.bet * 2)
+      if (playerTotal > dealerTotal) return finishHand(hand, RoundOutcome.PlayerWin, hand.bet * 2)
+      if (playerTotal < dealerTotal) return finishHand(hand, RoundOutcome.DealerWin, 0)
+      return finishHand(hand, RoundOutcome.Push, hand.bet)
+    }),
+  }))
 
-  return settleRound({ ...state, hands, dealerHand, shoeIndex: index })
+  return settleRound({ ...state, seats, dealerHand, shoeIndex: index })
 }
 
 /**
- * Moves to the next hand awaiting a decision, or hands over to the dealer.
+ * Moves to the next hand awaiting a decision — at this seat if it has one, at
+ * the next seat that does otherwise — or hands over to the dealer.
+ *
+ * Both searches start at the beginning rather than at the current position.
+ * Play only ever moves forwards, so everything behind the active hand is
+ * already finished and the first unfinished one is the right one; searching
+ * from the front is also what makes a split correct, since the two hands it
+ * splices in land at or after the index the player is on.
  */
 function advanceOrResolve(state: GameState): GameState {
-  const nextIndex = state.hands.findIndex((hand) => !hand.isFinished)
-  if (nextIndex === -1) return resolveDealer(state)
-  return { ...state, activeHandIndex: nextIndex }
+  const seatIndex = state.seats.findIndex((seat) => seat.hands.some((hand) => !hand.isFinished))
+  if (seatIndex === -1) return resolveDealer(state)
+
+  const seat = requireSeat(state, seatIndex)
+  const handIndex = seat.hands.findIndex((hand) => !hand.isFinished)
+
+  return {
+    ...withSeat(state, seatIndex, { ...seat, activeHandIndex: handIndex }),
+    activeSeatIndex: seatIndex,
+  }
 }
 
-/** Returns true when the player may double the active hand. */
-export function canDouble(state: GameState): boolean {
-  const hand = activeHand(state)
+/** Returns true when a seat may double the hand it is acting on. */
+export function canDouble(state: GameState, seatIndex: number = state.activeSeatIndex): boolean {
+  const hand = activeHand(state, seatIndex)
   return state.phase === RoundPhase.PlayerTurn && hand !== undefined && hand.cards.length === 2
 }
 
 /**
- * Returns true when the active hand may be split.
+ * Returns true when the hand a seat is acting on may be split.
  *
  * Requires an equal *rank* pair, not merely an equal value — a King and a Queen
  * are both worth ten but are not a pair, and treating them as one surprises
  * anyone who knows the game.
  */
-export function canSplit(state: GameState): boolean {
-  const hand = activeHand(state)
+export function canSplit(state: GameState, seatIndex: number = state.activeSeatIndex): boolean {
+  const hand = activeHand(state, seatIndex)
   if (state.phase !== RoundPhase.PlayerTurn || hand === undefined) return false
-  if (state.hands.length >= MAX_HANDS) return false
+  // The cap is per seat: three betting spots is what the felt in front of one
+  // player holds, not what the table holds.
+  if (handsOf(state, seatIndex).length >= MAX_HANDS) return false
   if (hand.cards.length !== 2) return false
 
   const [first, second] = hand.cards
@@ -362,8 +497,10 @@ export function canSplit(state: GameState): boolean {
  * the active one.
  */
 function splitActiveHand(state: GameState): GameState {
-  const hand = activeHand(state)
-  if (hand === undefined || !canSplit(state)) {
+  const seatIndex = state.activeSeatIndex
+  const seat = requireSeat(state, seatIndex)
+  const hand = activeHand(state, seatIndex)
+  if (hand === undefined || !canSplit(state, seatIndex)) {
     throw new Error('The active hand cannot be split')
   }
 
@@ -390,30 +527,45 @@ function splitActiveHand(state: GameState): GameState {
     isFinished: wereAces,
   })
 
-  const at = state.activeHandIndex
+  const at = seat.activeHandIndex
   const hands = [
-    ...state.hands.slice(0, at),
+    ...seat.hands.slice(0, at),
     makeHand(first, firstDraw.card),
     makeHand(second, secondDraw.card),
-    ...state.hands.slice(at + 1),
+    ...seat.hands.slice(at + 1),
   ]
 
   // The player carries on with the left half of what they just split, unless
-  // aces finished it for them.
-  return advanceOrResolve({ ...state, shoeIndex: index, hands, activeHandIndex: at })
+  // aces finished it for them. Only this seat's hand list grows; the seats
+  // either side of it are untouched, which is the same splice-in-place rule
+  // one level up.
+  const split = withSeat({ ...state, shoeIndex: index }, seatIndex, {
+    ...seat,
+    hands,
+    activeHandIndex: at,
+  })
+
+  return advanceOrResolve(split)
 }
 
 /**
- * Applies a player action to the active hand and advances the round.
+ * Applies a player action to the acting seat's active hand and advances the
+ * round.
  *
- * Standing, busting or doubling finishes the active hand and moves on; once no
- * hand is left awaiting a decision the dealer plays and the round settles.
+ * Standing, busting or doubling finishes the active hand and moves on — to this
+ * seat's next hand, then to the next seat with one; once no hand is left
+ * awaiting a decision anywhere at the table the dealer plays and the round
+ * settles.
+ *
+ * The action always applies to `activeSeatIndex`. Turn order is the engine's to
+ * decide, not the caller's: a seat that could act out of turn would take a card
+ * off the shoe that belongs to somebody else.
  *
  * Doubling and splitting both raise the amount staked. Callers should debit the
  * difference in `totalStaked` across the call rather than tracking either case
  * individually.
  *
- * @throws {Error} If the round is not in the player's turn, if doubling is
+ * @throws {Error} If the round is not in a player's turn, if doubling is
  *   attempted after the opening two cards, or if splitting is not permitted.
  */
 export function act(state: GameState, action: PlayerAction): GameState {
@@ -421,12 +573,13 @@ export function act(state: GameState, action: PlayerAction): GameState {
     throw new Error(`Cannot act during phase "${state.phase}"`)
   }
 
-  const hand = activeHand(state)
+  const seatIndex = state.activeSeatIndex
+  const hand = activeHand(state, seatIndex)
   if (hand === undefined) {
     throw new Error('No hand is awaiting a decision')
   }
 
-  const index = state.activeHandIndex
+  const index = requireSeat(state, seatIndex).activeHandIndex
 
   switch (action) {
     case PlayerAction.Hit: {
@@ -439,7 +592,7 @@ export function act(state: GameState, action: PlayerAction): GameState {
         ? finishHand({ ...hand, cards }, RoundOutcome.PlayerBust, 0)
         : { ...hand, cards }
 
-      const next = withHand(drawn, index, updated)
+      const next = withHand(drawn, seatIndex, index, updated)
       return updated.isFinished ? advanceOrResolve(next) : next
     }
 
@@ -457,14 +610,16 @@ export function act(state: GameState, action: PlayerAction): GameState {
         ? finishHand(doubled, RoundOutcome.PlayerBust, 0)
         : finishHand(doubled, null, 0)
 
-      return advanceOrResolve(withHand({ ...state, shoeIndex: nextIndex }, index, updated))
+      return advanceOrResolve(
+        withHand({ ...state, shoeIndex: nextIndex }, seatIndex, index, updated),
+      )
     }
 
     case PlayerAction.Split:
       return splitActiveHand(state)
 
     case PlayerAction.Stand:
-      return advanceOrResolve(withHand(state, index, finishHand(hand, null, 0)))
+      return advanceOrResolve(withHand(state, seatIndex, index, finishHand(hand, null, 0)))
   }
 }
 
@@ -487,9 +642,10 @@ export function startNextRound(state: GameState, reshuffleSeed: number): GameSta
     phase: RoundPhase.Betting,
     shoe: needsReshuffle ? createShoe(reshuffleSeed) : state.shoe,
     shoeIndex: needsReshuffle ? 0 : state.shoeIndex,
-    hands: [],
-    activeHandIndex: 0,
     dealerHand: [],
-    totalPayout: 0,
+    // The seats are cleared, not rebuilt: a seat index has to mean the same
+    // player from one round to the next.
+    seats: state.seats.map(() => EMPTY_SEAT),
+    activeSeatIndex: 0,
   }
 }

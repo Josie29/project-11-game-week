@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { handsOf, seatAt } from '../../games/blackjack/engine'
 import { RoundPhase } from '../../games/blackjack/types'
 import { CatmullRomCurve3, ExtrudeGeometry, Shape, TubeGeometry, Vector3 } from 'three'
 import { ChipPhase, useBlackjackStore } from '../../store/useBlackjackStore'
@@ -118,6 +119,14 @@ export function BlackjackTable() {
   /** The round is being cleared away: chips and cards are both leaving. */
   const isClearing = chipPhase === ChipPhase.Settling
 
+  /*
+   * One betting spot's worth of felt, which is the first seat. `handAnchorX`
+   * spreads a split across the space in front of a single player, so a second
+   * seat needs its own row rather than another entry in this one.
+   */
+  const hands = handsOf(game)
+  const activeHandIndex = seatAt(game, 0)?.activeHandIndex ?? 0
+
   // Empties the shoe and fills the discard tray as the shoe is played down,
   // and resets itself when `startNextRound` reshuffles at penetration.
   const shoeRemaining =
@@ -208,9 +217,9 @@ export function BlackjackTable() {
         />
       ))}
 
-      {game.hands.map((hand, handIndex) => {
-        const anchorX = handAnchorX(handIndex, game.hands.length)
-        const isActive = handIndex === game.activeHandIndex && game.phase === RoundPhase.PlayerTurn
+      {hands.map((hand, handIndex) => {
+        const anchorX = handAnchorX(handIndex, hands.length)
+        const isActive = handIndex === activeHandIndex && game.phase === RoundPhase.PlayerTurn
 
         // Winnings above the returned stake. A push returns the stake and pays
         // nothing extra, so it correctly shows no payout pile.
@@ -266,7 +275,7 @@ export function BlackjackTable() {
             )}
 
             {/* Marks which hand the player is acting on once there is a choice. */}
-            {isActive && game.hands.length > 1 && (
+            {isActive && hands.length > 1 && (
               <mesh
                 position={[anchorX, TABLE_TOP_Y + 0.014, CHIP_ROW_Z]}
                 rotation={[-Math.PI / 2, 0, 0]}

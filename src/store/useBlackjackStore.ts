@@ -3,8 +3,10 @@ import {
   act,
   activeHand,
   createGame,
+  handsOf,
   placeBet,
   startNextRound,
+  totalPaid,
   totalStaked,
 } from '../games/blackjack/engine'
 import { type GameState, PlayerAction, RoundPhase } from '../games/blackjack/types'
@@ -175,7 +177,7 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
             // The dealer pays only once the hand is finished. Paying at
             // settlement put chips on the felt while they were still turning
             // cards over, which reads as the result being decided in advance.
-            if (settled.totalPayout > 0) {
+            if (totalPaid(settled) > 0) {
               set({
                 chipPhase: ChipPhase.Paying,
                 dealerGesture: Gesture.DealerPay,
@@ -211,7 +213,7 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
     set({ dealerCardsShown: 2, holeCardUp: false, revealComplete: false })
     startReveal(next)
 
-    if (next.totalPayout <= 0) return
+    if (totalPaid(next) <= 0) return
 
     /*
      * The stake goes back whole and only the winnings meet the marker. Passing
@@ -222,7 +224,7 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
      */
     const credited = useGameStore
       .getState()
-      .creditWinnings(next.totalPayout, totalStaked(next))
+      .creditWinnings(totalPaid(next), totalStaked(next))
 
     // Held back from the stash until the chips are raked in. The chips
     // themselves are placed by the dealer at the end of the reveal, not here.
@@ -334,8 +336,8 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
 
       // Whoever is owed something reaches for it. With a split these can both
       // happen at once — one hand won, the other did not.
-      const anyWon = game.hands.some((hand) => hand.payout > 0)
-      const anyLost = game.hands.some((hand) => hand.payout <= 0)
+      const anyWon = handsOf(game).some((hand) => hand.payout > 0)
+      const anyLost = handsOf(game).some((hand) => hand.payout <= 0)
       const now = performance.now()
 
       set({

@@ -1,4 +1,13 @@
-import { activeHand, canDouble, canSplit, handValue, totalStaked } from '../games/blackjack/engine'
+import {
+  activeHand,
+  canDouble,
+  canSplit,
+  handValue,
+  handsOf,
+  seatAt,
+  totalPaid,
+  totalStaked,
+} from '../games/blackjack/engine'
 import { type Hand, PlayerAction, RoundOutcome, RoundPhase } from '../games/blackjack/types'
 import { useBlackjackStore } from '../store/useBlackjackStore'
 import { useGameStore } from '../store/useGameStore'
@@ -109,9 +118,17 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
   /** The round is over *and* the dealer has finished showing their hand. */
   const isResolved = isSettled && revealComplete
 
+  /*
+   * This panel is one player's view of the table, so everything below reads a
+   * single seat. That seat is the first one while play is solo; a second player
+   * would bring their own index rather than a second panel.
+   */
+  const hands = handsOf(game)
+  const activeHandIndex = seatAt(game, 0)?.activeHandIndex ?? 0
+
   const staked = totalStaked(game)
   /** What the round did to the bankroll, stake excluded. See `netLabel`. */
-  const net = game.totalPayout - staked
+  const net = totalPaid(game) - staked
 
   const current = activeHand(game)
   const canDoubleNow = isPlayerTurn && canDouble(game) && bankroll >= (current?.bet ?? 0)
@@ -151,22 +168,22 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
           </span>
         </span>
 
-        {game.hands.length === 0 && (
+        {hands.length === 0 && (
           <span className="score">
             <span className="score__label">You</span>
             <span className="score__value">—</span>
           </span>
         )}
 
-        {game.hands.map((hand, index) => {
+        {hands.map((hand, index) => {
           const score = handValue(hand.cards)
-          const isActive = index === game.activeHandIndex && isPlayerTurn
-          const label = game.hands.length > 1 ? `Hand ${index + 1}` : 'You'
+          const isActive = index === activeHandIndex && isPlayerTurn
+          const label = hands.length > 1 ? `Hand ${index + 1}` : 'You'
 
           return (
             <span
               key={index}
-              className={`score ${isActive && game.hands.length > 1 ? 'score--active' : ''}`}
+              className={`score ${isActive && hands.length > 1 ? 'score--active' : ''}`}
             >
               <span className="score__label">{label}</span>
               <span className="score__value">
@@ -179,21 +196,21 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
         })}
       </div>
 
-      {isResolved && game.hands.length === 1 && game.hands[0]?.outcome && (
+      {isResolved && hands.length === 1 && hands[0]?.outcome && (
         <p
           className={`table-ui__outcome ${
-            WINNING_OUTCOMES.has(game.hands[0].outcome) ? 'table-ui__outcome--win' : ''
+            WINNING_OUTCOMES.has(hands[0].outcome) ? 'table-ui__outcome--win' : ''
           }`}
         >
-          {OUTCOME_LABEL[game.hands[0].outcome]}
+          {OUTCOME_LABEL[hands[0].outcome]}
           {/* A push is already named by the label; "even" beside it just nags. */}
           {net !== 0 && <span className="table-ui__payout">{netLabel(net)}</span>}
         </p>
       )}
 
-      {isResolved && game.hands.length > 1 && (
+      {isResolved && hands.length > 1 && (
         <p className={`table-ui__outcome ${net > 0 ? 'table-ui__outcome--win' : ''}`}>
-          {handsSummary(game.hands)}
+          {handsSummary(hands)}
           <span className="table-ui__payout">{netLabel(net)}</span>
         </p>
       )}
@@ -245,9 +262,9 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
               * themselves into a split they cannot afford.
               */}
             <span className="table-ui__prompt">
-              {game.hands.length > 1
-                ? `$${current?.bet ?? 0} on hand ${game.activeHandIndex + 1} of ${
-                    game.hands.length
+              {hands.length > 1
+                ? `$${current?.bet ?? 0} on hand ${activeHandIndex + 1} of ${
+                    hands.length
                   } · $${staked} in play`
                 : `$${current?.bet ?? 0} in play`}
             </span>
