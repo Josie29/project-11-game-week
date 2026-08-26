@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   betChipSpot,
   CrapsBet,
+  hitTestCrapsFelt,
   PLACE_BETS,
   POINT_BOX_RECTS,
   POINT_NUMBERS,
@@ -19,7 +20,9 @@ import {
   DRINK_HOLDER_OFFSET,
   DRINK_HOLDER_RADIUS,
   DRINK_HOLDERS,
+  feltShapeUv,
   feltToWorld,
+  feltUvToLayout,
   INNER_CORNER_RADIUS,
   isInCrapsPit,
   isOnCrapsRail,
@@ -293,5 +296,50 @@ describe('the outlines the geometry is swept along', () => {
       expected,
       2,
     )
+  })
+})
+
+describe('reading a click off the felt', () => {
+  /*
+   * The closed loop. A bet's chips are drawn at `betChipSpot`; a click landing
+   * on those chips has to come back as the same bet.
+   *
+   * Three transforms sit between the two — the geometry's UVs are shape
+   * coordinates in metres, the material rescales them in the shader, and the
+   * texture's flipY runs the layout's v against the shape's. Each is invisible
+   * on its own: get one wrong and the felt answers confidently about a
+   * different bet, which looks like a mis-drawn table rather than a mis-read
+   * click. This is the only thing that catches it.
+   */
+  it('brings a click on a bet back as that bet', () => {
+    for (const bet of Object.values(CrapsBet)) {
+      const spot = betChipSpot(bet)
+      const [x, , z] = feltToWorld(spot.u, spot.v)
+
+      // Exactly what a raycast onto the felt reports.
+      const raw = feltShapeUv(x, z)
+      const layout = feltUvToLayout(raw.u, raw.v)
+
+      expect(layout.u, `${bet} u`).toBeCloseTo(spot.u)
+      expect(layout.v, `${bet} v`).toBeCloseTo(spot.v)
+      expect(hitTestCrapsFelt(layout.u, layout.v), bet).toBe(bet)
+    }
+  })
+
+  /*
+   * And the direction is right, not merely self-consistent. A v-flip that was
+   * missed cancels out in a round trip and only shows as the near half of the
+   * table answering for the far half — so the ends are pinned to the edges they
+   * belong to.
+   */
+  it('puts the shooter at v = 1 and the boxman at v = 0', () => {
+    const near = feltShapeUv(0, PIT_HALF_DEPTH)
+    expect(feltUvToLayout(near.u, near.v).v).toBeCloseTo(1)
+
+    const far = feltShapeUv(0, -PIT_HALF_DEPTH)
+    expect(feltUvToLayout(far.u, far.v).v).toBeCloseTo(0)
+
+    const right = feltShapeUv(PIT_HALF_WIDTH, 0)
+    expect(feltUvToLayout(right.u, right.v).u).toBeCloseTo(1)
   })
 })

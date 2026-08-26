@@ -1,13 +1,20 @@
 import { CuboidCollider, Physics, RigidBody } from '@react-three/rapier'
-import { useMemo } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 import { DoubleSide, ExtrudeGeometry, Shape } from 'three'
-import { totalCrapsStake } from '../../games/craps/engine'
+import { chipStake, totalCrapsStake } from '../../games/craps/engine'
 import { useCrapsStore } from '../../store/useCrapsStore'
+import { useGameStore } from '../../store/useGameStore'
+import { heldChipValue } from '../chipLayout'
 import { buildBandGeometry, buildRingGeometry } from '../bandGeometry'
 import { ChipStack } from './ChipStack'
 import { CrapsDice } from './CrapsDice'
-import { betChipSpot, CrapsBet, pointPuckSpot } from '../crapsFeltLayout'
-import { getCrapsFeltTexture } from '../crapsFeltTexture'
+import {
+  betChipSpot,
+  CrapsBet,
+  hitTestCrapsFelt,
+  pointPuckSpot,
+} from '../crapsFeltLayout'
+import { getCrapsFeltTexture, setCrapsFeltHighlight } from '../crapsFeltTexture'
 import {
   APRON_BOTTOM_Y,
   BASE_MOULDING_BOTTOM_Y,
@@ -16,7 +23,9 @@ import {
   CHIP_CHANNEL_WIDTH,
   DRINK_HOLDER_RADIUS,
   DRINK_HOLDERS,
+  feltShapeUv,
   feltToWorld,
+  feltUvToLayout,
   INNER_CORNER_RADIUS,
   OUTER_HALF_DEPTH,
   OUTER_HALF_WIDTH,
@@ -237,10 +246,41 @@ function TableRail() {
   )
 }
 
+/**
+ * How far the pointer may travel between press and release and still be a bet.
+ *
+ * The table camera orbits on drag, so every click is also the start of a look.
+ * Without a threshold, swinging the view round to read the far numbers drops a
+ * chip on whatever happened to be under the cursor when the button came up.
+ */
+const CLICK_SLOP_PX = 5
+
 /** The craps table: felt, rails, chips on the bets, and the dice in the pit. */
 export function CrapsTable() {
   const game = useCrapsStore((state) => state.game)
   const rollId = useCrapsStore((state) => state.rollId)
+  const isRolling = useCrapsStore((state) => state.isRolling)
+  const wager = useCrapsStore((state) => state.wager)
+  const pickedChip = useCrapsStore((state) => state.heldChip)
+  const bankroll = useGameStore((state) => state.bankroll)
+
+  /** Where the pointer went down, so a drag can be told from a click. */
+  const pressedAt = useRef<{ x: number; y: number } | null>(null)
+
+  /**
+   * The bet under a raycast on the felt.
+   *
+   * The UV a raycast reports is the geometry's own attribute — shape
+   * coordinates in metres — so it goes through `feltUvToLayout` before the hit
+   * test, which is where the material's rescaling and the texture's flipY are
+   * undone. Handing the raw value straight over answers about somewhere else on
+   * the table.
+   */
+  const betUnder = useCallback((uv: { x: number; y: number } | undefined) => {
+    if (!uv) return null
+    const layout = feltUvToLayout(uv.x, uv.y)
+    return hitTestCrapsFelt(layout.u, layout.v)
+  }, [])
 
   const felt = useMemo(() => {
     const texture = getCrapsFeltTexture()
@@ -258,11 +298,11 @@ export function CrapsTable() {
   const feltGeometry = useMemo(() => {
     const shape = new Shape()
     pitOutline(CORNER_SEGMENTS).forEach((point, index) => {
-      // The shape is laid in the x/y plane and rotated flat, so the outline's z
-      // becomes y here. Negated, so +z stays the shooter's edge after the
-      // rotation rather than mirroring the printed layout.
-      if (index === 0) shape.moveTo(point.x, -point.z)
-      else shape.lineTo(point.x, -point.z)
+      // Through `feltShapeUv`, which names this convention, so the geometry and
+      // anything reading a raycast off it cannot drift apart.
+      const { u, v } = feltShapeUv(point.x, point.z)
+      if (index === 0) shape.moveTo(u, v)
+      else shape.lineTo(u, v)
     })
     shape.closePath()
     return new ExtrudeGeometry(shape, { depth: 0.1, bevelEnabled: false })
@@ -299,12 +339,39 @@ export function CrapsTable() {
 
   return (
     <group>
-      {/* The felt bed, filling the pit floor. */}
+      {/* The felt bed, filling the pit floor — and the betting surface. Every
+          marking on it is already exactly where its bet is, which is what the
+          hit test in `crapsFeltLayout` was written for. */}
       <mesh
         geometry={feltGeometry}
         position={[0, TABLE_TOP_Y - 0.1, 0]}
         rotation={[-Math.PI / 2, 0, 0]}
         receiveShadow
+        onPointerMove={(event) => {
+          event.stopPropagation()
+          setCrapsFeltHighlight(isRolling ? null : betUnder(event.uv))
+        }}
+        onPointerOut={() => setCrapsFeltHighlight(null)}
+        onPointerDown={(event) => {
+          pressedAt.current = { x: event.clientX, y: event.clientY }
+        }}
+        onPointerUp={(event) => {
+          const pressed = pressedAt.current
+          pressedAt.current = null
+          if (!pressed || isRolling) return
+
+          // A look, not a bet.
+          const travelled = Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y)
+          if (travelled > CLICK_SLOP_PX) return
+
+          const bet = betUnder(event.uv)
+          if (!bet) return
+
+          // The same call the bar's cells make, through the same guard, so the
+          // felt cannot lay a bet the panel would have refused.
+          const stake = chipStake(game, bet, heldChipValue(pickedChip, bankroll))
+          if (stake > 0) wager(bet, stake)
+        }}
       >
         <meshStandardMaterial attach="material-0" map={felt} roughness={0.96} />
         <meshStandardMaterial attach="material-1" color="#0a2a1e" roughness={0.9} />

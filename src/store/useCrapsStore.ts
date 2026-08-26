@@ -25,12 +25,24 @@ import { useGameStore } from './useGameStore'
  */
 const DICE_SETTLE_MS = 2100
 
+/** The chip in hand on walking up: a green quarter, the table's middle stake. */
+const DEFAULT_CHIP = 25
+
 interface CrapsStore {
   game: CrapsState
   /** Increments on every throw; the dice watch this to restart their tumble. */
   rollId: number
   /** True while the dice are in the air and the result is withheld. */
   isRolling: boolean
+
+  /**
+   * The denomination the player has picked up.
+   *
+   * In the store rather than the panel because two things bet with it now: the
+   * rack in the bar, and the felt itself.
+   */
+  heldChip: number
+  holdChip: (value: number) => void
 
   wager: (bet: CrapsBet, amount: number) => void
   /** Calls a bet down and hands the stake back. */
@@ -62,6 +74,7 @@ export const useCrapsStore = create<CrapsStore>()((set, get) => {
   return {
     game: createCrapsGame(freshSeed()),
     rollId: 0,
+    heldChip: DEFAULT_CHIP,
     isRolling: false,
 
     wager: (bet, amount) => {
@@ -76,6 +89,8 @@ export const useCrapsStore = create<CrapsStore>()((set, get) => {
       useGameStore.getState().adjustBankroll(-amount)
       set({ game: placeCrapsBet(game, bet, amount) })
     },
+
+    holdChip: (value) => set({ heldChip: value }),
 
     takeDown: (bet) => {
       const { game, isRolling } = get()

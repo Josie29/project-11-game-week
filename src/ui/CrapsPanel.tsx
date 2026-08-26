@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import {
   canTakeDownCrapsBet,
   chipStake,
@@ -8,7 +8,7 @@ import {
   PLACE_UNITS,
   totalCrapsPayout,
 } from '../games/craps/engine'
-import { CHIP_DENOMINATIONS } from '../scenes/chipLayout'
+import { CHIP_DENOMINATIONS, heldChipValue } from '../scenes/chipLayout'
 import { type CrapsState, CrapsPhase, RollOutcome } from '../games/craps/types'
 import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
@@ -28,9 +28,6 @@ import { getVenue, type VenueId } from '../world/venues'
  * payout is broken into chips. A rack is read the other way.
  */
 const RACK = [...CHIP_DENOMINATIONS].reverse()
-
-/** The chip in hand when the player walks up, if they can afford it. */
-const DEFAULT_CHIP = 25
 
 /**
  * The bar's two groups, split the way the felt splits them: the line bets run
@@ -148,6 +145,8 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
   const isRolling = useCrapsStore((state) => state.isRolling)
   const wager = useCrapsStore((state) => state.wager)
   const takeDown = useCrapsStore((state) => state.takeDown)
+  const pickedChip = useCrapsStore((state) => state.heldChip)
+  const holdChip = useCrapsStore((state) => state.holdChip)
   const throwDice = useCrapsStore((state) => state.throwDice)
   const resetTable = useCrapsStore((state) => state.reset)
 
@@ -166,19 +165,11 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
   /** No point yet, so the line bets are live and the numbers are not. */
   const comeOut = game.phase === CrapsPhase.ComeOut
 
-  const [pickedChip, setPickedChip] = useState(DEFAULT_CHIP)
-
   /*
-   * The chip actually in hand. Derived rather than corrected in an effect: a
-   * bet can spend the bankroll below the chip the player last chose, and an
-   * effect that reached back to fix the selection would render one frame with
-   * a chip they cannot afford still highlighted.
+   * The chip actually in hand. Derived rather than corrected in an effect, and
+   * derived in one shared place, because the felt bets with the same chip.
    */
-  const affordable = RACK.filter((chip) => chip.value <= bankroll)
-  const chip =
-    affordable.some((entry) => entry.value === pickedChip)
-      ? pickedChip
-      : (affordable[affordable.length - 1]?.value ?? 0)
+  const chip = heldChipValue(pickedChip, bankroll)
 
   /*
    * Craps has never had a broke state — it just left the player looking at
@@ -211,7 +202,7 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
       const slot = Number(event.key)
       if (Number.isInteger(slot) && slot >= 1 && slot <= RACK.length) {
         const picked = RACK[slot - 1]
-        if (picked && picked.value <= bankroll) setPickedChip(picked.value)
+        if (picked && picked.value <= bankroll) holdChip(picked.value)
       }
     }
 
@@ -297,7 +288,7 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
             style={{ background: denomination.color, borderColor: denomination.edge }}
             disabled={denomination.value > bankroll}
             aria-pressed={denomination.value === chip}
-            onClick={() => setPickedChip(denomination.value)}
+            onClick={() => holdChip(denomination.value)}
             title={`$${denomination.value} chip`}
           >
             {denomination.value}

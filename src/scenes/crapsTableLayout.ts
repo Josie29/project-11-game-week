@@ -179,6 +179,43 @@ export function feltToWorld(u: number, v: number): [number, number, number] {
 }
 
 /**
+ * The cap UV `ExtrudeGeometry` writes for a point on the felt.
+ *
+ * The felt is an extruded shape laid in the x/y plane and rotated flat, so its
+ * cap UVs are the raw shape coordinates — world units, not 0..1 — with the
+ * outline's z negated so +z stays the shooter's edge after the rotation. The
+ * material rescales them with `repeat` and `offset` rather than the attribute
+ * being rewritten.
+ *
+ * Named here so the mesh and anything reading a raycast off it share one
+ * definition. They cannot drift: `CrapsTable` builds the shape with this.
+ */
+export function feltShapeUv(x: number, z: number): { u: number; v: number } {
+  return { u: x, v: -z }
+}
+
+/**
+ * Turns a raycast's UV on the felt into a `crapsFeltLayout` coordinate.
+ *
+ * Three transforms sit between the two and every one of them is easy to miss.
+ * The UV a raycast reports is the geometry's own attribute — shape coordinates
+ * in metres, not the 0..1 the layout speaks. The material's `repeat`/`offset`
+ * do that rescaling in the shader, so they have to be repeated here. And the
+ * felt texture carries the default `flipY`, which turns the canvas upside down
+ * against the surface, so the layout's v runs against the shape's.
+ *
+ * Feed a raw UV to `hitTestCrapsFelt` and it answers confidently about
+ * somewhere else on the table — which is why the round trip from a bet's own
+ * chip spot back to that bet is asserted rather than eyeballed.
+ */
+export function feltUvToLayout(u: number, v: number): { u: number; v: number } {
+  return {
+    u: u / (PIT_HALF_WIDTH * 2) + 0.5,
+    v: 0.5 - v / (PIT_HALF_DEPTH * 2),
+  }
+}
+
+/**
  * Whether a point lies inside a rounded rectangle centred on the origin.
  *
  * @param halfWidth Half-extent along x, before the margin is applied.

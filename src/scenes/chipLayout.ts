@@ -19,6 +19,24 @@ export const CHIP_DENOMINATIONS: readonly ChipDenomination[] = [
   { value: 5, color: '#cc2440', edge: '#f6dade' },
 ]
 
+/**
+ * The chip actually in hand, given the one the player picked.
+ *
+ * A bet can spend the bankroll below the denomination last chosen, and the
+ * choice has to survive that without a correction step: two views read this —
+ * the rack in the bar and the felt itself — and an effect reaching back to fix
+ * the stored pick would let them disagree for a frame.
+ *
+ * @returns The picked value if it is still affordable, otherwise the largest
+ *   that is, or 0 when nothing on the rack is.
+ */
+export function heldChipValue(picked: number, bankroll: number): number {
+  if (picked <= bankroll) return picked
+
+  const affordable = CHIP_DENOMINATIONS.filter((chip) => chip.value <= bankroll)
+  return affordable[0]?.value ?? 0
+}
+
 /** Chips per column before the stack spills into the next one. */
 export const MAX_CHIPS_PER_COLUMN = 5
 

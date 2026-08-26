@@ -42,8 +42,14 @@ const FELT_EDGE = '#062a1e'
 
 const GOLD = '#f5cf6e'
 const GOLD_SOFT = 'rgba(245, 207, 110, 0.68)'
-const GOLD_FAINT = 'rgba(245, 207, 110, 0.1)'
-const HIGHLIGHT_FILL = 'rgba(245, 207, 110, 0.22)'
+const GOLD_FAINT = 'rgba(245, 207, 110, 0.16)'
+/*
+ * Faint. The felt is lit by a pendant and then bloomed, so a fill that looks
+ * like a gentle tint on the canvas arrives on screen as a slab of light with
+ * the print washed out of it — and the print is what the player is hovering to
+ * read. An outline carries "this one" on its own.
+ */
+const HIGHLIGHT_FILL = 'rgba(245, 207, 110, 0.16)'
 
 /** Rule work on a real layout is white; the print inside it is gold or red. */
 const RULE = 'rgba(238, 244, 240, 0.9)'
@@ -396,8 +402,10 @@ function drawFelt(ctx: CanvasRenderingContext2D): void {
     const { x, y, width, height } = toPixels(rect)
     ctx.fillStyle = HIGHLIGHT_FILL
     ctx.fillRect(x, y, width, height)
+    // The outline does the work, not the fill: a bright edge says "this one"
+    // without putting light over the print the player is hovering to read.
     ctx.strokeStyle = GOLD
-    ctx.lineWidth = HEAVY_RULE_WIDTH * 2
+    ctx.lineWidth = HEAVY_RULE_WIDTH + 4
     ctx.strokeRect(x, y, width, height)
   }
 }
