@@ -33,8 +33,15 @@ interface SessionStore {
   reset: () => void
 }
 
-/** Coerces anything at all into a `PlayMode`, defaulting to playing alone. */
-function sanitizeMode(value: unknown): PlayMode {
+/**
+ * Coerces anything at all into a `PlayMode`, defaulting to playing alone.
+ *
+ * Exported for its test rather than for callers. It fails closed on purpose:
+ * anything unrecognised is `Single`, so the worst a hand-edited save can do is
+ * decline to open a socket. The other direction would open one on a player who
+ * never asked for it.
+ */
+export function sanitizeMode(value: unknown): PlayMode {
   return value === PlayMode.Multiplayer ? PlayMode.Multiplayer : PlayMode.Single
 }
 
