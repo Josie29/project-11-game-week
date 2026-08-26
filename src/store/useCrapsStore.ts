@@ -3,8 +3,9 @@ import {
   canPlaceCrapsBet,
   canTakeDownCrapsBet,
   createCrapsGame,
+  drawDiceRoll,
   placeCrapsBet,
-  rollCraps,
+  settleCrapsRoll,
   stakeReturnedByRoll,
   takeDownCrapsBet,
   totalCrapsPayout,
@@ -114,9 +115,18 @@ export const useCrapsStore = create<CrapsStore>()((set, get) => {
       const { game, isRolling } = get()
       if (isRolling) return
 
-      // The engine resolves immediately; the store simply withholds the result
-      // until the dice have finished tumbling.
-      const next = rollCraps(game)
+      /*
+       * The store throws the dice; the engine only settles them. Solo, that
+       * means drawing from the table's own seeded generator here and carrying
+       * the advanced state forward with the roll — identical numbers to before,
+       * and still reproducible from a seed. Shared craps changes this line and
+       * nothing below it: the roll arrives from the room instead.
+       *
+       * The engine resolves immediately either way; the store simply withholds
+       * the result until the dice have finished tumbling.
+       */
+      const { roll, rngState } = drawDiceRoll(game.rngState)
+      const next = settleCrapsRoll({ ...game, rngState }, roll)
       cancelSettle()
 
       set({ game: next, rollId: get().rollId + 1, isRolling: true })

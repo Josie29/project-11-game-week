@@ -23,6 +23,16 @@ export enum RollOutcome {
   NoDecision = 'noDecision',
 }
 
+/**
+ * Two six-sided dice and their total.
+ *
+ * An input to the engine rather than something only it produces: `rollCraps`
+ * draws one from the table's own generator, but `settleCrapsRoll` will settle
+ * any roll it is given, which is how a roll thrown by a shared room reaches the
+ * same rules. `total` is carried rather than derived because the dice and the
+ * number the table settles on must be the same thing everywhere they are read —
+ * and checked on the way in, because a roll can now arrive off a socket.
+ */
 export interface DiceRoll {
   readonly first: number
   readonly second: number
@@ -46,7 +56,12 @@ export interface CrapsState {
    * a pass line while a point is set — pays nothing and stays staked.
    */
   readonly lastPayouts: CrapsBets
-  /** Carried mulberry32 state, so a seed replays a whole session of rolls. */
+  /**
+   * Carried mulberry32 state, so a seed replays a whole session of rolls.
+   *
+   * The solo table's source of dice. A roll handed in from outside never
+   * touches it, so nothing a shared room throws can shift a seeded replay.
+   */
   readonly rngState: number
   /** Rolls made since the current shooter took the dice. */
   readonly rollCount: number
