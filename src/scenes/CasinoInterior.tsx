@@ -68,7 +68,15 @@ const LOCAL_TARGETS: Record<TableId, readonly [number, number, number]> = {
  * the controls.
  */
 const DEFAULT_YAW = -0.2925
-const DEFAULT_PITCH = 0.52
+/*
+ * Raised with the figure.
+ *
+ * 0.52 framed a 24cm head at the near edge of the shot. The stylised head is a
+ * third bigger, and at the old pitch the player's own crown sat across the
+ * dealer/player totals in the HUD — the one line of text the whole hand is
+ * about. A few degrees of lift clears it without changing what the shot is.
+ */
+const DEFAULT_PITCH = 0.58
 const DEFAULT_DISTANCE = 5.8
 /*
  * Further back and less steep than blackjack's. The craps table is over five

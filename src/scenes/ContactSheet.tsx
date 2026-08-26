@@ -41,7 +41,7 @@ const FOV = 42
 const ASPECT = 16 / 9
 
 /** Roughly mid-chest on a 1.8-tall figure: what the camera is aimed at. */
-const EYELINE = 0.95
+const EYELINE = 1.05
 
 /**
  * How far back the camera has to sit to fit the whole block of figures.
@@ -95,7 +95,7 @@ export function ContactSheet({ kind, base }: ContactSheetProps) {
         makeDefault
         // Rises with the number of rows, so a back row clears the heads of the
         // one in front instead of hiding behind its shoulders.
-        position={[0, EYELINE + 0.85 + (rows - 1) * 0.8, distance]}
+        position={[0, EYELINE + 0.45 + (rows - 1) * 0.75, distance]}
         fov={FOV}
       />
 

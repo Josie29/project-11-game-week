@@ -283,8 +283,11 @@ export function CasinoCharacter({
       // A bought jacket or gown covers the starter garment's shirt and tie.
       coveredByOuterwear: worn.outerwear !== null,
       bareArms: worn.outerwear?.shape === ItemShape.Gown,
+      // A solid lens is over them; drawing eyes behind it only invites the two
+      // to fight for the same millimetre of face.
+      eyesCovered: worn.eyes !== null,
     }),
-    [resolved.garment, colors.hasSkirt, seated, staff, mannequin, worn.outerwear],
+    [resolved.garment, colors.hasSkirt, seated, staff, mannequin, worn.outerwear, worn.eyes],
   )
 
   const palette = useMemo(() => figurePalette(resolved, mannequin), [resolved, mannequin])
@@ -350,7 +353,7 @@ export function CasinoCharacter({
           )}
 
           <group name={`hand:${side === 1 ? 'right' : 'left'}`} position={[0, -body.forearm, 0]}>
-            <Parts parts={handParts(side)} palette={palette} namePrefix={`hand${side}`} />
+            <Parts parts={handParts(side, body)} palette={palette} namePrefix={`hand${side}`} />
 
             {isLeft && worn.finger && (
               // Nudged onto a finger rather than the palm's centre line.

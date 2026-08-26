@@ -21,9 +21,12 @@
  */
 
 import { HairStyle } from './appearance'
+import { faceParts, faceSurfaceZ } from './face'
 import {
   ColorRole,
+  containsPoint,
   Finish,
+  partHalfExtents,
   PartShape,
   type Bounds,
   type Part,
@@ -63,73 +66,75 @@ function strand(
 }
 
 /**
- * The shell every style is built on.
+ * The shell every style is built on: the skull, enlarged and pushed back.
  *
- * An ellipsoid rather than the box it used to be. The box was the single
- * biggest reason the head read as blocky: it met the skull's flat faces at
- * four hard corners, and at the millimetre offsets it was authored at, those
- * corners strobed against the skull as the figure turned. A rounded shell sunk
- * well into the skull has no coincident face with it at all.
+ * This replaces a cap and a separate fringe, and the merge is the point. Two
+ * shells crossing the skull at two shallow angles produced a hairline that was
+ * a visible sawtooth on all eight styles — the boundary between two tessellated
+ * surfaces meeting nearly tangentially moves a long way for a very small error,
+ * and no segment count made it clean.
+ *
+ * One shell has one boundary, and where that boundary falls is arithmetic
+ * rather than a guess. Enlarge the skull by `thickness` and push it back by
+ * exactly the amount that makes its front surface break the skull's at the
+ * hairline: everything above the hairline is hair, everything below is
+ * forehead, and the curve between them runs lower at the temples than at the
+ * centre, which is the shape a hairline actually has.
+ *
+ * A fringe, in this arrangement, is simply a lower hairline. That is also what
+ * a fringe is.
  *
  * @param body The head this sits on.
  * @param thickness How far the shell stands proud of the skull, as a fraction
- *   of head width. A buzz is barely there; a bob has real volume.
- * @param lift How far up the shell rides, as a fraction of head height.
+ *   of the skull. A buzz is barely there; an afro has real volume.
+ * @param lift How far up the shell rides, in half-head-heights — where the
+ *   volume sits.
+ * @param hairline Where the shell breaks the surface at the centre line, in
+ *   half-head-heights above the head's centre. Must clear the brow;
+ *   `partsOverFace` holds every style to it.
  */
-function cap(body: BodyProportions, thickness: number, lift = 0.1): Part {
+function cap(body: BodyProportions, thickness: number, lift: number, hairline: number): Part {
   const { headWidth: hw, headHeight: hh, headDepth: hd } = body
 
+  const radius = 1 + thickness
   /*
-   * Pushed back off the face rather than centred on the skull.
-   *
-   * A shell centred on the head reaches the face plane, and at a buzz's
-   * thickness it landed a single millimetre proud of it — which the surface
-   * check caught on its first run. Hair stops at the hairline; the styles that
-   * come forward of it do so with a fringe, which is a separate piece.
+   * Two ellipsoids sharing a shape and differing only in size and position
+   * cross on a plane, so the depth offset is not a taste decision: given where
+   * the hairline has to be, there is exactly one value that puts the crossing
+   * there.
    */
+  const back = Math.sqrt(1 - hairline * hairline) - Math.sqrt(radius ** 2 - (hairline - lift) ** 2)
+
   return strand(
     'cap',
     PartShape.Sphere,
-    [0, hh * lift, -hd * 0.1],
-    [hw * (0.53 + thickness), hh * (0.44 + thickness), hd * (0.46 + thickness)],
-    { segments: 20 },
+    [0, (hh / 2) * lift, (hd / 2) * back],
+    [(hw / 2) * radius, (hh / 2) * radius, (hd / 2) * radius],
+    /*
+     * A very high segment count, and it earns every one of them.
+     *
+     * This surface meets the skull at a shallow angle, so the polygon boundary
+     * between hair and forehead moves a long way for a small error: the
+     * hairline came out as a visible sawtooth on all eight styles at 20
+     * segments and was still ragged at 40. It is the one place on the figure
+     * where tessellation is load-bearing rather than cosmetic.
+     */
+    { segments: 96 },
   )
 }
 
-/**
- * Hair falling over the brow.
- *
- * A flattened ellipsoid pushed into the front of the cap, not a slab laid on
- * the face. `drop` is how far down the forehead it reaches.
- */
-function fringe(body: BodyProportions, drop: number): Part {
-  const { headWidth: hw, headHeight: hh, headDepth: hd } = body
-
-  /*
-   * Held narrower than the skull and stopped below the crown.
-   *
-   * Both matter: at full head width its side faces landed on the skull's, and
-   * at its first height its top face landed exactly on the crown — two
-   * coincident planes, which is the one gap a depth buffer genuinely cannot
-   * resolve. A fringe sits between the temples and under the cap anyway, so
-   * being visibly inside both is also what it should look like.
-   */
-  return strand(
-    'fringe',
-    PartShape.Sphere,
-    [0, hh * (0.3 - drop * 0.4), hd * 0.24],
-    [hw * 0.46, hh * (0.14 + drop * 0.4), hd * 0.4],
-    { segments: 18 },
-  )
+/** How far out the cap's surface reaches at the temple, for hanging panels off. */
+function capOuterX(body: BodyProportions, thickness: number): number {
+  return (body.headWidth / 2) * (1 + thickness)
 }
 
 /**
  * A panel of hair down each side of the head.
  *
- * Tapered cylinders rather than boxes: a bob's ends are round, and the flat
- * box that used to draw them met the cap's flat side at very nearly the same
- * plane, which is precisely the gap that fights. `length` is measured from the
- * temple down.
+ * Tapered cylinders rather than boxes: a bob's ends are round, and the flat box
+ * that used to draw them met the cap's flat side at very nearly the same plane,
+ * which is precisely the gap that fights. `length` is measured from the temple
+ * down, in half-head-heights.
  */
 function sides(
   body: BodyProportions,
@@ -137,26 +142,34 @@ function sides(
   length: number,
   capThickness: number,
 ): Part[] {
-  const { headWidth: hw, headHeight: hh, headDepth: hd } = body
+  const { headHeight: hh, headDepth: hd } = body
+  const half = hh / 2
 
-  /*
-   * Placed relative to the cap rather than to the head.
-   *
-   * Positioned against the head, a panel's outer face landed on the cap's
-   * outer face for exactly those styles where the two thicknesses happened to
-   * differ by the offset — which is a coincidence waiting in every future
-   * style anyone adds. Deriving the panel from the shell it hangs off makes
-   * the clearance the same on all eight, whatever thicknesses they choose.
-   */
-  const outerX = hw * (0.57 + capThickness)
+  // Derived from the shell it hangs off rather than from the head, so the
+  // clearance is the same on every style whatever thickness it chose.
+  const outer = capOuterX(body, capThickness) * 0.99
+  const radius = body.headWidth * thickness
 
   return [1, -1].map((side) =>
     strand(
       side === 1 ? 'side-right' : 'side-left',
-      PartShape.Cylinder,
-      [side * (outerX - hw * thickness), hh * (0.2 - length / 2), -hd * 0.05],
-      [hw * thickness, hh * length, hw * thickness * 0.82],
-      { segments: 14 },
+      /*
+       * Capsules, not cylinders.
+       *
+       * A hanging cylinder is a rectangle in silhouette however many segments
+       * it has, and two of them beside a round head read as flat boards
+       * bolted on. Rounding the ends is the whole difference between a panel
+       * of hair and a plank.
+       */
+      PartShape.Capsule,
+      /*
+       * Set back off the cheek rather than level with it. Hair at the temple
+       * sits behind the cheekbone; level with it, these panels read as
+       * sideburn slabs beside the eyes.
+       */
+      [side * (outer - radius), half * (0.3 - length / 2), -hd * 0.14],
+      [radius, Math.max(0.001, half * length - radius * 2), radius],
+      { segments: 18 },
     ),
   )
 }
@@ -172,87 +185,101 @@ function sides(
  */
 export function hairParts(style: HairStyle, body: BodyProportions): readonly Part[] {
   const { headWidth: hw, headHeight: hh, headDepth: hd } = body
+  const half = hh / 2
 
   switch (style) {
     case HairStyle.Buzz:
-      // Barely more than a shadow on the scalp. No fringe, no sides — the
-      // shell alone, hugging the skull.
-      return [cap(body, 0.035)]
+      // Barely more than a shadow on the scalp, and a high hairline.
+      return [cap(body, 0.03, 0.04, 0.46)]
 
     case HairStyle.Crop:
-      return [cap(body, 0.06), fringe(body, 0.22), ...sides(body, 0.13, 0.5, 0.06)]
+      return [cap(body, 0.07, 0.1, 0.44), ...sides(body, 0.11, 0.5, 0.07)]
 
     case HairStyle.Pompadour:
       return [
-        cap(body, 0.06),
-        ...sides(body, 0.12, 0.62, 0.06),
+        cap(body, 0.07, 0.1, 0.46),
+        ...sides(body, 0.1, 0.42, 0.07),
         /*
-         * The volume that makes the style: swept up and back off the brow.
+         * The volume that makes the style: swept up and forward off the brow.
          *
          * One rounded mass rather than a turned cylinder. The cylinder version
          * was authored with a two-axis rotation and, seen from behind, read as
-         * a flat rectangular flag standing up beside the head — which is
-         * exactly the class of defect that only a back view finds, and there
-         * was no way to take one until now.
+         * a flat rectangular flag standing up beside the head — exactly the
+         * class of defect that only a back view finds.
+         */
+        /*
+         * Swept up and back off the brow, in two stacked masses.
+         *
+         * A single ellipsoid laid across the top of the head is a beret, which
+         * is what the first two attempts at this were. What makes a pompadour
+         * is that it is *tall at the front and falls away behind*, so the front
+         * mass sits higher and further forward than the one behind it.
          */
         strand(
-          'pomp',
+          'quiff',
           PartShape.Sphere,
-          [0, hh * 0.44, hd * 0.14],
-          [hw * 0.46, hh * 0.26, hd * 0.44],
-          { segments: 20 },
+          [0, half * 0.98, hd * 0.29],
+          [hw * 0.3, hh * 0.2, hd * 0.24],
+          { segments: 24 },
         ),
         strand(
-          'pomp-root',
+          'quiff-root',
           PartShape.Sphere,
-          [0, hh * 0.3, hd * 0.19],
-          [hw * 0.44, hh * 0.17, hd * 0.27],
-          { segments: 16 },
+          [0, half * 0.68, hd * 0.3],
+          [hw * 0.31, hh * 0.15, hd * 0.18],
+          { segments: 20 },
         ),
       ]
 
     case HairStyle.Bob:
       return [
-        cap(body, 0.09),
-        fringe(body, 0.3),
+        // The low hairline is the fringe.
+        cap(body, 0.09, 0.12, 0.315),
         // Squared off at the jaw, which is what separates a bob from long.
-        ...sides(body, 0.2, 1.05, 0.09),
+        ...sides(body, 0.19, 1.1, 0.09),
         // The back of a bob is a single mass, not two panels with a gap.
         strand(
           'bob-back',
           PartShape.Sphere,
-          [0, -hh * 0.16, -hd * 0.36],
-          [hw * 0.52, hh * 0.6, hd * 0.34],
-          { segments: 18 },
+          [0, -half * 0.34, -hd * 0.27],
+          [hw * 0.48, hh * 0.3, hd * 0.3],
+          { segments: 22 },
         ),
       ]
 
     case HairStyle.Long:
       return [
-        cap(body, 0.08),
-        fringe(body, 0.26),
-        ...sides(body, 0.2, 1.7, 0.08),
+        cap(body, 0.085, 0.12, 0.33),
+        ...sides(body, 0.19, 1.9, 0.085),
         /*
          * The fall down the back, which is what reads from the strip camera.
          *
-         * Tapered — wide at the shoulders, narrowing to the ends — and joined
-         * into the cap rather than starting below it. The old version was a
-         * flat box whose top edge stopped a centimetre short of the skull, so
-         * from behind the hair was a plank floating off the neck.
+         * Flattened against the back, not a column standing off it: a round
+         * cylinder a fifth of a metre across, centred most of a head-depth
+         * behind the skull, projected seven centimetres past the back of the
+         * head and read as a plank bolted to the neck. Hair lies on a back.
+         */
+        /*
+         * Tapered hard, and rounded at the end.
+         *
+         * A straight squashed cylinder is a rectangle in silhouette from
+         * behind — which is the one angle this piece exists to be seen from,
+         * and it read as a plank. Narrowing it toward the ends and capping it
+         * with a rounded tip is what makes it hair.
          */
         strand(
           'fall',
           PartShape.Cylinder,
-          [0, -hh * 0.62, -hd * 0.45],
-          [hw * 0.54, hh * 1.9, hw * 0.42],
-          { segments: 16 },
+          [0, -half * 1.18, -hd * 0.34],
+          [hw * 0.48, hh * 1.6, hw * 0.3],
+          { segments: 22, scale: [1, 1, 0.46] as Vec3 },
         ),
         strand(
           'fall-tip',
           PartShape.Sphere,
-          [0, -hh * 1.5, -hd * 0.45],
-          [hw * 0.4, hh * 0.2, hw * 0.3],
-          { segments: 14 },
+          [0, -half * 2.85, -hd * 0.34],
+          [hw * 0.31, hh * 0.16, hw * 0.15],
+          { segments: 18 },
         ),
       ]
 
@@ -264,125 +291,194 @@ export function hairParts(style: HairStyle, body: BodyProportions): readonly Par
        * sphere at another, neither touching the skull or each other: from
        * behind it read as a limb growing out of the neck, with a bead floating
        * above the crown. Every piece below is joined — the gather is sunk into
-       * the cap, the fall starts inside the gather, and the tie wraps the two
-       * — and `hairParts.test.ts` now fails if any of that stops being true.
+       * the cap, the fall starts inside the gather, and the tie wraps the two.
        */
       return [
-        cap(body, 0.05),
-        ...sides(body, 0.11, 0.44, 0.05),
-        // Swept back off the face, which is what a ponytail does to a fringe.
-        strand(
-          'sweep',
-          PartShape.Sphere,
-          [0, hh * 0.3, hd * 0.1],
-          [hw * 0.47, hh * 0.22, hd * 0.42],
-          { segments: 16 },
-        ),
+        cap(body, 0.05, 0.08, 0.44),
+        ...sides(body, 0.09, 0.4, 0.05),
         // Gathered at the back of the crown, sunk into the shell.
         strand(
           'gather',
           PartShape.Sphere,
-          [0, hh * 0.18, -hd * 0.5],
-          [hw * 0.22, hh * 0.19, hd * 0.2],
-          { segments: 16 },
+          [0, half * 0.36, -hd * 0.5],
+          [hw * 0.2, hh * 0.17, hd * 0.2],
+          { segments: 18 },
         ),
         // The tie, which is what makes the gather read as gathered.
         strand(
           'tie',
           PartShape.Torus,
-          [0, hh * 0.16, -hd * 0.56],
-          [hw * 0.13, hw * 0.035, hw * 0.13],
-          { rotation: [Math.PI / 2, 0, 0] as Vec3, segments: 16 },
+          [0, half * 0.32, -hd * 0.56],
+          [hw * 0.15, hw * 0.03, hw * 0.15],
+          { rotation: [Math.PI / 2, 0, 0] as Vec3, segments: 18 },
         ),
         /*
          * The fall itself: tapered, hanging down and back from inside the tie.
-         *
-         * Its top is *inside* the gather rather than abutting it — the join is
-         * an overlap of several centimetres, so there is no seam to find from
-         * any angle the new stage can be turned to.
+         * Its top is *inside* the gather rather than abutting it, so there is
+         * no seam to find from any angle the stage can be turned to.
          */
         strand(
           'tail',
           PartShape.Cylinder,
-          [0, -hh * 0.5, -hd * 0.72],
-          [hw * 0.2, hh * 1.7, hw * 0.1],
-          { rotation: [0.28, 0, 0] as Vec3, segments: 16 },
+          [0, -half * 0.94, -hd * 0.6],
+          [hw * 0.24, hh * 1.4, hw * 0.12],
+          { rotation: [0.28, 0, 0] as Vec3, segments: 20 },
         ),
         strand(
           'tail-tip',
           PartShape.Sphere,
-          [0, -hh * 1.3, -hd * 0.99],
-          [hw * 0.11, hh * 0.11, hw * 0.11],
-          { segments: 12 },
+          [0, -half * 2.44, -hd * 0.85],
+          [hw * 0.13, hh * 0.1, hw * 0.13],
+          { segments: 16 },
         ),
       ]
 
     case HairStyle.Updo:
       return [
-        cap(body, 0.05),
-        ...sides(body, 0.1, 0.36, 0.05),
-        strand(
-          'sweep',
-          PartShape.Sphere,
-          [0, hh * 0.28, hd * 0.08],
-          [hw * 0.47, hh * 0.19, hd * 0.44],
-          { segments: 16 },
-        ),
+        cap(body, 0.05, 0.08, 0.46),
+        ...sides(body, 0.085, 0.32, 0.05),
         // Pinned high and back — the bun is the whole silhouette.
         strand(
           'bun',
           PartShape.Sphere,
-          [0, hh * 0.5, -hd * 0.3],
-          [hw * 0.36, hh * 0.32, hd * 0.34],
-          { segments: 20 },
+          [0, half * 1.0, -hd * 0.3],
+          [hw * 0.32, hh * 0.26, hd * 0.32],
+          { segments: 24 },
         ),
         // The wrap around its base, so the bun reads as coiled rather than stuck on.
         strand(
           'bun-wrap',
           PartShape.Torus,
-          [0, hh * 0.4, -hd * 0.22],
-          [hw * 0.27, hw * 0.055, hw * 0.27],
-          { rotation: [Math.PI / 2, 0, 0] as Vec3, segments: 18 },
+          [0, half * 0.8, -hd * 0.22],
+          [hw * 0.25, hw * 0.05, hw * 0.25],
+          { rotation: [Math.PI / 2, 0, 0] as Vec3, segments: 20 },
         ),
       ]
 
     case HairStyle.Coils: {
       /*
-       * Coils hanging all over the head, not a ring of beads round the crown.
+       * Coils standing proud of the shell, not buried in it.
        *
-       * The old version put eight spheres in a circle at the top of the skull,
-       * which reads as a laurel wreath. `art/refs/hair_sheet.png` has the whole
-       * head covered and the coils falling to the jaw, so these are columns
-       * that start inside the shell and hang below it.
+       * Two earlier versions failed for opposite reasons: eight spheres in a
+       * ring round the crown read as a laurel wreath, and twelve columns on a
+       * radius *inside* a thick cap were invisible — the style came out as a
+       * bob. The shell is deliberately thin here so the coils themselves are
+       * the silhouette, which is what `art/refs/hair_sheet.png` shows.
        *
-       * Each column's length varies with its index. That is partly because real
-       * coils are not uniform, and partly because twelve cylinders cut to
-       * exactly the same length share exactly the same end planes — which the
-       * surface check would rightly call a conflict.
+       * The face is not part of the ring. Spread evenly, four of them fall
+       * straight down the front of the head, with one over each eye and one
+       * across the mouth.
        */
-      const coils = Array.from({ length: 12 }, (_, index) => {
-        const angle = (index / 12) * Math.PI * 2
-        const length = hh * (0.94 + (index % 3) * 0.07)
-        // Roots at slightly different heights as well as different lengths.
-        // Once the coils were fat enough to touch, twelve cut to the same top
-        // put twelve cylinder caps on one plane — buried inside the shell, but
-        // the check is right to refuse it and real coils are not level anyway.
-        const root = hh * (0.1 + (index % 4) * 0.02)
+      const capThickness = 0.05
+      const frontGap = 1.15
+      const arc = Math.PI * 2 - frontGap * 2
+      const ring = capOuterX(body, capThickness) * 0.9
+
+      const coils = Array.from({ length: 14 }, (_, index) => {
+        const angle = frontGap + ((index + 0.5) / 14) * arc
+        /*
+         * Lengths and roots vary with the index. Partly because real coils are
+         * not uniform, and partly because columns cut to exactly one length
+         * share exactly one pair of end planes, which the surface check is
+         * right to refuse.
+         */
+        const length = half * (1.0 + (index % 3) * 0.16)
+        const root = half * (0.62 + (index % 4) * 0.05)
 
         return strand(
           `coil-${index}`,
-          PartShape.Cylinder,
+          // Rounded, for the same reason the side panels are: a cylinder hung
+          // beside a head is a rectangle from every angle that matters.
+          PartShape.Capsule,
           [
-            Math.sin(angle) * hw * 0.46,
+            Math.sin(angle) * ring,
             root - length / 2,
-            Math.cos(angle) * hd * 0.46 - hd * 0.08,
+            Math.cos(angle) * ring * (hd / hw) - hd * 0.06,
           ],
-          [hw * 0.135, length, hw * 0.1],
-          { segments: 10 },
+          [hw * 0.135, Math.max(0.001, length - hw * 0.27), hw * 0.135],
+          { segments: 12 },
         )
       })
 
-      return [cap(body, 0.13), ...coils]
+      return [cap(body, capThickness, 0.1, 0.38), ...coils]
     }
   }
+}
+
+/*
+ * How finely each feature is sampled when asking whether hair is covering it.
+ *
+ * Coarse on purpose. This is looking for a coil across the mouth or a fringe
+ * over the eyes, not for a strand grazing a lash, and a grid this size runs
+ * eight styles across three silhouettes in a millisecond.
+ */
+const FEATURE_SAMPLES = 4
+
+/** How far off a feature a sample sits. Hair touching it is fine; hair in front of it is not. */
+const OVER_FACE_CLEARANCE = 0.003
+
+/**
+ * The features a hairstyle must never cover.
+ *
+ * Brows are not on the list, deliberately. A fringe over the eyebrows is a
+ * haircut — half the styles on `art/refs/hair_sheet.png` have one — and hair
+ * hides a hair-coloured feature to no ill effect. A fringe over the *eyes* is
+ * a bug, and so is a coil across the mouth.
+ */
+const COVERABLE = ['brow-right', 'brow-left']
+
+/**
+ * Which pieces of a hairstyle are hanging in front of the face.
+ *
+ * The predicate the audit needed and did not have. Hair was checked against the
+ * skull's bounding box, which a fringe over the eyes passes without difficulty
+ * — it is on the head, it is attached, and it is covering the face. Four of the
+ * eight styles were doing it and the only way to find out was to look.
+ *
+ * Sampled on the features themselves rather than inside a box drawn across the
+ * face. The box was the first attempt and it condemned every style there is:
+ * a hairline legitimately dips at the temples, and any rectangle wide enough
+ * to hold the eyes also holds the patch of temple beside them.
+ *
+ * @param parts A hairstyle, in the head's frame.
+ * @param body The head it is on.
+ * @returns The names of the offending pieces, in the order given.
+ */
+export function partsOverFace(parts: readonly Part[], body: BodyProportions): string[] {
+  const offenders: string[] = []
+
+  const features = faceParts(body).filter((part) => !COVERABLE.includes(part.name))
+
+  for (const part of parts) {
+    let covering = false
+
+    for (const feature of features) {
+      const [hx, hy, hz] = partHalfExtents(feature)
+
+      for (let ix = 0; ix < FEATURE_SAMPLES && !covering; ix += 1) {
+        const x = feature.at[0] + (ix / (FEATURE_SAMPLES - 1) - 0.5) * 2 * hx * 0.9
+
+        for (let iy = 0; iy < FEATURE_SAMPLES && !covering; iy += 1) {
+          const y = feature.at[1] + (iy / (FEATURE_SAMPLES - 1) - 0.5) * 2 * hy * 0.9
+          const front = feature.at[2] + hz
+
+          /*
+           * Corners of a flat panel on a curved head sit *inside* the skull,
+           * and hair inside a skull is not covering anything. Without this the
+           * check condemned a buzz cut for the crime of existing behind the
+           * inner corner of an eye.
+           */
+          if (front <= faceSurfaceZ(body, x, y)) continue
+
+          if (containsPoint(part, [x, y, front + OVER_FACE_CLEARANCE])) covering = true
+        }
+      }
+
+      if (covering) break
+    }
+
+    if (covering) offenders.push(part.name)
+  }
+
+  return offenders
 }

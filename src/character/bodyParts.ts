@@ -18,12 +18,54 @@
  */
 
 import { Garment } from './appearance'
-import { ColorRole, Finish, PartShape, type Part, type Vec3 } from './parts'
-import { metricsFor, type BodyProportions, type Silhouette } from './proportions'
+import { earParts, faceParts } from './face'
+import {
+  ColorRole,
+  Finish,
+  PartShape,
+  translateParts,
+  type Part,
+  type Vec3,
+} from './parts'
+import {
+  metricsFor,
+  SHOULDER_TORSO_FRACTION,
+  type BodyProportions,
+  type Silhouette,
+} from './proportions'
 
 /** How much shallower a torso is than it is wide. Read off the reference sheet. */
 function depthRatio(body: BodyProportions): number {
   return body.torsoDepth / body.torsoWidth
+}
+
+/*
+ * Limb thicknesses, as fractions of the torso they hang off.
+ *
+ * They were absolute constants — a 0.058 arm and a 0.095 thigh, the same on
+ * every figure — which is exactly the trap `proportions.ts` was pulled out of
+ * `CasinoCharacter` to escape. Two consequences, both visible: the broad
+ * silhouette and the narrow one had identical limbs, so half of what makes
+ * them different bodies was thrown away below the shoulder; and when the
+ * figure was restyled chunkier the limbs stayed at their old width and the
+ * result was a heavy torso on wire legs.
+ *
+ * A fraction of the torso is the honest relationship. The narrow figure gets
+ * narrow limbs for free, and a change to the build carries all the way down.
+ */
+const ARM_RADIUS = 0.21
+const FOREARM_RADIUS = 0.165
+const THIGH_RADIUS = 0.25
+const SHIN_RADIUS = 0.225
+
+/** The upper arm's radius, which the shoulder and every sleeve are sized from. */
+export function armRadius(body: BodyProportions): number {
+  return body.torsoWidth * ARM_RADIUS
+}
+
+/** The forearm's radius, which the cuff, the hand and a worn watch are sized from. */
+export function forearmRadius(body: BodyProportions): number {
+  return body.torsoWidth * FOREARM_RADIUS
 }
 
 function limb(
@@ -91,6 +133,19 @@ export interface BodyOptions {
    * most of.
    */
   readonly bareArms: boolean
+  /**
+   * Whether opaque eyewear is on over the face.
+   *
+   * The eyes and pupils are then not drawn at all. Partly because they are
+   * behind a solid lens and cannot be seen, and partly because a flat eye
+   * panel and a pair of glasses are four hand-placed rectangles in one small
+   * patch of face — every attempt to place a temple arm landed one of its
+   * faces within a millimetre of a sclera's or a pupil's, on one silhouette or
+   * another. Two things that cannot both be visible should not both be drawn.
+   *
+   * The brows stay: they sit above the lens and are half the expression.
+   */
+  readonly eyesCovered: boolean
 }
 
 export const DEFAULT_BODY_OPTIONS: BodyOptions = {
@@ -102,28 +157,7 @@ export const DEFAULT_BODY_OPTIONS: BodyOptions = {
   suppressSkirt: false,
   coveredByOuterwear: false,
   bareArms: false,
-}
-
-/* ------------------------------------------------------------------- head */
-
-/**
- * Where the surface of the skull sits at a given distance off the centre line.
- *
- * The head is an ellipsoid now, so the face is curved and a feature placed at a
- * flat `headDepth / 2` floats clear of the cheek the further out it goes. This
- * is what keeps an eye on the face at any head width — and it is the reason the
- * features can be spheres set into the skull rather than plates laid on it,
- * which is what they were.
- *
- * @param body Whose head.
- * @param x Distance from the centre line.
- * @returns The z at which the skull's surface sits there.
- */
-export function faceSurfaceZ(body: BodyProportions, x: number): number {
-  const halfWidth = body.headWidth / 2
-  const ratio = Math.min(1, Math.abs(x) / halfWidth)
-
-  return (body.headDepth / 2) * Math.sqrt(Math.max(0, 1 - ratio * ratio))
+  eyesCovered: false,
 }
 
 /* ------------------------------------------------------------------ torso */
@@ -138,6 +172,7 @@ export function faceSurfaceZ(body: BodyProportions, x: number): number {
 export function torsoParts(body: BodyProportions, options: BodyOptions): readonly Part[] {
   const { torsoWidth: tw, torsoHeight: th, neckHeight: nh } = body
   const { headWidth: hw, headHeight: hh, headDepth: hd } = body
+  void hd
   const squash: Vec3 = [1, 1, depthRatio(body)]
 
   const headY = th + nh + hh / 2
@@ -149,112 +184,97 @@ export function torsoParts(body: BodyProportions, options: BodyOptions): readonl
      * the one below. The waist is the narrowest and the chest the widest,
      * which is the whole of the difference between a figure and a crate.
      */
-    limb('hips', [0, th * 0.11, 0], [tw * 0.46, th * 0.24, tw * 0.48], ColorRole.Secondary, {
+    /*
+     * Four sections whose radii meet exactly where they touch.
+     *
+     * Each section's top radius is the next one's bottom radius, so the torso
+     * is one continuous taper — wide at the pelvis, narrowest at the top of the
+     * waist, wide again at the chest. Sections chosen independently gave a
+     * visible step at every junction and, at the hip, a flare wider than the
+     * thighs under it: the figure was wearing a hoop skirt.
+     */
+    limb('hips', [0, th * 0.1, 0], [tw * 0.46, th * 0.32, tw * 0.5], ColorRole.Secondary, {
       scale: squash,
+      segments: 24,
     }),
-    limb('waist', [0, th * 0.36, 0], [tw * 0.44, th * 0.3, tw * 0.42], ColorRole.Primary, {
+    limb('waist', [0, th * 0.38, 0], [tw * 0.42, th * 0.32, tw * 0.46], ColorRole.Primary, {
       scale: squash,
+      segments: 24,
     }),
-    limb('chest', [0, th * 0.68, 0], [tw * 0.5, th * 0.36, tw * 0.44], ColorRole.Primary, {
+    limb('chest', [0, th * 0.68, 0], [tw * 0.5, th * 0.36, tw * 0.42], ColorRole.Primary, {
       scale: squash,
+      segments: 24,
     }),
-    // The yoke across the top, which the shoulders sit on.
-    limb('yoke', [0, th * 0.9, 0], [tw * 0.42, th * 0.14, tw * 0.44], ColorRole.Primary, {
+    /*
+     * The trapezius: a cone from the chest's own width up to the neck.
+     *
+     * It was a near-cylinder narrower than the chest below it, which put a step
+     * at the top of the torso and left the shoulders as two balls perched on
+     * the corners of it. Taking the bottom radius straight off the chest and
+     * running it up to something close to the neck is what turns that step into
+     * a slope, and a slope is most of what "sloped shoulders" means.
+     */
+    limb('yoke', [0, th * 0.885, 0], [tw * 0.3, th * 0.17, tw * 0.5], ColorRole.Primary, {
       scale: squash,
+      segments: 24,
     }),
-    // Sloped shoulders. Square ones are the other half of the crate problem.
-    ...[1, -1].map((side) =>
-      blob(
-        side === 1 ? 'shoulder-right' : 'shoulder-left',
-        [side * tw * 0.4, th * 0.9, 0],
-        [tw * 0.13, th * 0.1, body.torsoDepth * 0.48],
-        ColorRole.Primary,
-        { finish: Finish.Cloth },
-      ),
+    /*
+     * One shoulder mass across the whole line, out to both sockets.
+     *
+     * Two small spheres set inboard of the arms is what the capture shows and
+     * it reads as shoulder pads: each ball floated above and inside the arm it
+     * was meant to cap, leaving the upper arm's own flat top on show underneath
+     * it. The arms hang at `shoulderX`, so the shoulders have to *reach*
+     * `shoulderX` — anything narrower is a gap by construction, whatever it is
+     * shaped like. An ellipsoid falls away toward the ends on its own, which is
+     * the slope; the deltoid on each arm covers the last of the joint and, being
+     * on the arm, stays covering it when the arm moves.
+     */
+    blob(
+      'shoulders',
+      [0, th * SHOULDER_TORSO_FRACTION, 0],
+      [body.shoulderX + armRadius(body) * 0.15, th * 0.13, body.torsoDepth * 0.5],
+      ColorRole.Primary,
+      { finish: Finish.Cloth, segments: 22 },
     ),
 
-    limb('neck', [0, th + nh * 0.5, 0], [0.052, nh + 0.1, 0.058], ColorRole.Skin, {
+    /*
+     * A neck, not a stem.
+     *
+     * It was 5.2cm across under a head 19.5cm wide, and with the shoulders
+     * where they are that left a hand's width of bare column between the jaw
+     * and the collar. Widening it is half the fix; `neckHeight` coming down in
+     * `proportions.ts` is the other half.
+     */
+    /*
+     * Tapered, and stopped well short of the mouth.
+     *
+     * The neck ran up to a centimetre below the lip, and at that height a
+     * stylised head has narrowed almost to its pole — so the top of the neck
+     * came *through* the chin as a bright oval sitting under the mouth. It
+     * reads as a jaw seam, which is what it was mistaken for twice. A neck
+     * ends at the jaw; only the join should be inside the head.
+     */
+    limb('neck', [0, th + nh * 0.5 - 0.07, 0], [tw * 0.17, nh + 0.22, tw * 0.25], ColorRole.Skin, {
       finish: Finish.Matte,
+      segments: 20,
     }),
     // The skull, rounded. Its bounding box is unchanged, so hair still fits.
-    blob('head', [0, headY, 0], [hw / 2, hh / 2, hd / 2], ColorRole.Skin, { segments: 24 }),
-    // The jaw, which is what stops an ellipsoid head reading as an egg.
-    blob('jaw', [0, th + nh + hh * 0.28, hd * 0.04], [hw * 0.42, hh * 0.23, hd * 0.44], ColorRole.Skin, {
-      segments: 18,
-    }),
-    ...[1, -1].map((side) =>
-      blob(
-        side === 1 ? 'ear-right' : 'ear-left',
-        [side * hw * 0.47, headY + hh * 0.02, -hd * 0.06],
-        [hw * 0.06, hh * 0.11, hd * 0.09],
-        ColorRole.Skin,
-      ),
-    ),
+    // 48 segments, not 24: the hairline is the boundary between this surface
+    // and the hair shell over it, and a coarse skull makes a ragged one.
+    blob('head', [0, headY, 0], [hw / 2, hh / 2, hd / 2], ColorRole.Skin, { segments: 48 }),
+    // The ears, in the head's own frame. A dummy keeps them: they are the
+    // shape of a head rather than something drawn on a face.
+    ...translateParts(earParts(body), [0, headY, 0]),
   ]
 
   if (!options.mannequin) {
-    parts.push(...faceParts(body))
+    parts.push(...translateParts(faceParts(body, options.eyesCovered), [0, headY, 0]))
   }
 
   parts.push(...garmentParts(body, options))
 
   return parts
-}
-
-/**
- * Eyes, brows, nose and mouth, set into the skull rather than laid on it.
- *
- * All spheres, all sunk below the surface returned by `faceSurfaceZ`. The old
- * face was six flat plates floating one and two millimetres off a flat head,
- * which is the arrangement that reads as a sticker at any distance and which
- * put five separate pairs of coincident planes on the front of every character
- * in the game.
- */
-function faceParts(body: BodyProportions): Part[] {
-  const { torsoHeight: th, neckHeight: nh, headWidth: hw, headHeight: hh } = body
-
-  const eyeX = hw * 0.25
-  const eyeY = th + nh + hh * 0.62
-  const eyeZ = faceSurfaceZ(body, eyeX) - 0.006
-
-  return [
-    ...[1, -1].flatMap((side) => [
-      blob(
-        side === 1 ? 'eye-right' : 'eye-left',
-        [side * eyeX, eyeY, eyeZ],
-        [hw * 0.105, hh * 0.045, 0.011],
-        ColorRole.Sclera,
-        { finish: Finish.Matte },
-      ),
-      blob(
-        side === 1 ? 'pupil-right' : 'pupil-left',
-        [side * eyeX, eyeY, eyeZ + 0.006],
-        [hw * 0.042, hh * 0.032, 0.008],
-        ColorRole.Pupil,
-        { finish: Finish.Matte },
-      ),
-      blob(
-        side === 1 ? 'brow-right' : 'brow-left',
-        [side * eyeX, eyeY + hh * 0.13, eyeZ - 0.002],
-        [hw * 0.13, hh * 0.028, 0.012],
-        ColorRole.Hair,
-        { finish: Finish.Cloth },
-      ),
-    ]),
-    blob(
-      'nose',
-      [0, th + nh + hh * 0.49, faceSurfaceZ(body, 0) - 0.008],
-      [hw * 0.075, hh * 0.09, 0.024],
-      ColorRole.Skin,
-    ),
-    blob(
-      'mouth',
-      [0, th + nh + hh * 0.29, faceSurfaceZ(body, 0) - 0.014],
-      [hw * 0.12, hh * 0.022, 0.014],
-      ColorRole.Lip,
-      { finish: Finish.Matte },
-    ),
-  ]
 }
 
 /**
@@ -293,8 +313,8 @@ function garmentParts(body: BodyProportions, options: BodyOptions): Part[] {
     parts.push({
       name: 'shirt-panel',
       shape: PartShape.Box,
-      at: [0, th * 0.61, layerAt(0)],
-      size: [0.16, th * 0.48, layerDepth(0)],
+      at: [0, th * 0.63, layerAt(0)],
+      size: [tw * 0.24, th * 0.44, layerDepth(0)],
       role: ColorRole.Shirt,
       finish: Finish.Cloth,
     })
@@ -313,27 +333,47 @@ function garmentParts(body: BodyProportions, options: BodyOptions): Part[] {
          * pair that strobes when someone buys a jacket. Deeper here costs
          * nothing — the lapel is still proud of the chest when no jacket is on.
          */
-        at: [side * tw * 0.24, th * 0.68, layerAt(1)],
-        size: [0.1, 0.26, layerDepth(1)],
-        role: ColorRole.Trim,
-        rotation: [0, 0, side * 0.28],
-        finish: Finish.Cloth,
+        at: [side * tw * 0.145, th * 0.76, layerAt(1)],
+        size: [tw * 0.085, th * 0.28, layerDepth(1)],
+        /*
+         * The jacket's own colour, in satin.
+         *
+         * They were `Trim`, which on a charcoal suit is a mid grey — two pale
+         * rectangles stuck to a near-black chest, and they read as luggage
+         * labels. A dinner jacket's lapel is the same cloth with a different
+         * sheen, and that is exactly what a lower roughness gives: the shape
+         * catches the rim light and shows without being a different object.
+         */
+        role: ColorRole.Primary,
+        rotation: [0, 0, side * 0.3],
+        finish: Finish.Leather,
       })),
       {
         name: 'tie',
         shape: PartShape.Box,
-        at: [0, th * 0.56, layerAt(2)],
-        size: [0.052, th * 0.44, layerDepth(2)],
+        at: [0, th * 0.6, layerAt(2)],
+        size: [tw * 0.075, th * 0.42, layerDepth(2)],
         role: ColorRole.Accent,
         finish: Finish.Cloth,
       },
+      /*
+       * A rounded knot rather than a small box.
+       *
+       * It looks like a knot, which is reason enough, and it also takes the
+       * front of a suit out of a whole family of near-misses: a box this size
+       * has a flat top and bottom that landed within a fifth of a millimetre
+       * of the lapel's, the yoke's and a worn pendant's in turn, each on a
+       * different silhouette, because all four are hand-placed on one chest.
+       * A curved surface has no face to fight with.
+       */
       {
         name: 'tie-knot',
-        shape: PartShape.Box,
-        at: [0, th * 0.85, layerAt(3)],
-        size: [0.046, 0.052, layerDepth(3)],
+        shape: PartShape.Sphere,
+        at: [0, th * 0.845, layerAt(3)],
+        size: [tw * 0.058, tw * 0.034, layerDepth(3) / 2],
         role: ColorRole.Accent,
         finish: Finish.Cloth,
+        segments: 14,
       },
     )
   }
@@ -344,7 +384,7 @@ function garmentParts(body: BodyProportions, options: BodyOptions): Part[] {
       name: 'neckline',
       shape: PartShape.Torus,
       at: [0, th * 0.96, 0],
-      size: [0.072, 0.014, 0.072],
+      size: [tw * 0.2, tw * 0.032, tw * 0.2],
       role: ColorRole.Shirt,
       rotation: [Math.PI / 2, 0, 0],
       segments: 20,
@@ -359,7 +399,7 @@ function garmentParts(body: BodyProportions, options: BodyOptions): Part[] {
       name: 'collar',
       shape: PartShape.Torus,
       at: [0, th * 0.97, 0],
-      size: [0.078, 0.017, 0.078],
+      size: [tw * 0.215, tw * 0.038, tw * 0.215],
       role: ColorRole.Shirt,
       rotation: [Math.PI / 2, 0, 0],
       segments: 20,
@@ -402,7 +442,7 @@ function garmentParts(body: BodyProportions, options: BodyOptions): Part[] {
        * front-on capture and in none of the tests, because a skirt and a leg
        * are in different segments and were only ever checked apart.
        */
-      size: [tw * 0.6, length, tw * 0.74],
+      size: [tw * 0.66, length, tw * 0.8],
       role: ColorRole.Secondary,
       segments: 24,
       open: true,
@@ -420,40 +460,55 @@ function garmentParts(body: BodyProportions, options: BodyOptions): Part[] {
 /** The thigh, in the hip joint's frame. Tapers from hip to knee. */
 export function thighParts(body: BodyProportions, options: BodyOptions): readonly Part[] {
   const role = options.hasSkirt ? ColorRole.Skin : ColorRole.Secondary
+  const finish = options.hasSkirt ? Finish.Matte : Finish.Cloth
+  const radius = body.torsoWidth * THIGH_RADIUS
 
   return [
-    limb('thigh', [0, -body.thigh / 2, 0], [0.095, body.thigh, 0.072], role, {
-      finish: options.hasSkirt ? Finish.Matte : Finish.Cloth,
+    limb('thigh', [0, -body.thigh / 2, 0], [radius, body.thigh, radius * 0.78], role, {
+      finish,
+      segments: 20,
     }),
-    blob('knee', [0, -body.thigh, 0], [0.07, 0.058, 0.07], role, {
-      finish: options.hasSkirt ? Finish.Matte : Finish.Cloth,
+    blob('knee', [0, -body.thigh, 0], [radius * 0.8, radius * 0.66, radius * 0.8], role, {
+      finish,
+      segments: 18,
     }),
   ]
 }
 
 /**
- * How far the ankle sits above the ground.
+ * How far the ankle sits above the ground, as a fraction of the shin.
  *
  * `hipY` is `thigh + shin`, so a shin drawn its full length reaches the floor
  * and leaves nowhere for a foot — every foot then hangs below the ground. The
  * shin stops here instead and the foot fills what is left, which is also what
- * a leg actually does.
+ * a leg actually does. A fraction rather than the fixed 7.5cm it was, so a
+ * shorter leg gets a proportionate ankle instead of a stump.
  */
-const ANKLE_HEIGHT = 0.075
+const ANKLE_FRACTION = 0.17
 
 /** The shin, in the knee joint's frame. Tapers from knee to ankle. */
 export function shinParts(body: BodyProportions, options: BodyOptions): readonly Part[] {
   const role = options.hasSkirt ? ColorRole.Skin : ColorRole.Secondary
   const finish = options.hasSkirt ? Finish.Matte : Finish.Cloth
+  const radius = body.torsoWidth * SHIN_RADIUS
 
   // Overshoots the ankle a little so the foot has something to join into.
-  const length = body.shin - ANKLE_HEIGHT + 0.02
+  const length = body.shin * (1 - ANKLE_FRACTION) + 0.02
 
   return [
-    limb('shin', [0, -length / 2, 0], [0.066, length, 0.044], role, { finish }),
+    limb('shin', [0, -length / 2, 0], [radius, length, radius * 0.68], role, {
+      finish,
+      segments: 20,
+    }),
     // The calf, which is what makes a leg read as a leg rather than a pipe.
-    blob('calf', [0, -length * 0.36, -0.014], [0.058, length * 0.3, 0.054], role, { finish }),
-    blob('ankle', [0, -length + 0.014, 0], [0.046, 0.034, 0.046], ColorRole.Skin, {
+    blob(
+      'calf',
+      [0, -length * 0.36, -radius * 0.18],
+      [radius * 0.78, length * 0.3, radius * 0.74],
+      role,
+      { finish },
+    ),
+    blob('ankle', [0, -length + 0.014, 0], [radius * 0.6, radius * 0.44, radius * 0.6], ColorRole.Skin, {
       finish: Finish.Matte,
     }),
   ]
@@ -478,19 +533,35 @@ export function footParts(body: BodyProportions): readonly Part[] {
    * and both shoes ended up inside the footrest.
    */
   const floor = 0
+  const radius = body.torsoWidth * SHIN_RADIUS
 
   return [
-    blob('foot', [0, floor + 0.038, 0.045], [0.05, 0.03, 0.1], ColorRole.Shoes, {
-      finish: Finish.Leather,
-    }),
-    blob('heel-cup', [0, floor + 0.042, -0.018], [0.044, 0.036, 0.04], ColorRole.Shoes, {
-      finish: Finish.Leather,
-    }),
+    blob(
+      'foot',
+      [0, floor + radius * 0.5, radius * 0.6],
+      [radius * 0.66, radius * 0.4, radius * 1.3],
+      ColorRole.Shoes,
+      { finish: Finish.Leather },
+    ),
+    blob(
+      'heel-cup',
+      [0, floor + radius * 0.55, -radius * 0.24],
+      [radius * 0.58, radius * 0.47, radius * 0.52],
+      ColorRole.Shoes,
+      { finish: Finish.Leather },
+    ),
+    /*
+     * The sole, kept inside the foot above it.
+     *
+     * A box wider and longer than the shape it supports is a plinth, and that
+     * is what it looked like under the dark shoes: a slab of black sticking
+     * out behind each heel.
+     */
     {
       name: 'foot-sole',
       shape: PartShape.Box,
-      at: [0, floor + 0.011, 0.04],
-      size: [0.096, 0.022, 0.2],
+      at: [0, floor + 0.012, radius * 0.42],
+      size: [radius * 1.1, 0.024, radius * 2.1],
       role: ColorRole.Shoes,
       finish: Finish.Leather,
     },
@@ -504,13 +575,40 @@ export function upperArmParts(body: BodyProportions, options: BodyOptions): read
   // A sleeveless dress, or a gown worn over the top, leaves the arm bare.
   const sleeved = !options.bareArms && options.garment !== Garment.CocktailDress
   const role = sleeved ? ColorRole.Primary : ColorRole.Skin
+  const finish = sleeved ? Finish.Cloth : Finish.Matte
+  const radius = armRadius(body)
 
   return [
-    limb('upper-arm', [0, -body.upperArm / 2, 0], [0.058, body.upperArm, 0.046], role, {
-      finish: sleeved ? Finish.Cloth : Finish.Matte,
+    /*
+     * The deltoid, which the rig never had.
+     *
+     * An upper arm is a cylinder, so left alone its flat top cap sits in the
+     * open at the shoulder joint — visible as a hard disc under the shoulder in
+     * any front view. This caps it, and it lives on the *arm* rather than the
+     * torso deliberately: a cap on the torso stops covering the joint the
+     * moment the arm swings, which is every frame the figure is walking.
+     */
+    /*
+     * A cap on the arm, not a pauldron over it.
+     *
+     * At 14% wider than the arm it read as a shoulder pad with a hard seam
+     * where it met the sleeve — a mushroom. It only has to cover the
+     * cylinder's own flat top, so it is the arm's width and taller than it is
+     * wide.
+     */
+    blob(
+      'deltoid',
+      [0, -radius * 0.34, 0],
+      [radius * 1.01, radius * 1.3, radius * 1.01],
+      role,
+      { finish, segments: 20 },
+    ),
+    limb('upper-arm', [0, -body.upperArm / 2, 0], [radius, body.upperArm, radius * 0.82], role, {
+      finish,
+      segments: 20,
     }),
-    blob('elbow', [0, -body.upperArm, 0], [0.045, 0.04, 0.045], role, {
-      finish: sleeved ? Finish.Cloth : Finish.Matte,
+    blob('elbow', [0, -body.upperArm, 0], [radius * 0.8, radius * 0.72, radius * 0.8], role, {
+      finish,
     }),
   ]
 }
@@ -520,15 +618,21 @@ export function forearmParts(body: BodyProportions, options: BodyOptions): reado
   const sleeved =
     !options.bareArms && (options.garment === Garment.Suit || options.garment === Garment.Scrubs)
   const role = sleeved ? ColorRole.Primary : ColorRole.Skin
+  const radius = forearmRadius(body)
 
   return [
-    limb('forearm', [0, -body.forearm / 2, 0], [0.044, body.forearm, 0.034], role, {
+    limb('forearm', [0, -body.forearm / 2, 0], [radius, body.forearm, radius * 0.78], role, {
       finish: sleeved ? Finish.Cloth : Finish.Matte,
+      segments: 20,
     }),
     // The cuff, where a sleeve ends and the wrist begins.
-    limb('cuff', [0, -body.forearm + 0.024, 0], [0.038, 0.036, 0.038], ColorRole.Shirt, {
-      finish: Finish.Cloth,
-    }),
+    limb(
+      'cuff',
+      [0, -body.forearm + radius * 0.3, 0],
+      [radius * 0.9, radius * 0.4, radius * 0.9],
+      ColorRole.Shirt,
+      { finish: Finish.Cloth },
+    ),
   ]
 }
 
@@ -537,22 +641,34 @@ export function forearmParts(body: BodyProportions, options: BodyOptions): reado
  *
  * Two fingers rather than five, extended, because the blackjack hand signals
  * are a double finger-tap and a flat wave and those are the only shapes a hand
- * on this character ever has to make.
+ * on this character ever has to make. Sized off the forearm it hangs from
+ * rather than typed in, so it grows with the build like everything else.
  */
-export function handParts(side: 1 | -1): readonly Part[] {
+export function handParts(side: 1 | -1, body: BodyProportions): readonly Part[] {
+  const radius = forearmRadius(body)
+
   return [
-    blob('palm', [0, -0.048, 0.004], [0.042, 0.046, 0.026], ColorRole.Skin),
-    ...[-0.021, 0.021].map((offset, index) =>
+    blob(
+      'palm',
+      [0, -radius * 0.78, radius * 0.05],
+      [radius * 0.74, radius * 0.84, radius * 0.44],
+      ColorRole.Skin,
+    ),
+    ...[-radius * 0.26, radius * 0.26].map((offset, index) =>
       blob(
         `finger-${index}`,
-        [offset, -0.104, 0.01],
-        [0.012, 0.035, 0.013],
+        [offset, -radius * 1.42, radius * 0.1],
+        [radius * 0.2, radius * 0.44, radius * 0.22],
         ColorRole.Skin,
       ),
     ),
-    blob('thumb', [side * -0.038, -0.066, 0.016], [0.013, 0.026, 0.014], ColorRole.Skin, {
-      rotation: [0, 0, side * 0.5],
-    }),
+    blob(
+      'thumb',
+      [side * -radius * 0.6, -radius * 1.05, radius * 0.24],
+      [radius * 0.24, radius * 0.4, radius * 0.26],
+      ColorRole.Skin,
+      { rotation: [0, 0, side * 0.5] },
+    ),
   ]
 }
 
@@ -622,7 +738,7 @@ export function restPoseSegments(
       {
         name: `hand-${label}`,
         origin: [side * body.shoulderX, metrics.shoulderY - body.upperArm - body.forearm, 0],
-        parts: handParts(side),
+        parts: handParts(side, body),
       },
     )
   }
