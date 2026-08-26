@@ -4,6 +4,7 @@ import {
   canTakeDownCrapsBet,
   chipStake,
   createCrapsGame,
+  drawDiceRoll,
   MAX_ODDS_MULTIPLE,
   oddsPayout,
   oddsRatio,
@@ -11,6 +12,7 @@ import {
   placePayout,
   placeRatio,
   placeWinnings,
+  settleCrapsRoll,
   stakeReturnedByRoll,
   takeDownCrapsBet,
   PLACE_UNITS,
@@ -610,5 +612,94 @@ describe('taking a bet down', () => {
 
     expect(canTakeDownCrapsBet(state, CrapsBet.Place6)).toBe(false)
     expect(() => takeDownCrapsBet(state, CrapsBet.Place6)).toThrow(/Cannot take down/)
+  })
+})
+
+/** A table with money on every bet it will take, in each phase. */
+function loadedTables(): CrapsState[] {
+  let comeOut = placeCrapsBet(createCrapsGame(5), CrapsBet.PassLine, 10)
+  comeOut = placeCrapsBet(comeOut, CrapsBet.DontPass, 10)
+  comeOut = placeCrapsBet(comeOut, CrapsBet.Field, 25)
+
+  let point = rollUntil(placeCrapsBet(createCrapsGame(5), CrapsBet.PassLine, 10), 4)
+  point = placeCrapsBet(point, CrapsBet.Odds, 10 * MAX_ODDS_MULTIPLE)
+  point = placeCrapsBet(point, CrapsBet.Field, 25)
+  for (const number of POINT_NUMBERS) {
+    point = placeCrapsBet(point, PLACE_BETS[number], PLACE_UNITS[number] * 5)
+  }
+
+  return [comeOut, point]
+}
+
+describe('a roll thrown from outside the engine', () => {
+  /*
+   * Shared craps has the room throw the dice and every client settle the same
+   * numbers through this same pure engine. If a supplied roll settled even
+   * slightly differently from a drawn one, two players watching one throw would
+   * see different money move.
+   */
+  it('settles a supplied roll exactly as it settles a drawn one', () => {
+    let state = placeCrapsBet(createCrapsGame(11), CrapsBet.PassLine, 10)
+    state = placeCrapsBet(state, CrapsBet.Field, 5)
+
+    const drawn = rollCraps(state)
+    const { roll } = drawDiceRoll(state.rngState)
+    const supplied = settleCrapsRoll(state, roll)
+
+    expect(supplied.lastRoll).toEqual(drawn.lastRoll)
+    // Every other field too, so this cannot pass on the roll alone.
+    expect({ ...supplied, rngState: drawn.rngState }).toEqual(drawn)
+  })
+
+  /*
+   * The room's dice must not spend the solo table's generator: a seed replays
+   * the same session whether or not a shared roll has passed through it.
+   */
+  it('leaves the carried generator untouched', () => {
+    const state = placeCrapsBet(createCrapsGame(11), CrapsBet.PassLine, 10)
+    const after = settleCrapsRoll(state, { first: 3, second: 4, total: 7 })
+
+    expect(after.rngState).toBe(state.rngState)
+    expect(after.lastOutcome).toBe(RollOutcome.Natural)
+    expect(after.lastPayouts[CrapsBet.PassLine]).toBe(20)
+  })
+
+  /*
+   * The dice arrive over a socket in shared play, which is user-writable in
+   * exactly the way `localStorage` is. A total that disagrees with its own dice
+   * would settle every bet on the table against a number nobody rolled.
+   */
+  it('refuses a roll that is not two six-sided dice', () => {
+    const state = createCrapsGame(11)
+
+    expect(() => settleCrapsRoll(state, { first: 3, second: 3, total: 7 })).toThrow(
+      /Not a dice roll/,
+    )
+    expect(() => settleCrapsRoll(state, { first: 0, second: 7, total: 7 })).toThrow(
+      /Not a dice roll/,
+    )
+    expect(() => settleCrapsRoll(state, { first: 1.5, second: 1.5, total: 3 })).toThrow(
+      /Not a dice roll/,
+    )
+  })
+
+  /*
+   * Every pair of dice a room can send, against a table with money on every bet
+   * it offers. The engine only ever saw the pairs its own generator produced;
+   * now anything that throws, or that pays a fraction of a dollar, is something
+   * a stranger's throw can cause.
+   */
+  it('pays whole dollars on every pair of dice, from either phase', () => {
+    for (const state of loadedTables()) {
+      for (let first = 1; first <= 6; first++) {
+        for (let second = 1; second <= 6; second++) {
+          const after = settleCrapsRoll(state, { first, second, total: first + second })
+
+          for (const [bet, payout] of Object.entries(after.lastPayouts)) {
+            expect(Number.isInteger(payout), `${bet} on ${first}+${second}`).toBe(true)
+          }
+        }
+      }
+    }
   })
 })

@@ -34,3 +34,22 @@ export const INTERACT_KEY = 'f'
 
 /** How the same key is drawn in a prompt. Here so the two cannot drift. */
 export const INTERACT_LABEL = 'F'
+
+/**
+ * Opens and closes the settings panel.
+ *
+ * `M` because everything else is taken: `WASD` and the arrows here, `Q`/`E` for
+ * the orbit, `R` for the camera, `F` for interact, `H S D P`, space and `1 2 3`
+ * at the tables.
+ *
+ * Deliberately **not** Escape. Escape is bound in three places and means the
+ * same thing in all of them — leave the table, stand up out of the chair, drop
+ * the craps rail — and there is no Escape-from-anywhere by design. Opening a
+ * menu is a different verb, and two verbs on one key is exactly the overlap the
+ * interaction rules exist to prevent. Escape still *closes* the panel, because
+ * closing it is leaving it.
+ */
+export const SETTINGS_KEY = 'm'
+
+/** How the settings key is drawn on the button. Here so the two cannot drift. */
+export const SETTINGS_LABEL = 'M'

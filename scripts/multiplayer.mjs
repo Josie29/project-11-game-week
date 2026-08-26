@@ -72,14 +72,14 @@ async function hasDevBridge(page) {
   return page.evaluate(() => Boolean(window.presenceStore))
 }
 
-async function openPlayer(browser, name, look) {
+async function openPlayer(browser, name, look, boot = 'strip') {
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 } })
   const page = await context.newPage()
 
   // `?boot=strip` skips the first-run designer where it exists; in production it
   // is stripped, and the designer is walked through below instead.
   const suffix = look === undefined ? '' : `&look=${look}`
-  await page.goto(`${BASE}/?boot=strip&mp=1&time=21:00&freeze${suffix}`, {
+  await page.goto(`${BASE}/?boot=${boot}&mp=1&time=21:00&freeze${suffix}`, {
     waitUntil: 'networkidle',
   })
   await page.waitForSelector('canvas', { timeout: 15_000 })
@@ -97,6 +97,19 @@ async function openPlayer(browser, name, look) {
      * the field a player would use, then leave — which also exercises the name
      * entry itself, something the dev path skips entirely.
      */
+
+    /*
+     * The welcome screen first, and picking Multiplayer on it is not optional.
+     *
+     * `?mp=1` cannot help here: it only lifts the `?boot=` suppression, and
+     * `?boot=` does not exist in a production build at all — so the mode this
+     * script needs is the one the toggle sets, and the toggle defaults to
+     * Single. Without this click both players load, neither opens a socket, and
+     * the room they are supposed to share is never joined by anybody.
+     */
+    await page.getByRole('button', { name: 'Multiplayer' }).click()
+    await page.getByRole('button', { name: 'Enter the strip' }).click()
+
     await page.getByRole('textbox', { name: /your name/i }).fill(name)
     await page.getByRole('button', { name: 'Hit the strip' }).click()
     await page.getByText('WASD to walk').waitFor({ timeout: 15_000 })
@@ -164,6 +177,32 @@ async function main() {
 
   await alice.page.screenshot({ path: `${OUT}/alice.png` })
   await bob.page.screenshot({ path: `${OUT}/bob.png` })
+
+  /*
+   * And again indoors, which is a different room and was a different bug.
+   *
+   * Venue rooms are named `venue:golden-ace`; the client percent-encodes that
+   * and the worker's route pattern rejected the `%`, so every indoor room 404'd
+   * at the handshake while the strip worked perfectly. It survived because this
+   * script only ever tested the strip — the one room whose name has no colon in
+   * it. Two players in the casino is now part of the check rather than
+   * something nobody thought to try.
+   *
+   * Dev only, like the rest of the introspection above: `?boot=floor` does not
+   * exist in a production build.
+   */
+  const aliceIn = await openPlayer(browser, 'Alice', undefined, 'floor')
+  const bobIn = await openPlayer(browser, 'Bob', undefined, 'floor')
+  await aliceIn.page.waitForTimeout(CONNECT_MS)
+
+  const indoors = await peers(bobIn.page)
+  check('bob connected in the casino', indoors.connected === true, JSON.stringify(indoors))
+  check(
+    'bob sees alice in the casino',
+    indoors.names?.includes('Alice'),
+    JSON.stringify(indoors.names),
+  )
+  await bobIn.page.screenshot({ path: `${OUT}/bob-casino.png` })
 
   await browser.close()
 

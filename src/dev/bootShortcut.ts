@@ -6,6 +6,7 @@ import { useAppearanceStore } from '../store/useAppearanceStore'
 import { useBlackjackStore } from '../store/useBlackjackStore'
 import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
+import { PlayMode, useSessionStore } from '../store/useSessionStore'
 import { useTimeStore } from '../store/useTimeStore'
 import { TableId } from '../scenes/casinoFloorLayout'
 import {
@@ -248,10 +249,13 @@ export function applyBootShortcut(): void {
   applyWardrobeShortcut()
   applyLookShortcut()
 
-  const boot = new URLSearchParams(window.location.search).get('boot')
+  const params = new URLSearchParams(window.location.search)
+  const boot = params.get('boot')
   if (!boot) return
 
   const known = [
+    'welcome',
+    'settings',
     'casino',
     'table',
     'settled',
@@ -281,6 +285,45 @@ export function applyBootShortcut(): void {
     'southend',
   ]
   if (!known.includes(boot)) return
+
+  if (boot === 'welcome') {
+    /*
+     * The one link that *keeps* the welcome screen up.
+     *
+     * It resets rather than merely declining to skip, because a capture profile
+     * has `hasWelcomed` false already and a human's browser does not — without
+     * the reset this link would work in `npm run shots` and show the strip to
+     * the person checking it by hand.
+     */
+    useSessionStore.getState().reset()
+    return
+  }
+
+  /*
+   * Every other boot link puts the player straight into the game, on the same
+   * rule that already skips the first-run designer: these links exist to make a
+   * capture reproducible, and a menu in front of the scene is not that.
+   *
+   * Mode follows `?mp=1` so the opt-in keeps working. `npm run multiplayer`
+   * needs `?boot=strip` to skip the designer *and* needs the socket, and the
+   * socket is now gated on mode as well as on suppression.
+   */
+  useSessionStore
+    .getState()
+    .completeWelcome(params.get('mp') === '1' ? PlayMode.Multiplayer : PlayMode.Single)
+
+  if (boot === 'settings') {
+    /*
+     * The settings panel, open on the strip.
+     *
+     * Multiplayer rather than Single so the capture shows the toggle in the
+     * state that has something to say — and because the mode a `?boot=` link
+     * sets is otherwise never visible in any shot.
+     */
+    useAppearanceStore.getState().completeDesign()
+    useSessionStore.getState().openSettings()
+    return
+  }
 
   if (boot === 'designer') {
     useGameStore.getState().openDesigner()

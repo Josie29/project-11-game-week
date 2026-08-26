@@ -210,6 +210,18 @@ try {
   await page.goto(baseUrl, { waitUntil: 'load' })
   await page.waitForSelector('canvas', { timeout: 20000 })
 
+  /*
+   * 0. The welcome screen, which is the first thing a new player sees.
+   *
+   *    Clicked through rather than skipped with `?boot=`. Those links are
+   *    stripped from production builds, and this script is the only check that
+   *    runs against a deployed URL — bypassing the screen here would mean the
+   *    one path nobody ever verifies is the one every real player takes.
+   */
+  await expectText('Neon Strip', 'welcome screen')
+  await capture('0-welcome')
+  await page.getByRole('button', { name: 'Enter the strip' }).click()
+
   // 1. First run opens the designer, not the street.
   await expectText('Who are you tonight?', 'first run')
   await page.getByRole('button', { name: 'Feminine' }).click()
@@ -220,6 +232,24 @@ try {
   await page.getByRole('button', { name: 'Hit the strip' }).click()
   await expectText('WASD to walk', 'leaving the designer')
   await capture('2-strip')
+
+  /*
+   * 1b. The settings panel, opened with the key and closed with Escape.
+   *
+   *     Both halves are covered on purpose. The key is the only way in that
+   *     `?boot=settings` cannot prove — that link sets the panel open before
+   *     the first render, so it would pass with the listener deleted. And
+   *     Escape closing it is the claim that the key keeps its one meaning
+   *     everywhere: leave the thing you are in.
+   */
+  await page.keyboard.press('KeyM')
+  await page.waitForTimeout(400)
+  await expectText('Start over', 'opening settings with M')
+  await capture('2b-settings')
+
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(400)
+  await expectText('WASD to walk', 'closing settings with Escape')
 
   // 2. Head diagonally for the shop's side of the street. The player clamps at
   //    the kerb, so the D component stops mattering once they reach it and the

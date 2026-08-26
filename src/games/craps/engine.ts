@@ -320,15 +320,26 @@ export function totalCrapsStake(state: CrapsState): number {
   return Object.values(state.bets).reduce((sum, amount) => sum + amount, 0)
 }
 
-/** Rolls two dice from the carried generator state. */
-function rollDice(rngState: number): { roll: DiceRoll; state: number } {
+/**
+ * Draws two dice from the carried generator state.
+ *
+ * Exported because generating a roll is no longer the only way one can enter
+ * the engine: `settleCrapsRoll` settles whatever numbers it is handed, and this
+ * is where a table playing alone gets its numbers from. Shared craps will hand
+ * it the pair the room broadcast instead, and this generator simply goes unused
+ * there.
+ *
+ * @param rngState Current mulberry32 state, from `CrapsState.rngState`.
+ * @returns The roll and the generator state to carry forward with it.
+ */
+export function drawDiceRoll(rngState: number): { roll: DiceRoll; rngState: number } {
   const first = nextRandom(rngState)
   const second = nextRandom(first.state)
 
   const a = Math.floor(first.value * 6) + 1
   const b = Math.floor(second.value * 6) + 1
 
-  return { roll: { first: a, second: b, total: a + b }, state: second.state }
+  return { roll: { first: a, second: b, total: a + b }, rngState: second.state }
 }
 
 /** What the field pays for a total, as chips returned including the stake. */
@@ -338,14 +349,48 @@ function fieldReturn(stake: number, total: number): number {
 }
 
 /**
- * Throws the dice and settles everything the roll decides.
+ * Whether a roll is two six-sided dice with a total that matches them.
+ *
+ * Cheap here and worth having because a roll no longer necessarily comes from
+ * this module's own generator. Shared craps takes the numbers off a socket,
+ * which is user-writable in exactly the way `localStorage` is, and a roll
+ * claiming a total of 7 on two threes would settle every bet on the table
+ * against a number the dice never showed.
+ */
+function isDiceRoll(roll: DiceRoll): boolean {
+  const isDie = (value: number): boolean => Number.isInteger(value) && value >= 1 && value <= 6
+  return isDie(roll.first) && isDie(roll.second) && roll.total === roll.first + roll.second
+}
+
+/**
+ * Settles everything a roll decides, without deciding the roll.
+ *
+ * The engine's core, and the only place the rules live. Who threw the dice is
+ * deliberately not its business: solo play hands it a roll drawn from the
+ * table's own seeded generator, and shared craps hands it the one the room
+ * broadcast to every client, which is what lets a whole table settle the same
+ * throw identically from the same pure function.
  *
  * Bets that lose or win are cleared from the felt; a pass line riding through a
  * no-decision roll stays staked, which is what makes the wait for the point
  * feel like a wait.
+ *
+ * Leaves `rngState` exactly as it found it. A roll from outside does not spend
+ * the table's own generator, so a seeded solo session stays reproducible even
+ * if a shared roll passes through the same state.
+ *
+ * @param state The table the roll was thrown at.
+ * @param roll The dice that came up.
+ * @returns The settled table, with the roll, its outcome and its payouts.
+ * @throws {Error} If the roll is not two six-sided dice with a matching total.
+ *   Throws rather than clamping so a bad packet or a bad shortcut surfaces
+ *   instead of quietly paying out against numbers nobody rolled.
  */
-export function rollCraps(state: CrapsState): CrapsState {
-  const { roll, state: rngState } = rollDice(state.rngState)
+export function settleCrapsRoll(state: CrapsState, roll: DiceRoll): CrapsState {
+  if (!isDiceRoll(roll)) {
+    throw new Error(`Not a dice roll: ${roll.first} + ${roll.second} = ${roll.total}`)
+  }
+
   const { total } = roll
 
   const bets = { ...state.bets }
@@ -452,10 +497,22 @@ export function rollCraps(state: CrapsState): CrapsState {
     lastRoll: roll,
     lastOutcome: outcome,
     lastPayouts: payouts,
-    rngState,
+    rngState: state.rngState,
     // A seven-out passes the dice on, so the count restarts with the shooter.
     rollCount: outcome === RollOutcome.SevenOut ? 0 : state.rollCount + 1,
   }
+}
+
+/**
+ * Draws from the table's own generator and settles what it throws.
+ *
+ * The solo path in one call, and the seeded one: the carried `rngState`
+ * advances, so a seed still replays a whole session of rolls exactly as it did
+ * before the roll became a parameter.
+ */
+export function rollCraps(state: CrapsState): CrapsState {
+  const { roll, rngState } = drawDiceRoll(state.rngState)
+  return { ...settleCrapsRoll(state, roll), rngState }
 }
 
 /** Total returned by the most recent roll, across every bet. */

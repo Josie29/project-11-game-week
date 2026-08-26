@@ -17,13 +17,15 @@
     "multiplayer": "node scripts/multiplayer.mjs",
     "typecheck:worker": "tsc --noEmit -p worker/tsconfig.json",
     "worker:dev": "wrangler dev --config worker/wrangler.toml",
-    "worker:deploy": "wrangler deploy --config worker/wrangler.toml"
+    "worker:deploy": "wrangler deploy --config worker/wrangler.toml",
+    "mode-toggle": "node scripts/modeToggle.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.7.0",
     "@react-three/postprocessing": "^3.1.0",
     "@react-three/rapier": "^2.2.0",
+    "@supabase/supabase-js": "^2.112.4",
     "postprocessing": "^6.39.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

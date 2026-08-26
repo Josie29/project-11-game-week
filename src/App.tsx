@@ -11,6 +11,7 @@ import { ClinicInterior } from './scenes/ClinicInterior'
 import { ShopInterior } from './scenes/ShopInterior'
 import { Strip } from './scenes/Strip'
 import { useAppearanceStore } from './store/useAppearanceStore'
+import { useSessionStore } from './store/useSessionStore'
 import { TableId } from './scenes/casinoFloorLayout'
 import { Location, useGameStore } from './store/useGameStore'
 import { useTimeStore } from './store/useTimeStore'
@@ -18,6 +19,7 @@ import { BlackjackPanel } from './ui/BlackjackPanel'
 import { CharacterDesigner } from './ui/CharacterDesigner'
 import { CrapsPanel } from './ui/CrapsPanel'
 import { Hud } from './ui/Hud'
+import { WelcomeScreen } from './ui/WelcomeScreen'
 import { ClinicPanel } from './ui/ClinicPanel'
 import { CheckoutPanel } from './ui/CheckoutPanel'
 import { FittingPanel } from './ui/FittingPanel'
@@ -29,6 +31,7 @@ export function App() {
   const location = useGameStore((state) => state.location)
   const activeVenue = useGameStore((state) => state.activeVenue)
   const hasDesigned = useAppearanceStore((state) => state.hasDesigned)
+  const hasWelcomed = useSessionStore((state) => state.hasWelcomed)
   const activeTable = useGameStore((state) => state.activeTable)
 
   // Joins whichever room the player is standing in, and leaves it on the way
@@ -39,12 +42,21 @@ export function App() {
   const atCheckout = useGameStore((state) => state.atCheckout)
 
   /*
+   * The welcome screen comes before everything, including the designer, and
+   * short-circuits it: while it is up the Canvas shows the strip behind the
+   * panel rather than the dressing-room stage, so the first thing anyone sees
+   * is the game rather than a menu in front of a menu.
+   */
+  const isWelcoming = !hasWelcomed
+
+  /*
    * A player who has never designed a character gets the designer instead of
    * the street, without the store having to be seeded across two persisted
    * slices at boot — `location` is never persisted, so it always starts on the
    * strip and this derives the first run from the wardrobe save instead.
    */
-  const isDesigning = location === Location.Designer || (!hasDesigned && location === Location.Strip)
+  const isDesigning =
+    !isWelcoming && (location === Location.Designer || (!hasDesigned && location === Location.Strip))
   const isIndoors = !isDesigning && location === Location.Interior && activeVenue !== null
   const indoorVenue = isIndoors && activeVenue ? getVenue(activeVenue) : null
   const isShopping = indoorVenue?.kind === VenueKind.Shop
@@ -115,8 +127,9 @@ export function App() {
       </Canvas>
 
       {/* The designer is a menu, not a place — the world HUD has no business there. */}
-      {!isDesigning && <Hud />}
+      {!isDesigning && !isWelcoming && <Hud />}
       {isDesigning && <CharacterDesigner />}
+      {isWelcoming && <WelcomeScreen />}
 
       {/*
         The panel follows the table, not the venue: one casino now holds both

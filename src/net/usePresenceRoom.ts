@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useAppearanceStore } from '../store/useAppearanceStore'
 import { useGameStore } from '../store/useGameStore'
 import { usePresenceStore } from '../store/usePresenceStore'
+import { PlayMode, useSessionStore } from '../store/useSessionStore'
 import { boundsFor, roomIdFor } from '../world/rooms'
 
 /*
@@ -21,6 +22,8 @@ export function usePresenceRoom(): void {
   const activeTable = useGameStore((state) => state.activeTable)
   const atChair = useGameStore((state) => state.atChair)
 
+  const mode = useSessionStore((state) => state.mode)
+
   const name = useAppearanceStore((state) => state.playerName)
   const appearance = useAppearanceStore((state) => state.appearance)
   const owned = useAppearanceStore((state) => state.owned)
@@ -33,6 +36,25 @@ export function usePresenceRoom(): void {
 
   useEffect(() => {
     const { enterRoom, leaveRoom, updateIdentity } = usePresenceStore.getState()
+
+    /*
+     * Playing alone leaves, rather than merely declining to join.
+     *
+     * `enterRoom` already refuses to open a socket in Single, but refusing is
+     * only half of it once the mode can be changed mid-session: a player who
+     * switches to Single while stood in a room would keep the socket they
+     * already had, and everybody else would go on walking around them. "Play
+     * alone" has to mean the connection is gone, not that it was never made.
+     *
+     * `mode` is in the dependency list for the other direction. Without it,
+     * switching to Multiplayer does nothing until the player happens to walk
+     * through a door and change `roomId`, which reads as a toggle that is
+     * simply broken.
+     */
+    if (mode !== PlayMode.Multiplayer) {
+      leaveRoom()
+      return
+    }
 
     if (roomId === null) {
       leaveRoom()
@@ -50,7 +72,7 @@ export function usePresenceRoom(): void {
      */
     enterRoom(roomId, boundsFor(roomId), identity)
     updateIdentity(identity)
-  }, [roomId, name, appearance, owned, equipped, seated])
+  }, [mode, roomId, name, appearance, owned, equipped, seated])
 
   // Leaves for good when the app unmounts, so a hot reload does not strand a
   // socket holding a figure in the room.

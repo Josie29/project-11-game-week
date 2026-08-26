@@ -206,6 +206,7 @@ Dev-only deep links, stripped from production builds:
 | `?boot=casinofront` | the same at the Golden Ace, across the road; takes `?look=90` |
 | `?boot=dressed` | the shop, every wardrobe slot filled |
 | `?boot=strip` | the street, with the first-run designer skipped |
+| `?boot=welcome` | the welcome screen, held up rather than skipped |
 | `?mp=1` | re-enables multiplayer under a `?boot=` link, which otherwise suppresses it |
 | `?boot=northend` | at the north junction, where the strip meets its cross street |
 | `?boot=southend` | the same at the south end |
@@ -220,7 +221,21 @@ unpinned capture lands on a different sky and different HUD digits each run.
 
 `?boot=strip` exists because captures run in a fresh browser profile, so
 `hasDesigned` is false and a bare `/` opens the character designer. Without it
-every strip regression shot is a picture of a menu.
+every strip regression shot is a picture of a menu. There are two menus in front
+of a fresh profile now — the welcome screen and then the designer — and every
+`?boot=` link clears both.
+
+`?boot=welcome` is the one that goes the other way, and it *resets*
+`hasWelcomed` rather than merely declining to skip it. A capture profile has the
+flag false already, so a link that only declined to skip would pass `npm run
+shots` and show the strip to the person opening it by hand — which is the only
+way anybody looks at that screen.
+
+**The welcome screen is the one thing `?boot=` cannot verify.** Those links are
+stripped from production builds, so the screen a real player actually meets is
+reachable only from a bare `/`. `npm run walkthrough` clicks through it for that
+reason; bypassing it there would have left the first screen of the game as the
+one screen nothing checks.
 
 `?look=` exists because the play camera trails the player down the street, so
 every facade is seen at a glancing angle. A shop window is a bright sliver from

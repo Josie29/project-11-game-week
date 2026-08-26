@@ -1,0 +1,105 @@
+/*
+ * The two legal pages, and only those.
+ *
+ * Deliberately its own stylesheet rather than a route inside the app. These are
+ * static files Vite copies to the dist root, so they load without the 3.5 MB
+ * game bundle, they cannot break the game, and Google can read them without
+ * executing any JavaScript — which matters, because the OAuth consent screen
+ * links to them and a client-rendered page can look empty to a crawler.
+ */
+
+:root {
+  --ink: #f2effa;
+  --ink-muted: #a49fb8;
+  --bg: #0b0714;
+  --panel: #150e24;
+  --neon: #ff2d95;
+  --rule: #2c2140;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 2rem 1.25rem 5rem;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+main {
+  max-width: 42rem;
+  margin: 0 auto;
+}
+
+.back {
+  margin: 0 0 2rem;
+  font-size: 0.875rem;
+}
+
+.back a {
+  color: var(--ink-muted);
+  text-decoration: none;
+}
+
+.back a:hover {
+  color: var(--neon);
+}
+
+h1 {
+  margin: 0 0 0.25rem;
+  font-size: 2rem;
+  line-height: 1.2;
+  color: var(--neon);
+}
+
+h2 {
+  margin: 2.5rem 0 0.5rem;
+  font-size: 1.125rem;
+  line-height: 1.3;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--rule);
+}
+
+.updated {
+  margin: 0 0 2rem;
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+}
+
+p,
+li {
+  color: var(--ink);
+}
+
+ul {
+  padding-left: 1.25rem;
+}
+
+li {
+  margin-bottom: 0.5rem;
+}
+
+a {
+  color: var(--neon);
+}
+
+strong {
+  color: var(--ink);
+}
+
+/* Wider than a phone: give the text a little more room to breathe. */
+@media (min-width: 40rem) {
+  body {
+    padding: 4rem 2rem 6rem;
+    font-size: 1.0625rem;
+  }
+
+  h1 {
+    font-size: 2.5rem;
+  }
+}
