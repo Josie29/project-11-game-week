@@ -29,12 +29,17 @@ export const STARTING_MINUTE = 21 * 60
 /**
  * Game minutes per sky-texture redraw.
  *
- * The sky is a canvas gradient, so it can only change in steps. Ten minutes is
- * 1/144th of the cycle — below the point where the step is visible — while
- * keeping redraws to one every ten seconds. Fog and lights vary continuously
- * and cover the gap.
+ * The sky is a canvas gradient, so it can only change in steps, and the step has
+ * to stay under the size at which it reads as a pop rather than a change.
+ *
+ * Six, down from ten. Ten was fine for a day with four keyframes in it; adding
+ * the 16:00 frame — so the afternoon stops sliding into dusk from lunchtime —
+ * put more colour into less time, and the steepest legs either side of sunrise
+ * and sunset then stepped far enough between buckets to be seen. The cost is a
+ * redraw every six seconds instead of ten, on a 512px gradient. Fog and lights
+ * vary continuously and cover the gap either way.
  */
-export const SKY_BUCKET_MINUTES = 10
+export const SKY_BUCKET_MINUTES = 6
 
 /** How dim the neon is allowed to get at noon. Vegas signs never switch off. */
 export const NEON_DAYLIGHT_FLOOR = 0.3
@@ -60,7 +65,17 @@ export interface Lighting {
   readonly ambientIntensity: number
   readonly keyColor: string
   readonly keyIntensity: number
-  /** Where the key light sits, so it tracks low at dawn and dusk. */
+  /**
+   * Where the key light sits, so it tracks low at dawn and dusk.
+   *
+   * Kept under about 35 degrees of elevation at every hour, which is not where
+   * a real midday sun is. Two reasons, and they point the same way. The play
+   * camera trails the player at a shallow pitch and sees maybe forty degrees up,
+   * so a body any higher than this is permanently off the top of the screen —
+   * `Celestial` draws the sun and the moon along this exact direction, and a sun
+   * nobody can ever see is not worth drawing. And a low sun throws long shadows
+   * down the street, which is the whole reason the key was given `castShadow`.
+   */
   readonly keyPosition: readonly [number, number, number]
   readonly fogColor: string
   readonly fogNear: number
@@ -116,7 +131,7 @@ const KEYFRAMES: readonly Keyframe[] = [
       ambientIntensity: 0.58,
       keyColor: '#93a6ff',
       keyIntensity: 0.55,
-      keyPosition: [10, 26, 10],
+      keyPosition: [10, 9, 10],
       fogColor: '#202b50',
       fogNear: 26,
       fogFar: 125,
@@ -142,8 +157,21 @@ const KEYFRAMES: readonly Keyframe[] = [
       ambientIntensity: 0.76,
       keyColor: '#ffb98a',
       keyIntensity: 0.85,
-      // Low and from the east, so the towers throw their length down the street.
-      keyPosition: [-26, 7, 8],
+      /*
+       * Low, and very nearly straight down the street.
+       *
+       * It used to come from off to one side, which is a fine direction for a
+       * light and a useless one for a sun: the strip is a canyon seventeen
+       * metres wide between facades fifteen high, so anything below about sixty
+       * degrees of elevation to either side is behind a building. The only two
+       * lines of sight out of it are along the road, and they are narrow: eight
+       * degrees off the axis and the disc is behind a tower again. It also has
+       * to clear the closing block at the far junction — but only by four
+       * degrees, so it can stay as low as a sunrise should be. Sunrise takes the
+       * far sightline, which puts the disc at the end of the boulevard and
+       * stretches every tower's shadow down it toward the player.
+       */
+      keyPosition: [-4, 7, -30],
       fogColor: '#7a6a86',
       fogNear: 30,
       fogFar: 138,
@@ -175,20 +203,21 @@ const KEYFRAMES: readonly Keyframe[] = [
     },
     light: {
       ambientColor: '#c6d8f0',
-      ambientIntensity: 1.05,
+      ambientIntensity: 0.9,
       keyColor: '#ffeccd',
-      keyIntensity: 1.35,
+      keyIntensity: 2.1,
       // Risen, but still off to the east and not yet overhead.
-      keyPosition: [-16, 21, 9],
+      keyPosition: [-16, 12, 9],
       fogColor: '#c2d6ea',
-      fogNear: 42,
-      fogFar: 188,
+      // Pulled in from 42. See the noon keyframe.
+      fogNear: 24,
+      fogFar: 150,
       roadColor: '#54575f',
       roadRoughness: 0.84,
       roadMirror: 0.2,
       roadMetalness: 0.08,
       roadMixStrength: 3,
-      sidewalkColor: '#9497ab',
+      sidewalkColor: '#aca596',
     },
   },
   {
@@ -201,14 +230,37 @@ const KEYFRAMES: readonly Keyframe[] = [
       haze: '#dfeaf6',
     },
     light: {
-      ambientColor: '#cfe0f5',
-      ambientIntensity: 1.15,
-      keyColor: '#fff4e0',
-      keyIntensity: 1.5,
-      keyPosition: [6, 34, 10],
+      /*
+       * Ambient pulled back and the key pushed up.
+       *
+       * They used to be nearly equal, which is a lighting rig with no direction
+       * in it: every face of every tower came out the same value and the street
+       * read as a paper model under a softbox. Now that the key actually casts
+       * — it never had `castShadow` at all — the contrast between a lit face and
+       * a shaded one is what carries the daylight.
+       */
+      ambientColor: '#c3d2e8',
+      // Enough fill that a shadow is a shade rather than a hole. Below about
+      // this the closing block's shadow across the junction came out as a solid
+      // black bar with no road under it.
+      ambientIntensity: 0.95,
+      keyColor: '#fff2d8',
+      keyIntensity: 2.4,
+      // Off to one side rather than overhead: a sun directly above throws its
+      // shadows straight down, where nobody standing on the street can see them.
+      keyPosition: [22, 17, 14],
       fogColor: '#cbdcee',
-      fogNear: 44,
-      fogFar: 195,
+      /*
+       * Pulled in hard from 44, which was further than the street is long.
+       *
+       * Haze is what gives a street depth, and at noon there was none of it on
+       * anything the player could see: fog started 44 units out, the walkable
+       * strip is 64 end to end, and the whole thing rendered crisp from one kerb
+       * to the other like a model on a table. The daytime reference is hazy
+       * enough at the far end to lose an entire block in it.
+       */
+      fogNear: 26,
+      fogFar: 155,
       // Dry asphalt: mid-grey, and deliberately darker than the sidewalk beside
       // it. Pale enough to out-value the kerb and the roadway stops reading as a
       // road at all — it becomes a river running between the towers.
@@ -217,7 +269,51 @@ const KEYFRAMES: readonly Keyframe[] = [
       roadMirror: 0.12,
       roadMetalness: 0.05,
       roadMixStrength: 2,
-      sidewalkColor: '#9a9db0',
+      sidewalkColor: '#b3ab9b',
+    },
+  },
+  {
+    /*
+      Mid-afternoon, and the reason it exists is the mirror of why the 08:00
+      frame does.
+
+      `daylightAt` holds at 1 until 17:00 and only then begins to fall, but the
+      next keyframe after noon used to be 19:00 — so from about one o'clock the
+      sky, the fog and the road were already sliding into dusk while the facades
+      and the neon were still flat mid-day. At 16:30 the street showed cream
+      sunlit towers under a purple sky above a black wet road. Whatever drives
+      the buildings and whatever drives the sky have to arrive together; this is
+      the frame that holds the afternoon still until they both let go.
+
+      At 16:00 rather than 17:00 so the run down to the 19:00 sunset has three
+      hours to cover rather than two — `skyBucket` steps the gradient every ten
+      minutes, and a leg this saturated crossed in two hours steps far enough
+      per bucket to be seen as a jump. `timeOfDay.test.ts` holds that.
+    */
+    minute: 16 * 60,
+    sky: {
+      zenith: '#3568c0',
+      upper: '#5a89d2',
+      mid: '#8ab4e2',
+      horizon: '#cdd9ea',
+      haze: '#e6e6ea',
+    },
+    light: {
+      ambientColor: '#c8d2e2',
+      ambientIntensity: 0.92,
+      keyColor: '#ffeccb',
+      keyIntensity: 2.2,
+      // Past the meridian and heading west, so the shadows have turned round.
+      keyPosition: [-24, 15, -6],
+      fogColor: '#cdd8e4',
+      fogNear: 26,
+      fogFar: 150,
+      roadColor: '#4f5158',
+      roadRoughness: 0.85,
+      roadMirror: 0.16,
+      roadMetalness: 0.06,
+      roadMixStrength: 2.4,
+      sidewalkColor: '#b0a898',
     },
   },
   {
@@ -234,7 +330,9 @@ const KEYFRAMES: readonly Keyframe[] = [
       ambientIntensity: 0.82,
       keyColor: '#ff9a5c',
       keyIntensity: 0.9,
-      keyPosition: [26, 7, -8],
+      // ...and sunset takes the near one, so it sits over the junction behind
+      // you and the shadows run away down the street instead.
+      keyPosition: [5, 7, 29],
       fogColor: '#6b3f63',
       fogNear: 28,
       fogFar: 142,
@@ -260,7 +358,7 @@ const KEYFRAMES: readonly Keyframe[] = [
       ambientIntensity: 0.62,
       keyColor: '#9aa8ff',
       keyIntensity: 0.6,
-      keyPosition: [16, 20, 2],
+      keyPosition: [16, 10, 2],
       fogColor: '#262c52',
       fogNear: 27,
       fogFar: 128,
@@ -433,6 +531,33 @@ export function daylightAt(minuteOfDay: number): number {
 /** Neon brightness multiplier: full at night, washed out but never off by day. */
 export function neonLevelAt(minuteOfDay: number): number {
   return 1 - (1 - NEON_DAYLIGHT_FLOOR) * daylightAt(minuteOfDay)
+}
+
+/**
+ * How far out the sun and moon are drawn.
+ *
+ * Inside the sky dome's 220, so the disc is in front of the gradient rather
+ * than clipped through the back of it.
+ */
+export const CELESTIAL_RADIUS = 180
+
+/**
+ * The direction the light comes from, as a unit vector.
+ *
+ * The sun and the moon are drawn along this, which is the entire reason it
+ * exists as a function rather than each of them carrying its own arc: a visible
+ * sun in one corner of the sky and shadows pointing out of another is the sort
+ * of thing nobody consciously notices and everybody registers as wrong. It is
+ * the same rule the chair camera and the draw line already follow — where two
+ * things have to agree about a direction, only one of them gets to hold it.
+ *
+ * @param minuteOfDay Minute of the game day.
+ * @returns The key light's direction, normalised. Never zero-length.
+ */
+export function keyDirection(minuteOfDay: number): readonly [number, number, number] {
+  const [x, y, z] = lightingAt(minuteOfDay).keyPosition
+  const length = Math.hypot(x, y, z) || 1
+  return [x / length, y / length, z / length]
 }
 
 /** Rounds to a step, so a continuous curve drives a prop only when it moves. */

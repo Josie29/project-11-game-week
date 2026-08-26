@@ -21,14 +21,8 @@ import {
   WINDOW_SILL_Y,
   WINDOW_TOP_Y,
 } from '../scenes/storefrontLayout'
-import {
-  DOOR_TRIGGER_RADIUS,
-  FACADE_X,
-  ROAD_HALF_WIDTH,
-  STREET_BOUNDS,
-  VenueKind,
-  VENUES,
-} from '../world/venues'
+import { FACADE_X, ROAD_HALF_WIDTH, STREET_BOUNDS } from '../scenes/stripLayout'
+import { DOOR_TRIGGER_RADIUS, VenueKind, VENUES } from '../world/venues'
 
 /** The one shop on the strip. Every measurement below is relative to its door. */
 const SHOP = VENUES.find((venue) => venue.kind === VenueKind.Shop)

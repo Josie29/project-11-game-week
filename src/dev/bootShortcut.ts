@@ -9,6 +9,7 @@ import { useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
 import { TableId } from '../scenes/casinoFloorLayout'
 import { donationTimeline, NurseTask } from '../scenes/clinicRoutine'
+import { STREET_BOUNDS } from '../scenes/stripLayout'
 import { MARKER_AMOUNT } from '../world/money'
 import { PLACE_UNITS, rollCraps } from '../games/craps/engine'
 import { CrapsBet, PLACE_BETS, POINT_NUMBERS, PointNumber } from '../scenes/crapsFeltLayout'
@@ -35,6 +36,19 @@ const SHOPFRONT_VIEWPOINT: readonly [number, number, number] = [6.6, 0, -6]
 
 /** Where `?boot=clinicfront` stands the player. The mirror of the shop's. */
 const CLINICFRONT_VIEWPOINT: readonly [number, number, number] = [6.6, 0, -22]
+
+/**
+ * The two ends of the street, where the strip meets its cross streets.
+ *
+ * These exist because the thing they show could not otherwise be photographed.
+ * The ends of the world were the worst-looking part of the strip for months and
+ * never appeared in a single regression capture, because `npm run shots` can
+ * only reach what a `?boot=` reaches — finding it meant driving a browser
+ * twenty-six bursts down the road by hand. Anything that is only visible from
+ * somewhere gets a way to stand there.
+ */
+const NORTH_END_VIEWPOINT: readonly [number, number, number] = [0, 0, STREET_BOUNDS.maxZ - 1]
+const SOUTH_END_VIEWPOINT: readonly [number, number, number] = [0, 0, STREET_BOUNDS.minZ + 1]
 
 /**
  * A fully accessorised character, for `?dressed`.
@@ -165,6 +179,8 @@ function applyTimeShortcut(): void {
  *   `?boot=shop&dressed` for the anchors up close, `?boot=settled&dressed` for
  *   the gown on a stool, `?boot=strip&dressed` for the cane and the walk cycle.
  * - `?boot=strip` marks the character as designed and stands on the street.
+ * - `?boot=northend` and `?boot=southend` stand at the two ends of the street,
+ *   where it meets its cross streets.
  * - `?boot=shopfront` stands on the street a few paces from The Gilded Hanger,
  *   which is the only way to look at the storefront without walking there.
  * - `?boot=clinicfront` does the same for Red River Plasma, further down the
@@ -205,6 +221,8 @@ export function applyBootShortcut(): void {
     'shopfront',
     'clinicfront',
     'strip',
+    'northend',
+    'southend',
   ]
   if (!known.includes(boot)) return
 
@@ -229,6 +247,16 @@ export function applyBootShortcut(): void {
     // Same side as the shop, so the same `?look=-90` frames it face-on.
     useAppearanceStore.getState().completeDesign()
     useGameStore.setState({ spawnPosition: CLINICFRONT_VIEWPOINT })
+    return
+  }
+
+  if (boot === 'northend' || boot === 'southend') {
+    // Compose with `?look=180` at the north end to look back up the street; the
+    // south end already faces the right way.
+    useAppearanceStore.getState().completeDesign()
+    useGameStore.setState({
+      spawnPosition: boot === 'northend' ? NORTH_END_VIEWPOINT : SOUTH_END_VIEWPOINT,
+    })
     return
   }
 
