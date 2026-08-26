@@ -5,6 +5,7 @@ import {
   sanitizeRemoteIdentity,
   type Snapshot,
 } from '../world/presence'
+import type { TableId } from '../scenes/casinoFloorLayout'
 import type { WalkBounds } from '../scenes/components/WalkingPlayer'
 
 /*
@@ -33,11 +34,19 @@ const BACKOFF_MS = [500, 1_000, 2_000, 5_000, 10_000]
 
 /** What the room tells the game about who else is here. */
 export interface RoomHandlers {
+  /** The room threw the dice. Everyone at that table gets the same numbers. */
+  readonly onRolled?: (table: string, roll: { first: number; second: number }) => void
+  /** Who holds the dice now, or null when nobody is at the table. */
+  readonly onShooter?: (table: string, id: string | null) => void
+  /** The table as somebody else last published it, for a mid-hand arrival. */
+  readonly onTableState?: (table: string, value: unknown) => void
   /** A player joined, or their identity changed. */
   readonly onIdentity: (identity: RemoteIdentity) => void
   /** A player moved. `at` is local time, so clock skew never matters. */
   readonly onPose: (id: string, snapshot: Snapshot) => void
   readonly onLeave: (id: string) => void
+  /** This client's own id in the room, assigned by the server on join. */
+  readonly onSelf?: (id: string) => void
   /** Called on connect and disconnect, so the HUD can say which. */
   readonly onConnectedChange: (connected: boolean) => void
 }
@@ -49,6 +58,8 @@ export interface LocalIdentity {
   readonly owned: readonly string[]
   readonly equipped: unknown
   readonly seated: boolean
+  /** Which table they are standing at, for the shooter queue. */
+  readonly table: TableId | null
 }
 
 export interface RoomConnection {
@@ -61,9 +72,20 @@ export interface RoomConnection {
    */
   send: (pose: Pose) => boolean
   /** Tells the room the player sat down or stood up. */
-  setSeated: (seated: boolean) => void
+  setSeated: (seated: boolean, table: TableId | null) => void
   /** Re-announces identity, e.g. after a wardrobe change. */
   announce: (identity: LocalIdentity) => void
+  /** Asks the room to throw. It refuses unless it is this player's turn. */
+  requestRoll: () => void
+  /** Gives up the dice. The room decides who gets them next. */
+  passDice: () => void
+  /**
+   * Publishes the table as this client sees it, for whoever arrives next.
+   *
+   * Opaque to the room, which stores and relays it without reading it — the
+   * clients agree what is in here and the server stays a relay.
+   */
+  publishTable: (value: unknown) => void
   close: () => void
 }
 
@@ -100,6 +122,7 @@ export function joinRoom(
         owned: current.owned,
         equipped: current.equipped,
         seated: current.seated,
+        table: current.table,
       }),
     )
   }
@@ -116,6 +139,7 @@ export function joinRoom(
 
     switch (message.t) {
       case 'welcome': {
+        if (typeof message.id === 'string') handlers.onSelf?.(message.id)
         // The room as it already stands, so it does not fill in one player at a
         // time as each of them happens to move.
         const peers = Array.isArray(message.peers) ? message.peers : []
@@ -145,6 +169,38 @@ export function joinRoom(
         // that change rarely, not with the pose that changes constantly.
         const id = typeof message.id === 'string' ? message.id : null
         if (id) handlers.onIdentity(sanitizeRemoteIdentity({ ...message, id }, id))
+        return
+      }
+
+      case 'rolled': {
+        /*
+         * Coerced here rather than trusted, because `settleCrapsRoll` throws on
+         * a malformed roll and an unhandled throw inside a socket handler takes
+         * the client down. The engine's check is a backstop for a bug; this is
+         * the guard for a hostile or simply older peer.
+         */
+        const first = Number(message.first)
+        const second = Number(message.second)
+        const sane =
+          Number.isInteger(first) && Number.isInteger(second) &&
+          first >= 1 && first <= 6 && second >= 1 && second <= 6
+        if (sane && typeof message.table === 'string') {
+          handlers.onRolled?.(message.table, { first, second })
+        }
+        return
+      }
+
+      case 'shooter': {
+        if (typeof message.table === 'string') {
+          handlers.onShooter?.(message.table, typeof message.id === 'string' ? message.id : null)
+        }
+        return
+      }
+
+      case 'state': {
+        if (typeof message.table === 'string') {
+          handlers.onTableState?.(message.table, message.value)
+        }
         return
       }
 
@@ -201,12 +257,26 @@ export function joinRoom(
       socket.send(JSON.stringify({ t: 'move', ...pose }))
       return true
     },
-    setSeated: (seated) => {
-      current = { ...current, seated }
+    setSeated: (seated, table) => {
+      current = { ...current, seated, table }
       if (socket?.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ t: 'seat', seated }))
+        socket.send(JSON.stringify({ t: 'seat', seated, table }))
       }
     },
+    requestRoll: () => {
+      if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ t: 'roll' }))
+    },
+
+    passDice: () => {
+      if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ t: 'pass' }))
+    },
+
+    publishTable: (value) => {
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ t: 'state', value }))
+      }
+    },
+
     announce: (next) => {
       current = next
       announce()

@@ -4,6 +4,7 @@ import { App } from './App'
 import { applyBootShortcut } from './dev/bootShortcut'
 import { startSaveSync } from './store/saveSync'
 import { useAppearanceStore } from './store/useAppearanceStore'
+import { useCrapsStore } from './store/useCrapsStore'
 import { useSessionStore } from './store/useSessionStore'
 import { poseBuffer, usePresenceStore } from './store/usePresenceStore'
 import { useGameStore } from './store/useGameStore'
@@ -30,6 +31,10 @@ if (import.meta.env.DEV) {
    * Single must actually leave the room rather than keep the socket they had.
    */
   bridge.sessionStore = useSessionStore
+  // Exposed so a harness can read the table two players are supposed to be
+  // sharing: whether they settled the same roll is the whole claim, and it is
+  // invisible in a screenshot of dice that have already stopped.
+  bridge.crapsStore = useCrapsStore
   /*
    * The interpolated pose of a peer, which is the one thing a harness cannot
    * read off the store: poses deliberately live outside it, in a buffer read

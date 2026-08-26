@@ -11,8 +11,8 @@ import {
   totalCrapsPayout,
   totalCrapsStake,
 } from '../games/craps/engine'
-import type { CrapsState } from '../games/craps/types'
-import type { CrapsBet } from '../scenes/crapsFeltLayout'
+import { CrapsPhase, type CrapsState, type DiceRoll } from '../games/craps/types'
+import { type CrapsBet, POINT_NUMBERS, type PointNumber } from '../scenes/crapsFeltLayout'
 import { type RunningSequence, runSequence } from './sequence'
 import { useGameStore } from './useGameStore'
 
@@ -49,6 +49,24 @@ interface CrapsStore {
   /** Calls a bet down and hands the stake back. */
   takeDown: (bet: CrapsBet) => void
   throwDice: () => void
+  /**
+   * Settles a roll, whoever produced it.
+   *
+   * Public because in shared play the dice come from the room: the socket layer
+   * hands the roll here and everything downstream — the tumble, the payout, the
+   * marker's share — is identical to a roll thrown at this table.
+   */
+  applyRoll: (roll: DiceRoll, rngState?: number) => void
+  /**
+   * Starts this table from the hand already in progress.
+   *
+   * Only the shared fields are adopted — the phase, the point and the last
+   * roll. Bets are never taken from the wire: they are this player's money, and
+   * a packet that could set them is a packet that could spend them.
+   */
+  adoptTable: (value: unknown) => void
+  /** The shared fields, for publishing to whoever walks up next. */
+  tableSnapshot: () => unknown
   /** Clears the table when the player walks out. */
   reset: () => void
 }
@@ -111,6 +129,50 @@ export const useCrapsStore = create<CrapsStore>()((set, get) => {
       set({ game: takeDownCrapsBet(game, bet) })
     },
 
+    /*
+     * The table as it stands, minus anything that is this player's alone.
+     *
+     * Deliberately not the whole `CrapsState`. Sending bets would put one
+     * player's stake on another player's felt, and sending `rngState` would
+     * hand over a seeded generator that only the solo path has any use for.
+     */
+    tableSnapshot: () => {
+      const { game } = get()
+      return {
+        phase: game.phase,
+        point: game.point,
+        lastRoll: game.lastRoll,
+        lastOutcome: game.lastOutcome,
+        rollCount: game.rollCount,
+      }
+    },
+
+    adoptTable: (value) => {
+      if (typeof value !== 'object' || value === null) return
+      const shared = value as Record<string, unknown>
+
+      const phase = shared.phase === CrapsPhase.Point ? CrapsPhase.Point : CrapsPhase.ComeOut
+      const point = POINT_NUMBERS.includes(shared.point as PointNumber)
+        ? (shared.point as PointNumber)
+        : null
+
+      /*
+       * A point with no number, or a number with no point, would be a table in
+       * a state the engine has no rule for. Coerced as a pair rather than field
+       * by field, so the two can never disagree.
+       */
+      if (phase === CrapsPhase.Point && point === null) return
+
+      set({
+        game: {
+          ...get().game,
+          phase,
+          point,
+          rollCount: typeof shared.rollCount === 'number' ? shared.rollCount : 0,
+        },
+      })
+    },
+
     throwDice: () => {
       const { game, isRolling } = get()
       if (isRolling) return
@@ -119,14 +181,29 @@ export const useCrapsStore = create<CrapsStore>()((set, get) => {
        * The store throws the dice; the engine only settles them. Solo, that
        * means drawing from the table's own seeded generator here and carrying
        * the advanced state forward with the roll — identical numbers to before,
-       * and still reproducible from a seed. Shared craps changes this line and
-       * nothing below it: the roll arrives from the room instead.
+       * and still reproducible from a seed.
        *
-       * The engine resolves immediately either way; the store simply withholds
-       * the result until the dice have finished tumbling.
+       * Shared, the room throws instead and `applyRoll` is what it calls. The
+       * split is exactly here because everything below it — the settle clock,
+       * the payout, the marker's share — is the same either way.
        */
       const { roll, rngState } = drawDiceRoll(game.rngState)
-      const next = settleCrapsRoll({ ...game, rngState }, roll)
+      get().applyRoll(roll, rngState)
+    },
+
+    /*
+     * Settles a roll this table did not necessarily throw.
+     *
+     * `rngState` is passed rather than read so the solo path can carry its
+     * advanced generator forward while a shared roll leaves it exactly where it
+     * was: a client that switches between the two must not find its seeded
+     * sequence has moved underneath it.
+     */
+    applyRoll: (roll, rngState) => {
+      const { game, isRolling } = get()
+      if (isRolling) return
+
+      const next = settleCrapsRoll({ ...game, rngState: rngState ?? game.rngState }, roll)
       cancelSettle()
 
       set({ game: next, rollId: get().rollId + 1, isRolling: true })
