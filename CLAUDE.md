@@ -417,6 +417,17 @@ so genuinely two players — and asserts each sees the other, by name, moving.
 `npm run walkthrough` drives one browser and cannot tell a room that never
 connected from one that did.
 
+It needs `VITE_MULTIPLAYER_URL` in `.env.local`, which is deliberately not
+committed — without it the game runs exactly as it did before multiplayer and
+the check silently passes over an empty room. Point it at the deployed worker
+(`wss://neon-strip-presence.twobearslabs.workers.dev`) or at `npm run
+worker:dev` on `ws://127.0.0.1:8787`.
+
+**Against a deployed URL is the run that counts.** `wrangler dev` is miniflare
+with no network in front of it, so anything racing the WebSocket handshake
+passes locally and fails in production — which is exactly how the first pose
+went missing for a player who joined and stood still.
+
 TypeScript is pinned to **^6**, not 7.x — R3F's JSX namespace augmentation plus
 the `@types/three` surface is the wrong thing to put on a brand-new compiler.
 
