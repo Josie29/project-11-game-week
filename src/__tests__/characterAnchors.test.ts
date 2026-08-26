@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { anchorFor, isOnBody, Side } from '../character/anchors'
+import { DEFAULT_BODY_OPTIONS, upperArmParts } from '../character/bodyParts'
 import { Slot, SLOT_ORDER } from '../character/catalog'
 import { metricsFor, PROPORTIONS, Silhouette } from '../character/proportions'
 
@@ -116,8 +117,19 @@ describe('PROPORTIONS', () => {
   it('hangs the arms clear of the torso on every silhouette', () => {
     for (const silhouette of SILHOUETTES) {
       const body = PROPORTIONS[silhouette]
-      /** Radius of the upper-arm capsule in `CasinoCharacter`. */
-      const armRadius = 0.055
+      /*
+       * Read off the part list rather than typed in here.
+       *
+       * It was a hardcoded 0.055 with a comment pointing at `CasinoCharacter`,
+       * which is the two-constants-in-two-files trap this project has been
+       * caught by before: the rebuild changed the arm to 0.058 and nothing
+       * would have said so. The upper arm's own radius is the only number this
+       * assertion is actually about.
+       */
+      const options = { ...DEFAULT_BODY_OPTIONS }
+      const upperArm = upperArmParts(body, options).find((part) => part.name === 'upper-arm')
+      expect(upperArm, 'the upper arm is no longer called upper-arm').toBeDefined()
+      const armRadius = upperArm?.size[0] ?? 0
 
       expect(
         body.shoulderX - body.torsoWidth / 2,

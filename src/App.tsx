@@ -1,9 +1,13 @@
 import { KeyboardControls } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 import { Bloom, EffectComposer, Vignette } from '@react-three/postprocessing'
+import { useMemo } from 'react'
+import { appearanceOverrides } from './dev/appearanceLinks'
+import { parseSheetKind } from './dev/contactSheet'
 import { DevBridge } from './dev/DevBridge'
 import { usePresenceRoom } from './net/usePresenceRoom'
 import { RemotePlayers } from './scenes/components/RemotePlayers'
+import { ContactSheet } from './scenes/ContactSheet'
 import { CasinoInterior } from './scenes/CasinoInterior'
 import { TimeDriver } from './scenes/components/TimeDriver'
 import { DesignerStage } from './scenes/DesignerStage'
@@ -43,12 +47,34 @@ export function App() {
   const atCheckout = useGameStore((state) => state.atCheckout)
 
   /*
+   * `?sheet=` replaces the whole app with a contact sheet.
+   *
+   * Development only, and it takes over rather than composing with `?boot=`,
+   * because a sheet is not a place in the game — it is every hairstyle, or
+   * every item, standing in a row so one capture can be looked at instead of
+   * twelve. Read once: a query string does not change without a reload.
+   */
+  const sheet = useMemo(() => {
+    if (!import.meta.env.DEV) return null
+    return parseSheetKind(new URLSearchParams(window.location.search).get('sheet'))
+  }, [])
+  const sheetBase = useMemo(
+    () => appearanceOverrides(new URLSearchParams(window.location.search)),
+    [],
+  )
+
+  /*
    * The welcome screen comes before everything, including the designer, and
    * short-circuits it: while it is up the Canvas shows the strip behind the
    * panel rather than the dressing-room stage, so the first thing anyone sees
    * is the game rather than a menu in front of a menu.
+   *
+   * A sheet is the exception, because a sheet is not a session. Captures run
+   * in a fresh browser profile where `hasWelcomed` is false — the same reason
+   * `?boot=strip` exists — so without this every contact sheet this project
+   * ever took would have been a picture of the welcome panel.
    */
-  const isWelcoming = !hasWelcomed
+  const isWelcoming = !hasWelcomed && sheet === null
 
   /*
    * A player who has never designed a character gets the designer instead of
@@ -57,8 +83,11 @@ export function App() {
    * strip and this derives the first run from the wardrobe save instead.
    */
   const isDesigning =
-    !isWelcoming && (location === Location.Designer || (!hasDesigned && location === Location.Strip))
-  const isIndoors = !isDesigning && location === Location.Interior && activeVenue !== null
+    sheet === null &&
+    !isWelcoming &&
+    (location === Location.Designer || (!hasDesigned && location === Location.Strip))
+  const isIndoors =
+    sheet === null && !isDesigning && location === Location.Interior && activeVenue !== null
   const indoorVenue = isIndoors && activeVenue ? getVenue(activeVenue) : null
   const isShopping = indoorVenue?.kind === VenueKind.Shop
   const isAtClinic = indoorVenue?.kind === VenueKind.Clinic
@@ -73,7 +102,7 @@ export function App() {
   // clinic gets its own, because it is the only bright room in the game.
   const bloom = isAtClinic
     ? CLINIC_BLOOM
-    : isIndoors || isDesigning
+    : isIndoors || isDesigning || sheet !== null
       ? INTERIOR_BLOOM
       : bloomAt(minuteOfDay)
 
@@ -84,7 +113,9 @@ export function App() {
       <Canvas shadows camera={{ position: [0, 5.2, 17.5], fov: PLAY_FOV }}>
         {import.meta.env.DEV && <DevBridge />}
         <TimeDriver />
-        {isDesigning ? (
+        {sheet !== null ? (
+          <ContactSheet kind={sheet} base={sheetBase} />
+        ) : isDesigning ? (
           <DesignerStage />
         ) : indoorVenue && activeVenue ? (
           isShopping ? (
@@ -128,7 +159,7 @@ export function App() {
       </Canvas>
 
       {/* The designer is a menu, not a place — the world HUD has no business there. */}
-      {!isDesigning && !isWelcoming && <Hud />}
+      {!isDesigning && !isWelcoming && sheet === null && <Hud />}
       {isDesigning && <CharacterDesigner />}
       {isWelcoming && <WelcomeScreen />}
 
@@ -137,7 +168,7 @@ export function App() {
         games, and while the player is walking its floor there is no game to
         show controls for.
       */}
-      {indoorVenue && activeVenue && (
+      {sheet === null && indoorVenue && activeVenue && (
         isShopping ? (
           // Only where the player has stopped: at the mirror to look, at the
           // counter to pay. Walking the floor is browsing, and the fixtures say
