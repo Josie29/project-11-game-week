@@ -8,7 +8,7 @@ import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
 import { PlayMode, useSessionStore } from '../store/useSessionStore'
 import { useTimeStore } from '../store/useTimeStore'
-import { TableId } from '../scenes/casinoFloorLayout'
+import { AISLE_CENTER_X, TableId, WATER_COURT } from '../scenes/casinoFloorLayout'
 import {
   displayFor,
   ENTRANCE as SHOP_ENTRANCE,
@@ -142,7 +142,7 @@ function applyWardrobeShortcut(): void {
   }
 }
 
-/** Honours `?look=DEGREES` by seeding the strip camera's orbit yaw. */
+/** Honours `?look=DEGREES` by seeding the walking camera's orbit yaw. */
 function applyLookShortcut(): void {
   const look = new URLSearchParams(window.location.search).get('look')
   if (look === null) return
@@ -151,6 +151,26 @@ function applyLookShortcut(): void {
   if (!Number.isFinite(degrees)) return
 
   useGameStore.setState({ initialCameraYaw: (degrees * Math.PI) / 180 })
+}
+
+/**
+ * Honours `?tilt=DEGREES` by seeding the walking camera's orbit pitch.
+ *
+ * `?look=` for the other axis. Negative tilts the view up, because a lower
+ * orbit pitch seats the camera below the player's eyeline and aims it upward —
+ * which is the only way anything above the springing line gets into a capture.
+ * The casino's vault is the reason it exists: a player can drag to look at it
+ * and `npm run shots` cannot, so it was rendering every frame into nobody's
+ * view and no regression shot could have told anyone.
+ */
+function applyTiltShortcut(): void {
+  const tilt = new URLSearchParams(window.location.search).get('tilt')
+  if (tilt === null) return
+
+  const degrees = Number(tilt)
+  if (!Number.isFinite(degrees)) return
+
+  useGameStore.setState({ initialCameraPitch: (degrees * Math.PI) / 180 })
 }
 
 /** Matches a 24-hour `HH:MM`, rejecting impossible hours and minutes. */
@@ -207,6 +227,7 @@ function applyTimeShortcut(): void {
  *   which is the only way to see the puck and a stack of chips sharing one box
  *   — the case the box is split left and right for.
  * - `?boot=floor` stands on the casino floor, between the two tables.
+ * - `?boot=water` stands at the pool, at the far end of the same room.
  * - `?boot=clinic` stands on Red River Plasma's floor.
  * - `?boot=drawing` sits in a chair with the needle already in.
  * - `?boot=broke` sits at blackjack with nothing, so the marker is on offer.
@@ -248,6 +269,7 @@ export function applyBootShortcut(): void {
   applyTimeShortcut()
   applyWardrobeShortcut()
   applyLookShortcut()
+  applyTiltShortcut()
 
   const params = new URLSearchParams(window.location.search)
   const boot = params.get('boot')
@@ -271,6 +293,7 @@ export function applyBootShortcut(): void {
     'drawing',
     'designer',
     'floor',
+    'water',
     'shop',
     'display',
     'mirror',
@@ -540,6 +563,23 @@ export function applyBootShortcut(): void {
     // down immediately, so without this there is no way to capture the room.
     useAppearanceStore.getState().completeDesign()
     useGameStore.getState().enterVenue(VenueId.GoldenAce)
+    return
+  }
+
+  if (boot === 'water') {
+    /*
+     * At the pool, in the gap between the two tables.
+     *
+     * `?boot=floor` arrives at the door, eighteen metres from the waterfall,
+     * and the capture script can only *press* keys — it has no way to hold one
+     * long enough to walk the length of the room. So the only view of the water
+     * court anybody could check was the one from the far end of it, and the
+     * whole point of putting it at the back of a room you walk down is that you
+     * walk down to it.
+     */
+    useAppearanceStore.getState().completeDesign()
+    useGameStore.getState().enterVenue(VenueId.GoldenAce)
+    useGameStore.setState({ floorPosition: [AISLE_CENTER_X, 0, WATER_COURT.maxZ + 1.4] })
     return
   }
 

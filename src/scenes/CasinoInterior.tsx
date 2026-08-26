@@ -21,6 +21,8 @@ import {
   tableOrigin,
   TableId,
   WALK_BOUNDS,
+  WALK_CAMERA,
+  WATER_COURT,
 } from './casinoFloorLayout'
 import { BlackjackTable } from './components/BlackjackTable'
 import { CasinoCharacter } from './components/CasinoCharacter'
@@ -235,7 +237,19 @@ export function CasinoInterior({ venueId }: CasinoInteriorProps) {
     [],
   )
 
-  const obstacles = useMemo(() => TABLE_IDS.map((table) => TABLE_FOOTPRINTS[table]), [])
+  /*
+   * The tables, and the pool.
+   *
+   * The court is on this list for the same reason the tables are: it is a hole
+   * in the floor, and a hole you can stand in the middle of is a rectangle
+   * painted on the carpet. `pushOut` takes the nearest edge, and the court's
+   * only open side faces the room, so walking into it puts you back on the
+   * coping rather than through the wall behind it.
+   */
+  const obstacles = useMemo(
+    () => [...TABLE_IDS.map((table) => TABLE_FOOTPRINTS[table]), WATER_COURT],
+    [],
+  )
 
   function handleNearest(id: string | null): void {
     const store = useGameStore.getState()
@@ -276,10 +290,18 @@ export function CasinoInterior({ venueId }: CasinoInteriorProps) {
           targets={targets}
           onNearest={handleNearest}
           obstacles={obstacles}
-          // Tighter and higher than the strip: the room is twelve units deep,
-          // and the strip's near-level seat buries the camera in the far wall.
-          distance={5.6}
-          pitch={0.42}
+          /*
+            Tighter and higher than the strip: the strip's near-level seat
+            buries the camera in the far wall.
+
+            These two came out of this file and into the layout module when the
+            waterfall went in, because the waterfall's width is set by what this
+            camera can see of it. A camera constant and the geometry sized
+            against it, kept in two files, is the disagreement nobody thinks to
+            look for.
+          */
+          distance={WALK_CAMERA.distance}
+          pitch={WALK_CAMERA.pitch}
           cameraBounds={CAMERA_BOUNDS}
         />
       ) : (
