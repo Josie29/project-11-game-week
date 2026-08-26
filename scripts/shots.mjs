@@ -66,8 +66,17 @@ const SCENES = [
   { name: 'broke', path: '/?boot=broke&time=21:00&freeze', settleMs: 1800 },
   { name: 'in-debt', path: '/?boot=debt&time=21:00&freeze', settleMs: 1800 },
   { name: 'designer', path: '/?boot=designer&time=21:00&freeze', settleMs: 2000 },
-  { name: 'shop', path: '/?boot=shop&time=21:00&freeze', settleMs: 2400 },
-  { name: 'shop-dressed', path: '/?boot=shop&dressed&time=21:00&freeze', settleMs: 2400 },
+  /*
+   * The shop is a room you walk now, so it takes three frames rather than one.
+   *
+   * `look=170` on the floor shots because the play camera trails the player down
+   * the length of the room and the window platform — the three dressed
+   * mannequins, the best thing in here — is behind it on arrival.
+   */
+  { name: 'shop', path: '/?boot=shop&look=170&time=21:00&freeze', settleMs: 2600 },
+  { name: 'shop-display', path: '/?boot=display&time=21:00&freeze', settleMs: 2600 },
+  { name: 'shop-mirror', path: '/?boot=mirror&time=21:00&freeze', settleMs: 3000 },
+  { name: 'shop-dressed', path: '/?boot=shop&dressed&look=170&time=21:00&freeze', settleMs: 2600 },
   // The two places the wardrobe has to survive a pose rather than just stand
   // in it: a stool folds the legs under a floor-length hem, and the walk cycle
   // swings an arm holding a cane.

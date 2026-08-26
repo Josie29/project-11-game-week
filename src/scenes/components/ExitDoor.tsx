@@ -21,12 +21,25 @@ interface ExitDoorProps {
   accent: string
   width?: number
   height?: number
+  /**
+   * Whether to paint the stand-in pool of light on the floor.
+   *
+   * On by default, and off in any room whose own floor already catches the
+   * doorway's `pointLight`. See the comment on the mesh itself.
+   */
+  floorPool?: boolean | undefined
 }
 
 /** Warm, against both interiors' cold or purple light: this is the street. */
 const STREET_SPILL = '#ffcf8a'
 
-export function ExitDoor({ position, accent, width = 2.2, height = 3 }: ExitDoorProps) {
+export function ExitDoor({
+  position,
+  accent,
+  width = 2.2,
+  height = 3,
+  floorPool = true,
+}: ExitDoorProps) {
   const sign = getExitSignTexture()
 
   /*
@@ -101,11 +114,27 @@ export function ExitDoor({ position, accent, width = 2.2, height = 3 }: ExitDoor
         of it is.
       */}
       <pointLight position={[0, 1.8, -1.4]} color={STREET_SPILL} intensity={16} distance={8} />
-      {/* ...and its pool on the floor, which is what catches the eye first. */}
-      <mesh position={[0, 0.012, -0.9]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[width + 0.6, 1.8]} />
-        <meshBasicMaterial color={STREET_SPILL} toneMapped={false} transparent opacity={0.1} />
-      </mesh>
+      {/*
+        ...and its pool on the floor, which is what catches the eye first.
+
+        Optional, because it is a stand-in for light rather than light. It is a
+        flat quad, and a flat quad reads as a piece of geometry lying on the
+        floor unless whatever is under it is already bright enough to hide the
+        edges. The casino's carpet and the clinic's tile are; the shop's dark
+        polished floor is not, and there the same mesh came back as a solid
+        plank in front of the door. Lowering the opacity did not fix it, tone
+        mapping it did not fix it, and stacking three of them into a gradient
+        turned one hard edge into three.
+
+        The `pointLight` above is the real thing and is unconditional. A room
+        whose floor catches it can turn this off and lose nothing.
+      */}
+      {floorPool && (
+        <mesh position={[0, 0.012, -0.9]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[width + 0.6, 1.8]} />
+          <meshBasicMaterial color={STREET_SPILL} toneMapped={false} transparent opacity={0.1} />
+        </mesh>
+      )}
     </group>
   )
 }

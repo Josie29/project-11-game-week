@@ -609,6 +609,20 @@ kbd {
   color: var(--color-loss);
 }
 
+/*
+ * What is on the body but not paid for, alongside the bankroll.
+ *
+ * Deliberately next to the money rather than down with the prompts: the point
+ * it makes is about the money.
+ */
+.hud__approval {
+  font-family: var(--font-numeric);
+  font-size: 0.8125rem;
+  color: var(--color-neon-pink);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 /* ---------- Clinic ---------- */
 
 /*
@@ -716,6 +730,35 @@ kbd {
   border-color: var(--color-neon-pink);
 }
 
+/* A row that carries two buttons needs them on a line of their own. */
+.shop__item--stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  border-color: var(--color-neon-pink);
+}
+
+.shop__item-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The name takes what is left once the swatch and the price have theirs. */
+.shop__item-head .shop__item-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.shop__item--stacked .shop__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.shop__item--stacked .shop__actions .button {
+  flex: 1;
+}
+
 .shop__item-text {
   flex: 1;
   min-width: 0;
@@ -755,6 +798,42 @@ kbd {
   flex: none;
   border-radius: 0.25rem;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+}
+
+/* The bill for what you are standing in, under the rows it totals. */
+.shop__tally {
+  margin: 0;
+  padding: var(--space-3) 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.shop__tally > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.shop__tally dt {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+.shop__tally dd {
+  margin: 0;
+  font-family: var(--font-numeric);
+  font-size: 1.125rem;
+}
+
+/* Shown instead of the rows when nothing is on approval. */
+.shop__empty {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
 }
 
 .shop__leave {

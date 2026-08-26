@@ -17,7 +17,15 @@ export interface ArmSignal {
 }
 
 /** Moulded ivory, as the dummies in `art/refs/shop_exterior_wide.png` are. */
-const MANNEQUIN_FORM = '#ded5c8'
+/*
+ * Deliberately duller than a shop dummy really is.
+ *
+ * At #ded5c8 the forms were the brightest thing in the shop by a wide margin
+ * once each fixture got its own downlight — three white heads pulling the eye
+ * off the clothes they exist to show. Still reads as cream through the window
+ * from the street, which is the other place these are seen.
+ */
+const MANNEQUIN_FORM = '#c6b9a6'
 
 /** Arms rest slightly out from the body rather than clipping through it. */
 const IDLE_ARM_SPLAY = 0.12

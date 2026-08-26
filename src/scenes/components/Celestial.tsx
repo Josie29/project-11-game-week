@@ -93,7 +93,6 @@ export function Celestial() {
   const minute = bucket * SKY_BUCKET_MINUTES
   const daylight = quantize(daylightAt(minute), 0.05)
 
-  console.log('[celestial]', { minute, daylight, dir: keyDirection(minute) })
   const [dx, dy, dz] = keyDirection(minute)
   const at: readonly [number, number, number] = [
     dx * CELESTIAL_RADIUS,

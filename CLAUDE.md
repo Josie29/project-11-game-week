@@ -42,11 +42,20 @@ Concretely, the three categories that have caught real bugs here:
   has caught a stash overhanging the rail, a split payout falling off the table
   edge, and a chip tray corner clipping a split hand.
 
-  There are now three of these predicates and they all exist for the same
-  reason: `isOnFelt`, `isOnBody` in `src/character/anchors.ts`, and
-  `isOnShopFloor` in `src/scenes/shopLayout.ts`. Each one is paired with a test
-  that feeds it a point it must *reject* — a predicate that returned true
-  everywhere would leave its whole suite passing while proving nothing.
+  There are now five of these predicates and they all exist for the same
+  reason: `isOnFelt`, `isOnBody` in `src/character/anchors.ts`,
+  `isOnShopFloor` in `src/scenes/shopLayout.ts`, `isOnClinicFloor` in
+  `src/scenes/clinicLayout.ts` and `isOnStrip` in `src/scenes/stripLayout.ts`.
+  Each one is paired with a test that feeds it a point it must *reject* — a
+  predicate that returned true everywhere would leave its whole suite passing
+  while proving nothing.
+
+  Where a fixed camera has to see something, the *angle it subtends across the
+  view* is the assertable thing, not its size in the world.
+  `mirrorSubtendedAngle` in `shopLayout.ts` is that, and it earned its place
+  immediately: pulling the shop's fitting camera back far enough to stop
+  cropping the player at the knees took the mirror under the threshold, and the
+  fix was a wider mirror rather than a lower bar.
 
   Not everything geometric is reachable this way. The arms hung inside the
   torso on every silhouette because `shoulderX` was set inside `torsoWidth / 2`;
@@ -136,6 +145,15 @@ added for the *main* checkout also matched every source file of a dev server
 started inside a worktree. `npm run locate` is the quickest way to tell the two
 apart: an object that is absent from the scene graph is not a rendering problem.
 
+**A flat quad standing in for light reads as geometry.** The exit door painted
+a rectangle on the floor to stand in for its own spill, and it passed on the
+casino's carpet and the clinic's tile for months. On the shop's dark polished
+floor the identical mesh was a solid plank lying in front of the door. Lowering
+the opacity did not fix it, tone-mapping it did not fix it, and stacking three
+into a gradient turned one hard edge into three — the fix was to let a room
+whose floor already catches the door's `pointLight` opt out. A stand-in for
+light only survives on a surface bright enough to hide its edges.
+
 **Geometry is only correct relative to the camera that sees it.** A scene with a
 fixed camera can render a hand-placed object perfectly and show nothing. The
 line from the needle to the blood bag was twice the right shape in the right
@@ -178,7 +196,9 @@ Dev-only deep links, stripped from production builds:
 | `?boot=broke` | at blackjack with nothing, marker on offer |
 | `?boot=debt` | at blackjack with nothing and a marker outstanding |
 | `?boot=designer` | the dressing-room stage |
-| `?boot=shop` | The Gilded Hanger, bankroll topped up |
+| `?boot=shop` | on The Gilded Hanger's floor, bankroll topped up |
+| `?boot=display` | at the sequin jacket, its prompt and price card up |
+| `?boot=mirror` | on the fitting plinth, a gown and a pendant on approval, only one affordable |
 | `?boot=shopfront` | at the shop's door, prompt up, to look at the storefront |
 | `?boot=dressed` | the shop, every wardrobe slot filled |
 | `?boot=strip` | the street, with the first-run designer skipped |
@@ -200,7 +220,10 @@ every strip regression shot is a picture of a menu.
 `?look=` exists because the play camera trails the player down the street, so
 every facade is seen at a glancing angle. A shop window is a bright sliver from
 there whether it is built correctly or not — `?boot=shopfront&look=-90` is what
-turned "the window is dark" into three separately diagnosable bugs.
+turned "the window is dark" into three separately diagnosable bugs. The shop's
+own interior needs it too: the play camera trails the player down the length of
+the room, so the window platform is behind it on arrival and every unswung
+capture of the shop is a picture of the back wall.
 
 **When something is invisible, build the diagnostic before the fix.** A missing
 die looked identical to a die that had tunnelled out of the world;
@@ -226,9 +249,21 @@ walking over to the end recliner put you out on the street instead; and leaving
 set you down inside the door's own trigger, so stepping out and being dragged
 back in were the same gesture.
 
-**Two things that offer must not overlap**, because the handler takes the nearest
-and does not rank. `venueDoors.test.ts` holds it for every door and every seat,
-and it is what lets those handlers stay three lines long.
+**Two things that offer *different* things must not overlap**, because the
+handler takes the nearest and does not rank. `venueDoors.test.ts` holds it for
+every door, every seat and the shop's mirror, and it is what lets those handlers
+stay three lines long.
+
+Two things that offer the *same* thing may overlap, and should: circular prompts
+along a row cannot be both non-overlapping and gapless, and gapless is what
+matters. The clinic's recliners and the shop's twelve fixtures both rely on it —
+`WalkingPlayer` reports the nearest, so a point between two of them resolves to
+the one you are standing at.
+
+A prompt is also only as good as the width of floor it covers. The shop's mirror
+carried a 1.4 radius, which is the width of its own plinth and looks reasonable
+written down; a scripted walk down the room passed within 1.75 of the only till
+in the building and was offered nothing.
 
 ## Timers
 

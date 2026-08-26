@@ -15,6 +15,15 @@ import {
   SIT_RADIUS as CLINIC_SIT_RADIUS,
   WALK_BOUNDS as CLINIC_BOUNDS,
 } from '../scenes/clinicLayout'
+import {
+  DISPLAYS,
+  EXIT_DOOR as SHOP_EXIT,
+  EXIT_RADIUS as SHOP_EXIT_RADIUS,
+  MIRROR_RADIUS,
+  MIRROR_STAND,
+  TRY_RADIUS,
+  WALK_BOUNDS as SHOP_BOUNDS,
+} from '../scenes/shopLayout'
 import { DOOR_TRIGGER_RADIUS, VENUES } from '../world/venues'
 
 /*
@@ -78,6 +87,24 @@ describe('the way out of a room', () => {
         at: chairSitSpot(index),
         radius: CLINIC_SIT_RADIUS,
       })),
+    },
+    {
+      name: 'shop',
+      exit: SHOP_EXIT,
+      radius: SHOP_EXIT_RADIUS,
+      bounds: SHOP_BOUNDS,
+      /*
+       * Twelve fixtures and the mirror.
+       *
+       * The fixtures are allowed to overlap each other — F says "try this on"
+       * at every one of them, so the nearest winning is the right answer. The
+       * mirror is in this list because its F does something else entirely: it
+       * puts you on the plinth and opens the till.
+       */
+      seats: [
+        ...DISPLAYS.map((display) => ({ at: display.standAt, radius: TRY_RADIUS })),
+        { at: MIRROR_STAND, radius: MIRROR_RADIUS },
+      ],
     },
   ]
 

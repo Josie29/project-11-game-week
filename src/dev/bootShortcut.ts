@@ -8,6 +8,7 @@ import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
 import { TableId } from '../scenes/casinoFloorLayout'
+import { displayFor, ENTRANCE as SHOP_ENTRANCE } from '../scenes/shopLayout'
 import { donationTimeline, NurseTask } from '../scenes/clinicRoutine'
 import { STREET_BOUNDS } from '../scenes/stripLayout'
 import { MARKER_AMOUNT } from '../world/money'
@@ -17,6 +18,24 @@ import { VenueId } from '../world/venues'
 
 /** Wager staked automatically when deep-linking to a dealt table. */
 const DEMO_BET = 50
+
+/**
+ * Bankroll handed to `?boot=mirror`.
+ *
+ * Chosen to straddle the two items on approval: the $520 gown is buyable and
+ * the $900 pendant is $300 short, so one capture shows both states of the Buy
+ * button. A figure either side of both would prove only one of them.
+ */
+const FITTING_BANKROLL = 600
+
+/**
+ * Camera yaw that looks up the room at the window platform, in radians.
+ *
+ * The play camera trails the player down the length of the shop, so the window
+ * — three dressed mannequins, the best thing in the room — is behind it on
+ * arrival. Every capture that wants the stock in frame swings round to this.
+ */
+const WINDOW_LOOK = (170 * Math.PI) / 180
 
 /** Bankroll handed to `?boot=shop`, enough to afford anything on the rails. */
 const SHOPPING_SPREE = 5000
@@ -173,7 +192,10 @@ function applyTimeShortcut(): void {
  * - `?boot=debt` sits there with nothing *and* a marker outstanding, which is
  *   the state that sends the player to the clinic.
  * - `?boot=designer` opens the dressing-room stage.
- * - `?boot=shop` opens The Gilded Hanger with the catalogue affordable.
+ * - `?boot=shop` stands on The Gilded Hanger's floor, everything affordable.
+ * - `?boot=display` stands at the sequin jacket, its prompt and card up.
+ * - `?boot=mirror` stands on the fitting plinth in a gown and a pendant that
+ *   have not been paid for, with a bankroll covering one of the two.
  * - `?dressed` puts the whole wardrobe on the player. A modifier, not a scene:
  *   compose it with any `?boot=` to check the outfit where it has to survive —
  *   `?boot=shop&dressed` for the anchors up close, `?boot=settled&dressed` for
@@ -218,6 +240,8 @@ export function applyBootShortcut(): void {
     'designer',
     'floor',
     'shop',
+    'display',
+    'mirror',
     'shopfront',
     'clinicfront',
     'strip',
@@ -272,11 +296,61 @@ export function applyBootShortcut(): void {
   }
 
   if (boot === 'shop') {
-    // Topped up so every row in the catalogue is buyable, including the $900
-    // pendant. Compose with `?dressed` to see the owned-and-worn rows instead.
+    // Standing just inside the door, with enough in hand to buy anything on the
+    // floor including the $900 pendant. Compose with `?dressed` to see the
+    // fixtures marked Yours instead of priced.
     useAppearanceStore.getState().completeDesign()
     useGameStore.getState().adjustBankroll(SHOPPING_SPREE - useGameStore.getState().bankroll)
     useGameStore.getState().enterVenue(VenueId.GildedHanger)
+    return
+  }
+
+  if (boot === 'display') {
+    /*
+     * At the sequin jacket on the window platform, prompt up.
+     *
+     * The capture that says whether a fixture reads as its item and whether the
+     * price card can be read from where a player actually stands.
+     */
+    useAppearanceStore.getState().completeDesign()
+    useGameStore.getState().enterVenue(VenueId.GildedHanger)
+    const jacket = displayFor('sequin-jacket')
+    useGameStore.setState({
+      shopPosition: jacket?.standAt ?? SHOP_ENTRANCE,
+      // Facing the mannequin, not the far wall. Without this the capture is of
+      // the player's back and the fixture the prompt names is behind the camera.
+      shopFacing: jacket?.facing === undefined ? 0 : jacket.facing + Math.PI,
+      nearbyDisplay: 'sequin-jacket',
+    })
+
+    /*
+     * ...and the camera behind them, looking the same way.
+     *
+     * `facing` turns the character; the trailing camera's seat comes from
+     * `initialCameraYaw` and stays where it was, which left the first version of
+     * this capture looking at the player's face with the jacket out of frame.
+     * Skipped when `?look=` is present, so an explicit angle still wins.
+     */
+    if (!new URLSearchParams(window.location.search).has('look')) {
+      useGameStore.setState({ initialCameraYaw: WINDOW_LOOK })
+    }
+    return
+  }
+
+  if (boot === 'mirror') {
+    /*
+     * On the fitting plinth in the gown and the pendant, neither paid for, with
+     * a bankroll that covers one of them and not the other.
+     *
+     * The whole feature in one frame: try anything on, buy what you can afford.
+     * $600 leaves the $520 gown buyable and the $900 pendant $300 short.
+     */
+    useAppearanceStore.getState().completeDesign()
+    useGameStore.getState().enterVenue(VenueId.GildedHanger)
+    useGameStore.getState().adjustBankroll(FITTING_BANKROLL - useGameStore.getState().bankroll)
+    useAppearanceStore.getState().tryOn('crimson-gown')
+    useAppearanceStore.getState().tryOn('solitaire-pendant')
+    useGameStore.getState().standAtMirror()
     return
   }
 

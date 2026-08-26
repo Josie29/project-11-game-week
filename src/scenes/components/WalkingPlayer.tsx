@@ -2,7 +2,7 @@ import { useKeyboardControls } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useRef } from 'react'
 import { Group, MathUtils, Vector3 } from 'three'
-import { useAppearanceStore } from '../../store/useAppearanceStore'
+import { useAppearanceStore, useFittedEquipped } from '../../store/useAppearanceStore'
 import { useGameStore } from '../../store/useGameStore'
 import { Control } from '../../world/controls'
 import { useOrbitInput } from '../useOrbitInput'
@@ -211,7 +211,14 @@ export function WalkingPlayer({
   const groupRef = useRef<Group>(null)
   const [, getKeys] = useKeyboardControls<Control>()
   const appearance = useAppearanceStore((state) => state.appearance)
-  const equipped = useAppearanceStore((state) => state.equipped)
+  /*
+   * What is on the body, not what has been paid for.
+   *
+   * The shop lets anything be tried on without buying it, and the figure that
+   * has to show it is this one — you walk the room in what you are trying. Away
+   * from the shop the fitting is empty and this is `equipped` unchanged.
+   */
+  const equipped = useFittedEquipped()
 
   /*
    * Read once, at mount: this seeds the orbit rather than driving it.

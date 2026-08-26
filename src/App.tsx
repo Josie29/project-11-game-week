@@ -17,7 +17,7 @@ import { CharacterDesigner } from './ui/CharacterDesigner'
 import { CrapsPanel } from './ui/CrapsPanel'
 import { Hud } from './ui/Hud'
 import { ClinicPanel } from './ui/ClinicPanel'
-import { ShopPanel } from './ui/ShopPanel'
+import { FittingPanel } from './ui/FittingPanel'
 import { getVenue, VenueKind } from './world/venues'
 import { KEYBOARD_MAP } from './world/controls'
 import { bloomAt, CLINIC_BLOOM, INTERIOR_BLOOM } from './world/timeOfDay'
@@ -28,6 +28,7 @@ export function App() {
   const hasDesigned = useAppearanceStore((state) => state.hasDesigned)
   const activeTable = useGameStore((state) => state.activeTable)
   const atChair = useGameStore((state) => state.atChair)
+  const atMirror = useGameStore((state) => state.atMirror)
 
   /*
    * A player who has never designed a character gets the designer instead of
@@ -107,7 +108,10 @@ export function App() {
       */}
       {indoorVenue && activeVenue && (
         isShopping ? (
-          <ShopPanel venueId={activeVenue} />
+          // Only at the mirror. Walking the shop floor is browsing, and the
+          // fixtures say what they cost; there is nothing to put on screen
+          // until you are standing in something you have not paid for.
+          atMirror ? <FittingPanel venueId={activeVenue} /> : null
         ) : isAtClinic ? (
           // Only once they are actually in a chair; walking the floor has no panel.
           atChair !== null ? <ClinicPanel /> : null

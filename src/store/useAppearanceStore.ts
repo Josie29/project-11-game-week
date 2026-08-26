@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import {
@@ -12,6 +13,13 @@ import {
   Slot,
   type EquippedItems,
 } from '../character/catalog'
+import {
+  fitted,
+  NO_FITTING,
+  withItem,
+  withoutSlot,
+  type Fitting,
+} from '../character/fitting'
 import { useGameStore } from './useGameStore'
 
 /** Why a purchase did not go through, or that it did. */
@@ -27,15 +35,47 @@ interface AppearanceStore {
   /** Item ids the player has paid for. The record of what was actually bought. */
   owned: string[]
   equipped: EquippedItems
+  /**
+   * What is on the body on approval: tried on in the shop, not paid for.
+   *
+   * Never persisted, and cleared on the way out of the shop. `equipped` still
+   * means "owned and worn", which is what keeps `sanitizeEquipped`'s guard
+   * meaningful.
+   */
+  fitting: Fitting
   /** False until the designer has been through once, which gates the first spawn. */
   hasDesigned: boolean
 
   setAppearance: (appearance: Appearance) => void
   completeDesign: () => void
-  /** Debits the bankroll and adds the item to the wardrobe. Does not equip it. */
+  /**
+   * Debits the bankroll, adds the item to the wardrobe and puts it on.
+   *
+   * It equips because of where buying now happens: you are standing at the
+   * mirror wearing the thing. A purchase that took it back off would read as
+   * the transaction having failed.
+   */
   buy: (itemId: string) => PurchaseResult
   equip: (itemId: string) => void
   unequip: (slot: Slot) => void
+  /**
+   * Puts an item on, whether or not it is owned.
+   *
+   * Ownership decides which layer it lands in, so a caller never has to know:
+   * something already paid for is equipped and persists, anything else goes on
+   * approval.
+   */
+  tryOn: (itemId: string) => void
+  /**
+   * Takes the top layer off a slot.
+   *
+   * Anything on approval comes off first, revealing whatever is owned
+   * underneath; a second call unequips that. Two presses of F, each doing the
+   * obvious thing.
+   */
+  takeOff: (slot: Slot) => void
+  /** Hands everything unpaid for back. Called on the way out of the shop. */
+  clearFitting: () => void
   /** Wipes the wardrobe and reopens the designer. Dev and "start over" only. */
   reset: () => void
 }
@@ -46,6 +86,7 @@ export const useAppearanceStore = create<AppearanceStore>()(
       appearance: DEFAULT_APPEARANCE,
       owned: [],
       equipped: {},
+      fitting: NO_FITTING,
       hasDesigned: false,
 
       setAppearance: (appearance) => set({ appearance }),
@@ -66,7 +107,13 @@ export const useAppearanceStore = create<AppearanceStore>()(
         if (game.bankroll < item.price) return PurchaseResult.TooExpensive
 
         game.adjustBankroll(-item.price)
-        set({ owned: [...owned, item.id] })
+        // Bought, worn, and off approval, in one move. The item does not change
+        // place on the body — it only stops being borrowed.
+        set({
+          owned: [...owned, item.id],
+          equipped: { ...get().equipped, [item.slot]: item.id },
+          fitting: withoutSlot(get().fitting, item.slot),
+        })
         return PurchaseResult.Bought
       },
 
@@ -75,7 +122,12 @@ export const useAppearanceStore = create<AppearanceStore>()(
         // Equipping something unowned would hand out a $900 pendant for free.
         if (!item || !get().owned.includes(item.id)) return
 
-        set({ equipped: { ...get().equipped, [item.slot]: item.id } })
+        // Wearing something you own clears anything borrowed in that slot;
+        // otherwise the borrowed item would go on covering it.
+        set({
+          equipped: { ...get().equipped, [item.slot]: item.id },
+          fitting: withoutSlot(get().fitting, item.slot),
+        })
       },
 
       unequip: (slot) => {
@@ -84,11 +136,37 @@ export const useAppearanceStore = create<AppearanceStore>()(
         set({ equipped: next })
       },
 
+      tryOn: (itemId) => {
+        const item = findItem(itemId)
+        if (!item) return
+
+        if (get().owned.includes(item.id)) {
+          get().equip(item.id)
+          return
+        }
+
+        set({ fitting: withItem(get().fitting, item) })
+      },
+
+      takeOff: (slot) => {
+        const { fitting } = get()
+
+        if (fitting[slot] !== undefined) {
+          set({ fitting: withoutSlot(fitting, slot) })
+          return
+        }
+
+        get().unequip(slot)
+      },
+
+      clearFitting: () => set({ fitting: NO_FITTING }),
+
       reset: () =>
         set({
           appearance: DEFAULT_APPEARANCE,
           owned: [],
           equipped: {},
+          fitting: NO_FITTING,
           hasDesigned: false,
         }),
     }),
@@ -114,6 +192,15 @@ export const useAppearanceStore = create<AppearanceStore>()(
           hasDesigned: saved.hasDesigned === true,
         }
       },
+      /*
+       * `fitting` is deliberately absent.
+       *
+       * It is the one field that holds items the player has not paid for, so
+       * writing it to `localStorage` would be handing out the wardrobe: the
+       * save would come back with a $900 pendant on the body, and unlike
+       * `equipped` there is no ownership check that could drop it again.
+       * Reloading in a changing room is the same as walking out of one.
+       */
       partialize: (state) => ({
         appearance: state.appearance,
         owned: state.owned,
@@ -123,3 +210,21 @@ export const useAppearanceStore = create<AppearanceStore>()(
     },
   ),
 )
+
+/**
+ * What the character is wearing right now: owned kit, plus anything on approval.
+ *
+ * Every figure that represents *the player* reads this rather than `equipped` —
+ * the walking rig and the mirror both. Outside the shop the fitting is empty and
+ * it resolves to `equipped` unchanged, so it is safe everywhere.
+ *
+ * Memoised rather than derived inside the selector: `fitted` returns a fresh
+ * object, and zustand compares selector results by identity, so selecting it
+ * directly would re-render on every store write in the game.
+ */
+export function useFittedEquipped(): EquippedItems {
+  const equipped = useAppearanceStore((state) => state.equipped)
+  const fitting = useAppearanceStore((state) => state.fitting)
+
+  return useMemo(() => fitted(equipped, fitting), [equipped, fitting])
+}

@@ -1,6 +1,4 @@
-import { Garment, HairStyle, type Appearance } from '../../character/appearance'
-import { Slot, type EquippedItems } from '../../character/catalog'
-import { Silhouette } from '../../character/proportions'
+import { WINDOW_DISPLAY } from '../../character/windowDisplay'
 import type { VenueConfig } from '../../world/venues'
 import { getShopSignTexture } from '../signTexture'
 import {
@@ -39,49 +37,6 @@ interface ShopFrontProps {
 
 /** Warm shop light, as distinct from the strip's cold neon. */
 const INTERIOR_LIGHT = '#ffd9a0'
-
-/**
- * What is in the window this season.
- *
- * Three of the outerwear items actually on sale inside. A window showing
- * clothes the shop does not stock is the sort of detail that costs nothing to
- * get right and reads as carelessness when it is wrong.
- */
-const DISPLAY: readonly { appearance: Appearance; equipped: EquippedItems }[] = [
-  {
-    appearance: {
-      silhouette: Silhouette.Masculine,
-      hairStyle: HairStyle.Buzz,
-      hairColor: 'jet',
-      skinTone: 'honey',
-      garment: Garment.Suit,
-      garmentColor: 'charcoal',
-    },
-    equipped: { [Slot.Outerwear]: 'sequin-jacket', [Slot.Feet]: 'oxblood-oxfords' },
-  },
-  {
-    appearance: {
-      silhouette: Silhouette.Feminine,
-      hairStyle: HairStyle.Buzz,
-      hairColor: 'jet',
-      skinTone: 'honey',
-      garment: Garment.CocktailDress,
-      garmentColor: 'crimson',
-    },
-    equipped: { [Slot.Outerwear]: 'crimson-gown', [Slot.Feet]: 'gold-heels' },
-  },
-  {
-    appearance: {
-      silhouette: Silhouette.Androgynous,
-      hairStyle: HairStyle.Buzz,
-      hairColor: 'jet',
-      skinTone: 'honey',
-      garment: Garment.Suit,
-      garmentColor: 'midnight',
-    },
-    equipped: { [Slot.Outerwear]: 'ivory-tuxedo', [Slot.Feet]: 'oxblood-oxfords' },
-  },
-]
 
 /** Garments hanging on the rails behind the display, as position and colour. */
 const RAIL_STOCK: readonly { readonly z: number; readonly color: string }[] = [
@@ -162,7 +117,7 @@ export function ShopFront({ venue, neonLevel = 1 }: ShopFrontProps) {
       ))}
 
       {/* The dummies. Faceless and hairless — the clothes are the point. */}
-      {DISPLAY.map((dressed, index) => (
+      {WINDOW_DISPLAY.map((dressed, index) => (
         <group
           key={index}
           position={at(

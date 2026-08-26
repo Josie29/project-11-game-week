@@ -174,24 +174,53 @@ try {
   await walkUntil(['KeyW', 'KeyD'], 'Press F to shop', { burstMs: DOOR_BURST_MS, bursts: 40 })
   await interact()
 
-  //    Asserted on something only the panel has. The shop's *name* is no longer
-  //    proof of being inside it — the door prompt out on the street carries it
-  //    too.
-  await page.getByRole('button', { name: 'Buy' }).last().waitFor({ timeout: 5000 })
+  //    Asserted on the standing hint, which is the shop's own: it is a room you
+  //    walk now, and the hint names what F is for in it.
+  await expectText('F at a rail, the mirror or the door', 'walking into the shop')
   await capture('4-shop')
 
-  // 4. Buy the cheapest thing in the shop and put it on.
-  await page.getByRole('button', { name: 'Buy' }).last().click()
-  const wear = page.getByRole('button', { name: 'Wear' }).first()
-  await wear.waitFor({ timeout: 5000 })
-  await wear.click()
-  await capture('5-wearing')
+  /*
+   * 4. Walk the floor to a fixture and try something on without paying for it.
+   *
+   *    This is the shop's whole point and it is worth driving rather than
+   *    asserting: nothing about the fitting is persisted, so a bug that leaked a
+   *    borrowed jacket into the wardrobe — or one that quietly refused to put an
+   *    unaffordable item on at all — would look identical in every unit test the
+   *    layer has.
+   */
+  /*
+   *    Along the front wall, not into the room.
+   *
+   *    The first version of this leg held W and walked the length of the shop
+   *    without being offered a thing, because the middle of a shop is empty by
+   *    design — the stock is against the walls. It ended up flat against the
+   *    back wall having passed nothing. A scan has to hug a run of fixtures.
+   */
+  await walkUntil(['KeyA'], 'to try it on', { burstMs: DOOR_BURST_MS, bursts: 30 })
+  await interact()
+  await expectText('on approval', 'trying something on')
+  await capture('5-trying-on')
 
   /*
-   * 5. Out of the shop and on down the same kerb to the clinic.
+   * 5. Walk to the mirror and buy it.
    *
-   *    Escape rather than a door: the shop is a panel, not a room you can walk
-   *    around, so it has no exit to stand at.
+   *    The mirror is the only till in the room, so this leg is also the check
+   *    that it can be found: the prompt has to paint somewhere between the
+   *    fixtures and the back wall or a player cannot spend anything in here.
+   */
+  await walkUntil(['KeyW'], 'to see yourself', { burstMs: DOOR_BURST_MS, bursts: 30 })
+  await interact()
+  await page.getByRole('button', { name: 'Buy' }).first().waitFor({ timeout: 5000 })
+  await capture('6-mirror')
+  await page.getByRole('button', { name: 'Buy' }).first().click()
+  await page.waitForTimeout(600)
+
+  /*
+   * 6. Off the plinth, out of the door, and on down the same kerb to the clinic.
+   *
+   *    The door rather than Escape. The shop used to be a panel with no exit to
+   *    stand at; it has one now, and stepping out through it is the only way
+   *    this script covers the same path a player takes.
    *
    *    This leg used to be the worst thing in this file. Leaving a venue puts
    *    the player three and a half units into the road, the shop's door used to
@@ -202,7 +231,21 @@ try {
    *    Now it is one scan: walk down the kerb until the clinic offers.
    */
   await page.keyboard.press('Escape')
-  await page.waitForTimeout(1200)
+  await page.waitForTimeout(600)
+  /*
+   *    Up the room first, then a scan along the front wall.
+   *
+   *    One diagonal does not do it: held to the end it wedges the player in the
+   *    front-right corner two metres past the door, which is outside its trigger
+   *    and is where a single-leg version of this ended up. Approach, then sweep.
+   */
+  await walkAtMost(['KeyS', 'KeyD'], 'to step out', { burstMs: DOOR_BURST_MS, bursts: 22 })
+  await walkUntil(['KeyA'], 'to step out', { burstMs: DOOR_BURST_MS, bursts: 20 })
+  await interact()
+  await expectText('WASD to walk', 'stepping back onto the strip')
+  // Out on the street in something that was tried on and then paid for — the
+  // proof that a purchase survives the walk out of the room it was made in.
+  await capture('7-out-in-it')
 
   await walkUntil(['KeyW', 'KeyD'], 'Press F to donate', {
     burstMs: DOOR_BURST_MS,
@@ -210,7 +253,7 @@ try {
   })
   await interact()
   await expectText('F at a chair or the door', 'walking into the clinic')
-  await capture('6-clinic')
+  await capture('8-clinic')
 
   // 6. Sell a pint. Ten seconds of nurse, and the bankroll is the proof.
   /*
@@ -244,8 +287,8 @@ try {
    *    has gone with her.
    */
   await page.waitForTimeout(6000)
-  await page.screenshot({ path: resolve(outDir, '7-drawing.png') })
-  console.log('ok   7-drawing')
+  await page.screenshot({ path: resolve(outDir, '9-drawing.png') })
+  console.log('ok   9-drawing')
 
   await page.waitForFunction(
     (was) => {
@@ -261,7 +304,7 @@ try {
     throw new Error(`donation paid ${after - before}, expected ${DONATION_FEE}`)
   }
   console.log(`     the pint paid $${after - before}`)
-  await capture('8-donated')
+  await capture('10-donated')
 
   /*
    * 7. Out of the clinic by its door, then across the street to the casino.
@@ -318,13 +361,13 @@ try {
    *    having painted.
    */
   await walkUntil(['KeyW', 'KeyA'], 'Blackjack', { burstMs: 350, bursts: 40 })
-  await capture('9-at-the-table')
+  await capture('11-at-the-table')
 
   // 8. Sit down and play a hand. F, not E — E is the camera orbit.
   await page.keyboard.press('KeyF')
   await page.waitForTimeout(600)
   await expectText('Leave table', 'sitting down')
-  await capture('10-seated')
+  await capture('12-seated')
 
   //    The stake keys are the primary control at the table, and the buttons
   //    carry their shortcut in the label ("$10 1"), which makes an exact-name
@@ -332,7 +375,7 @@ try {
   await page.keyboard.press('Digit1')
   await page.waitForTimeout(2000)
   await expectText('DEALER', 'dealing a hand')
-  await capture('11-hand-dealt')
+  await capture('13-hand-dealt')
 
   // 9. Cross the floor to the other table. The casino stopped being a single
   //    table a while ago, and nothing walked from one to the other — which is
@@ -351,14 +394,14 @@ try {
    *    for any prompt at all.
    */
   await walkUntil(['KeyD'], 'Craps', { bursts: 30 })
-  await capture('12-crossing-to-craps')
+  await capture('14-crossing-to-craps')
 
   // 10. Take the rail at craps and throw the dice. Nobody sits at craps, so
   //    this is a stand rather than a seat.
   await page.keyboard.press('KeyF')
   await page.waitForTimeout(600)
   await expectText('Roll the dice', 'stepping up to craps')
-  await capture('13-at-craps')
+  await capture('15-at-craps')
 
   /*
    *    Stake the pass line before throwing. The dice cannot be thrown with
@@ -381,7 +424,7 @@ try {
   //    makes its presence the one thing on screen that cannot be true unless
   //    the dice were actually thrown.
   await page.waitForSelector('.table-ui__outcome', { timeout: 6000 })
-  await capture('14-dice-thrown')
+  await capture('16-dice-thrown')
 
   if (failures.length > 0) {
     throw new Error(`page errors: ${failures.join(' | ')}`)

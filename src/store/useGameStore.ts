@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { ENTRANCE, SIT_SPOTS, TableId } from '../scenes/casinoFloorLayout'
 import { ENTRANCE as CLINIC_ENTRANCE, chairSitSpot } from '../scenes/clinicLayout'
+import { ENTRANCE as SHOP_ENTRANCE, MIRROR_STAND } from '../scenes/shopLayout'
 import { donationTimeline, NurseTask } from '../scenes/clinicRoutine'
 import { runSequence, type RunningSequence } from './sequence'
 import { DONATION_FEE, MARKER_AMOUNT, splitWinnings } from '../world/money'
@@ -27,6 +28,11 @@ export const STARTING_BANKROLL = 500
  * traffic.
  */
 const EXIT_OFFSET = 2.4
+
+/** Down the length of the shop, with the door behind you. */
+const FACING_INTO_SHOP = Math.PI
+/** Back at the mirror, having just stepped off its plinth. */
+const FACING_MIRROR = Math.PI
 
 interface GameStore {
   bankroll: number
@@ -78,6 +84,29 @@ interface GameStore {
   /** Where the player should appear when the clinic floor mounts. */
   clinicPosition: readonly [number, number, number]
   /**
+   * Whether the player is on the shop's fitting plinth.
+   *
+   * The shop's version of `atChair`: standing at the mirror swaps the trailing
+   * camera for a fixed one and opens the till. Separate from the clinic's and
+   * the casino's seats for the same reason those are separate from each other.
+   */
+  atMirror: boolean
+  /** The item F would try on, as a catalogue id, for the display prompt. */
+  nearbyDisplay: string | null
+  /** Whether F would step onto the fitting plinth. */
+  nearbyMirror: boolean
+  /** Where the player should appear when the shop floor mounts. */
+  shopPosition: readonly [number, number, number]
+  /**
+   * Which way they face when they get there, in radians.
+   *
+   * Paired with `shopPosition` because the shop is the one room where where you
+   * are standing implies what you are looking at: stepping off the plinth should
+   * leave you facing the mirror, and a deep link that puts you at a fixture
+   * should have you facing the fixture rather than the far wall.
+   */
+  shopFacing: number
+  /**
    * The draw in progress, or `null`.
    *
    * `startedAt` drives the nurse's animation and the panel's wording; the
@@ -117,6 +146,10 @@ interface GameStore {
   sitInChair: (index: number) => void
   leaveChair: () => void
   setNearbyChair: (index: number | null) => void
+  standAtMirror: () => void
+  leaveMirror: () => void
+  setNearbyDisplay: (itemId: string | null) => void
+  setNearbyMirror: (near: boolean) => void
   /** Calls the nurse over and starts the draw. Pays only when she finishes. */
   beginDonation: () => void
   setNearDesk: (near: boolean) => void
@@ -178,6 +211,11 @@ export const useGameStore = create<GameStore>()(
       atChair: null,
       nearbyChair: null,
       clinicPosition: CLINIC_ENTRANCE,
+      atMirror: false,
+      nearbyDisplay: null,
+      nearbyMirror: false,
+      shopPosition: SHOP_ENTRANCE,
+      shopFacing: FACING_INTO_SHOP,
       donation: null,
       nurseTask: NurseTask.Patrolling,
       nearDesk: false,
@@ -200,6 +238,11 @@ export const useGameStore = create<GameStore>()(
           atChair: null,
           nearbyChair: null,
           clinicPosition: CLINIC_ENTRANCE,
+          atMirror: false,
+          nearbyDisplay: null,
+          nearbyMirror: false,
+          shopPosition: SHOP_ENTRANCE,
+          shopFacing: FACING_INTO_SHOP,
           donation: null,
           nurseTask: NurseTask.Patrolling,
         }),
@@ -290,6 +333,28 @@ export const useGameStore = create<GameStore>()(
         set({ nearbyChair: index })
       },
 
+      standAtMirror: () => set({ atMirror: true, nearbyMirror: false, nearbyDisplay: null }),
+
+      /**
+       * Steps back off the plinth, onto the floor in front of it.
+       *
+       * Not back to the door: being returned to the entrance for looking in the
+       * mirror is the same complaint the casino's `standUp` fixed.
+       */
+      leaveMirror: () =>
+        set({ atMirror: false, shopPosition: MIRROR_STAND, shopFacing: FACING_MIRROR }),
+
+      setNearbyDisplay: (itemId) => {
+        // Called from the render loop, so bail out unless it actually changed.
+        if (get().nearbyDisplay === itemId) return
+        set({ nearbyDisplay: itemId })
+      },
+
+      setNearbyMirror: (near) => {
+        if (get().nearbyMirror === near) return
+        set({ nearbyMirror: near })
+      },
+
       setNearDesk: (near) => {
         // Called from the render loop, so bail out unless it actually changed.
         if (get().nearDesk === near) return
@@ -325,6 +390,11 @@ export const useGameStore = create<GameStore>()(
           nearbyTable: null,
           atChair: null,
           nearbyChair: null,
+          atMirror: false,
+          nearbyDisplay: null,
+          nearbyMirror: false,
+          shopPosition: SHOP_ENTRANCE,
+          shopFacing: FACING_INTO_SHOP,
           donation: null,
           nurseTask: NurseTask.Patrolling,
           spawnPosition: [x + offsetX, y, z],
