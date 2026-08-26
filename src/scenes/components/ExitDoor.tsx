@@ -28,6 +28,18 @@ interface ExitDoorProps {
    * doorway's `pointLight`. See the comment on the mesh itself.
    */
   floorPool?: boolean | undefined
+  /**
+   * How hard the street throws light back into the room, and how far it carries.
+   *
+   * Defaulted to what the casino has always used, so nothing about that room
+   * changes. They exist for the clinic, which is the only interior with a lit
+   * ceiling: at 16 over 8 metres the warm spill reached a pale ceiling tile 1.4 m
+   * above the lamp and turned a third of it tan, so a room built to be cold and
+   * fluorescent looked like it had been panelled in pine. In a dark room the
+   * same numbers are just a doorway.
+   */
+  spillIntensity?: number | undefined
+  spillDistance?: number | undefined
 }
 
 /** Warm, against both interiors' cold or purple light: this is the street. */
@@ -39,6 +51,8 @@ export function ExitDoor({
   width = 2.2,
   height = 3,
   floorPool = true,
+  spillIntensity = 16,
+  spillDistance = 8,
 }: ExitDoorProps) {
   const sign = getExitSignTexture()
 
@@ -113,7 +127,12 @@ export function ExitDoor({
         rather than only as a shape. Warm, because everything on the other side
         of it is.
       */}
-      <pointLight position={[0, 1.8, -1.4]} color={STREET_SPILL} intensity={16} distance={8} />
+      <pointLight
+        position={[0, 1.8, -1.4]}
+        color={STREET_SPILL}
+        intensity={spillIntensity}
+        distance={spillDistance}
+      />
       {/*
         ...and its pool on the floor, which is what catches the eye first.
 

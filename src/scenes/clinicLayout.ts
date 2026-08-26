@@ -171,13 +171,167 @@ export const DESK_WIDTH = 2.6
 export const DESK_DEPTH = 0.7
 export const DESK_HEIGHT = 1.05
 
-/** Waiting chairs against the right-hand wall. */
-export const WAITING_X = 4.9
+/**
+ * Waiting chairs against the right-hand wall, as one beam bench.
+ *
+ * Moved back against the wall from 4.9. Standing free in the middle of the
+ * walkable strip was only survivable while they were not obstacles; now that
+ * they are, anything not flush with the wall is a bollard in the middle of the
+ * floor.
+ */
+export const WAITING_X = 5.5
 export const WAITING_Z: readonly number[] = [-1.8, -1.1, -0.4, 0.3]
+/** Seat pan front to back, which is the bench's depth into the room. */
+export const BENCH_DEPTH = 0.62
+/** How far past the end seats the beam runs. */
+export const BENCH_OVERHANG = 0.28
 
-export const VENDING: readonly [number, number, number] = [4.9, 0, 1.8]
+/**
+ * The vending machine, flush against the same wall.
+ *
+ * Its x is derived from the wall and the cabinet rather than typed, so a deeper
+ * cabinet stays against the wall instead of growing into the room.
+ */
+export const VENDING_DEPTH = 0.86
+export const VENDING_WIDTH = 1.05
+export const VENDING_HEIGHT = 1.92
+export const VENDING: readonly [number, number, number] = [
+  ROOM.maxX - VENDING_DEPTH / 2,
+  0,
+  1.8,
+]
+
+/**
+ * The suspended ceiling, as a grid of acoustic tile.
+ *
+ * Both dimensions divide the room exactly — 12 / 0.6 and 11 / 0.55 — because a
+ * grid that does not leaves a row of slivers against one wall, and a sliver
+ * reads as a seam in the render rather than as a mistake in the numbers.
+ */
+export const CEILING_TILE = { x: 0.6, z: 0.55 } as const
+export const CEILING_COLUMNS = Math.round((ROOM.maxX - ROOM.minX) / CEILING_TILE.x)
+export const CEILING_ROWS = Math.round((ROOM.maxZ - ROOM.minZ) / CEILING_TILE.z)
+
+/** A troffer is four tiles long and one wide, as a 600x2400 fitting is. */
+export const TROFFER_TILES_X = 4
+export const TROFFER_LENGTH = CEILING_TILE.x * TROFFER_TILES_X
+export const TROFFER_WIDTH = CEILING_TILE.z
+
+/**
+ * Which tiles the fittings are let into, as `[column, row]` of the tile at each
+ * troffer's low-x end.
+ *
+ * Two columns and three rows. Fewer rows left the end recliner at z -3 lit from
+ * a metre and a half away, and this room's whole character is light that arrives
+ * evenly and without mercy.
+ */
+export const TROFFER_TILES: readonly (readonly [number, number])[] = [
+  [3, 2],
+  [13, 2],
+  [3, 9],
+  [13, 9],
+  [3, 16],
+  [13, 16],
+]
+
+/** The centre of a ceiling tile, in world space, as `[x, z]`. */
+export function ceilingTileCenter(column: number, row: number): readonly [number, number] {
+  return [
+    ROOM.minX + (column + 0.5) * CEILING_TILE.x,
+    ROOM.minZ + (row + 0.5) * CEILING_TILE.z,
+  ]
+}
+
+/**
+ * Where each light fitting sits, derived from the grid it is let into.
+ *
+ * Derived rather than typed because the fittings and the tiles have to agree.
+ * Three hand-set z values and a tiled ceiling are two unrelated sets of numbers:
+ * they look fine apart and put every fitting across a tile seam together.
+ */
+export function troffers(): readonly (readonly [number, number])[] {
+  return TROFFER_TILES.map(([column, row]) => {
+    const [, z] = ceilingTileCenter(column, row)
+    /*
+     * The fitting spans `TROFFER_TILES_X` tiles starting at `column`, so its
+     * centre is that many half-tiles along — on a tile seam for an even span,
+     * which is what a real fitting does.
+     */
+    return [ROOM.minX + (column + TROFFER_TILES_X / 2) * CEILING_TILE.x, z] as const
+  })
+}
+
+/** Skirting board at the wall/floor join. */
+export const SKIRTING_HEIGHT = 0.12
+export const SKIRTING_DEPTH = 0.03
+
+/** The walls that carry something. */
+export enum ClinicWall {
+  /** Behind the recliners, at `ROOM.minX`. */
+  Left = 'left',
+  /** The one with the door in it, at `ROOM.maxZ`. */
+  Back = 'back',
+}
+
+export interface WallProp {
+  id: string
+  wall: ClinicWall
+  /** Position along the wall: z on the left wall, x on the back wall. */
+  along: number
+  /** Height of the prop's centre off the floor. */
+  y: number
+  /** Extent along the wall. */
+  width: number
+  /** Extent up the wall. */
+  height: number
+}
+
+/**
+ * Everything hung on a wall, in one list so a test can hold all of it at once.
+ *
+ * The colonnade on the strip is why this is a list rather than three positions
+ * written where they happen to be drawn: things laid out on the room's rhythm
+ * and things laid out on the door's rhythm collide, and a later reader has no
+ * reason to think of checking one against the other.
+ */
+export const WALL_PROPS: readonly WallProp[] = [
+  { id: 'cross', wall: ClinicWall.Left, along: 0, y: 2.2, width: 0.78, height: 0.78 },
+  { id: 'clipboard', wall: ClinicWall.Back, along: 1.9, y: 1.55, width: 0.28, height: 0.38 },
+  { id: 'switch', wall: ClinicWall.Back, along: -1.55, y: 1.25, width: 0.12, height: 0.16 },
+]
+
+/** Where a wall prop hangs, in world space, standing off its wall by `standoff`. */
+export function wallPropPosition(
+  prop: WallProp,
+  standoff = 0.02,
+): readonly [number, number, number] {
+  return prop.wall === ClinicWall.Left
+    ? [ROOM.minX + standoff, prop.y, prop.along]
+    : [prop.along, prop.y, ROOM.maxZ - standoff]
+}
 
 export const EXIT_DOOR: readonly [number, number, number] = [0, 0, 6.7]
+
+/**
+ * How big the doorway is drawn.
+ *
+ * Here rather than written into the `<ExitDoor>` call, because the wall behind
+ * it now carries things and a wall prop and a door are laid out on different
+ * rhythms. That is exactly the collision the strip's colonnade was: a pillar on
+ * every tower's centre line and a door on every tower's centre line, drawn in
+ * two files that each looked right.
+ */
+export const EXIT_DOOR_WIDTH = 1.8
+export const EXIT_DOOR_HEIGHT = 2.5
+/**
+ * Half the width of floor-to-head obstruction the doorway makes, frame included.
+ *
+ * `ExitDoor` puts a 0.16 jamb either side of the opening and hangs a 1.05-wide
+ * sign over it, so the framed width is what a neighbour has to clear rather than
+ * the opening. The margin on top is slack: a prop that clears the door by a
+ * hand's width does not look deliberate even when it technically fits.
+ */
+export const EXIT_DOOR_CLEARANCE = EXIT_DOOR_WIDTH / 2 + 0.16 + 0.3
 /**
  * Just the doorway, and no more.
  *
@@ -225,7 +379,38 @@ export function chairSitSpot(index: number): readonly [number, number, number] {
   return [CHAIR_SIT_X, 0, CHAIR_Z[index] ?? 0]
 }
 
-/** What the player is kept out of: the recliners, the desk and the machine. */
+/** Where the vending machine stands. */
+export function vendingFootprint(): Footprint {
+  return {
+    minX: VENDING[0] - VENDING_DEPTH / 2,
+    maxX: VENDING[0] + VENDING_DEPTH / 2,
+    minZ: VENDING[2] - VENDING_WIDTH / 2,
+    maxZ: VENDING[2] + VENDING_WIDTH / 2,
+  }
+}
+
+/** Where the waiting bench stands, end to end. */
+export function benchFootprint(): Footprint {
+  const first = WAITING_Z[0] ?? 0
+  const last = WAITING_Z[WAITING_Z.length - 1] ?? 0
+
+  return {
+    minX: WAITING_X - BENCH_DEPTH / 2,
+    maxX: WAITING_X + BENCH_DEPTH / 2,
+    minZ: first - BENCH_OVERHANG,
+    maxZ: last + BENCH_OVERHANG,
+  }
+}
+
+/**
+ * What the player is kept out of.
+ *
+ * The machine and the bench are here because they were not, and both stood
+ * inside `WALK_BOUNDS`: the player walked through a 1.9 m vending machine and
+ * through four occupied seats, in the one room that exists to be looked at
+ * closely. Nothing on screen said so — a figure passing through a solid is only
+ * wrong in motion, and every capture of this room was a still.
+ */
 export function obstacles(): readonly Footprint[] {
   const chairs = CHAIR_Z.map((z) => ({
     minX: CHAIR_X - CHAIR_FOOTPRINT_HALF_X,
@@ -242,6 +427,8 @@ export function obstacles(): readonly Footprint[] {
       minZ: DESK[2] - DESK_DEPTH / 2,
       maxZ: DESK[2] + DESK_DEPTH / 2,
     },
+    vendingFootprint(),
+    benchFootprint(),
   ]
 }
 
