@@ -137,31 +137,25 @@ async function capture(name) {
 /**
  * Fails loudly rather than screenshotting whatever happened to be on screen.
  *
- * Waits rather than sampling. `isVisible()` is one of the few Playwright calls
- * that does *not* auto-wait: it answers for the instant it is asked, and every
- * caller here asks exactly once, a fixed 900 ms after pressing F. Entering a
- * venue mounts a whole scene, and under SwiftShader at three frames a second
- * the main thread can stay busy past that, so the assertion could lose a race
- * with the hint it is asserting on.
+ * A single `isVisible()` on purpose, and not the `waitFor({ state: 'visible' })`
+ * it looks like it should be.
  *
- * Hardening rather than a fix for a bug that was caught here: the run that
- * prompted it turned out to be a *different build* holding the production alias
- * — its shop hint read "the till" and this one does not. Worth keeping anyway,
- * because a one-shot `isVisible` is why that took a screenshot to spot.
+ * `isVisible` is one of the few Playwright calls that does not auto-wait, which
+ * reads like a bug here — it asks once, a fixed 900 ms after the keypress. It
+ * was changed to a wait with an eight-second deadline and the walkthrough
+ * immediately started failing at whichever beat crossed a door, on assertions
+ * whose text the failure screenshot then showed on screen.
  *
- * `walkUntil` keeps the instantaneous check on purpose: it is polling between
- * bursts of walking, and a wait there would be a wait for something that has not
- * happened yet by design.
+ * The difference is what a deadline means when the main thread is blocked.
+ * Entering or leaving a venue mounts a whole scene, and under SwiftShader that
+ * is seconds of one synchronous task; a `waitFor` timer expires during it and
+ * reports a timeout for a DOM that had already updated. `isVisible` has no
+ * deadline: it is answered when the thread is free again, which is the moment
+ * the answer becomes meaningful. Slower, and right.
  */
-async function expectText(text, step, timeoutMs = 8000) {
-  try {
-    await page.getByText(text, { exact: false }).first().waitFor({
-      state: 'visible',
-      timeout: timeoutMs,
-    })
-  } catch {
-    throw new Error(`${step}: expected to see "${text}"`)
-  }
+async function expectText(text, step) {
+  const found = await page.getByText(text, { exact: false }).first().isVisible()
+  if (!found) throw new Error(`${step}: expected to see "${text}"`)
 }
 
 try {
