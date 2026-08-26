@@ -33,11 +33,19 @@ const NIGHT = {
  * reflective glazing.
  */
 const DAY = {
-  wallDark: '#8d8aa5',
-  wallLight: '#a5a2bd',
-  pilaster: '#bcb8cf',
-  windowLit: ['#7e8fb4', '#7385ab', '#8998ba', '#6b7da4'],
-  windowDark: '#5b6b8e',
+  /*
+   * Warm stone, not cold concrete.
+   *
+   * These were lavender-greys, and under a blue sky with a blue ambient the
+   * whole street came out the colour of a rain cloud. `strip_exterior_day.png`
+   * is cream and sand with the shadows doing the cooling — the sky tints the
+   * shaded faces on its own, and the wall does not need to help.
+   */
+  wallDark: '#b8ac97',
+  wallLight: '#cfc3ab',
+  pilaster: '#e0d6c2',
+  windowLit: ['#6d7f9e', '#62748f', '#7688a6', '#5b6d8a'],
+  windowDark: '#4e5f7d',
 } as const
 
 const WINDOW_COLUMNS = 8

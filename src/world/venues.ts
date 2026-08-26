@@ -105,22 +105,6 @@ export function getVenue(id: VenueId): VenueConfig {
   return venue
 }
 
-/** Half-width of the reflective roadway. */
-export const ROAD_HALF_WIDTH = 5
-
-/** Inner face of the building facades; the sidewalk runs from the road to here. */
-export const FACADE_X = 8.8
-
-export const SIDEWALK_HEIGHT = 0.16
-
-/** Walkable bounds of the strip, in world units. */
-export const STREET_BOUNDS = {
-  minX: -8,
-  maxX: 8,
-  minZ: -52,
-  maxZ: 12,
-} as const
-
 export const PLAYER_SPAWN: readonly [number, number, number] = [0, 0, 8]
 
 /**

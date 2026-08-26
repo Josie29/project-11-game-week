@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import { useGameStore } from '../../store/useGameStore'
 import { INTERACT_KEY } from '../../world/controls'
-import { DOOR_TRIGGER_RADIUS, STREET_BOUNDS, VENUES, type VenueId } from '../../world/venues'
+import { DOOR_TRIGGER_RADIUS, VENUES, type VenueId } from '../../world/venues'
+import { STREET_BOUNDS } from '../stripLayout'
 import { useActionKey } from '../useActionKey'
 import { WalkingPlayer, type ProximityTarget } from './WalkingPlayer'
 

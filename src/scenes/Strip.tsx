@@ -1,14 +1,24 @@
 import { MeshReflectorMaterial } from '@react-three/drei'
-import { useLayoutEffect } from 'react'
-import { BackSide } from 'three'
+import { useLayoutEffect, useMemo } from 'react'
+import { BackSide, RepeatWrapping } from 'three'
 import { useTimeStore } from '../store/useTimeStore'
+import { VENUES, VenueKind } from '../world/venues'
 import {
-  VENUES,
-  VenueKind,
+  BLOCK_DEPTH,
+  BUILDING_CENTER_X,
+  BUILDING_DEPTH,
+  BUILDING_ROWS,
+  BUILDING_WIDTH,
+  clearsDoorways,
   FACADE_X,
+  LAMP_ROW_Z,
+  PALM_ROW_Z,
   ROAD_HALF_WIDTH,
+  roadTextureOffset,
   SIDEWALK_HEIGHT,
-} from '../world/venues'
+  STRIP_CENTER_Z,
+  STRIP_LENGTH,
+} from './stripLayout'
 import {
   daylightAt,
   lightingAt,
@@ -19,36 +29,18 @@ import {
   skyPaletteAt,
 } from '../world/timeOfDay'
 import { setFacadeDaylight } from './facadeTexture'
+import { getRoadTexture, setRoadDaylight } from './roadTexture'
 import { Building } from './components/Building'
+import { Celestial } from './components/Celestial'
 import { ClinicFront } from './components/ClinicFront'
 import { ShopFront } from './components/ShopFront'
 import { VenueDoor } from './components/VenueDoor'
 import { Player } from './components/Player'
 import { PalmTree, StreetLamp } from './components/StreetProps'
+import { StreetEnd } from './components/StreetEnd'
 import { getSkyTexture } from './skyTexture'
 
 const NEON_PALETTE = ['#ff2d95', '#22e0ff', '#ffc63f', '#a45cff', '#3ee08a'] as const
-
-const BUILDING_WIDTH = 7.2
-const BUILDING_DEPTH = 7
-const BUILDING_CENTER_X = FACADE_X + BUILDING_WIDTH / 2
-
-/**
- * Fixed skyline.
- *
- * Hard-coded rather than randomised so the strip looks identical on every run —
- * a demo that reshuffles its skyline between takes is impossible to rehearse.
- */
-const BUILDING_ROWS: readonly { z: number; leftHeight: number; rightHeight: number }[] = [
-  { z: 10, leftHeight: 9, rightHeight: 13 },
-  { z: 2, leftHeight: 15, rightHeight: 8 },
-  { z: -6, leftHeight: 10, rightHeight: 17 },
-  { z: -14, leftHeight: 18, rightHeight: 9 },
-  { z: -22, leftHeight: 8, rightHeight: 14 },
-  { z: -30, leftHeight: 16, rightHeight: 11 },
-  { z: -38, leftHeight: 9, rightHeight: 19 },
-  { z: -46, leftHeight: 13, rightHeight: 8 },
-]
 
 /**
  * Named houses on the skyline that you cannot walk into.
@@ -69,28 +61,6 @@ const SCENERY_SIGNS: readonly { z: number; side: 1 | -1; name: string; color: st
 
 function scenerySignAt(z: number, side: 1 | -1) {
   return SCENERY_SIGNS.find((sign) => sign.z === z && sign.side === side)
-}
-
-const PALM_ROW_Z = [6, -2, -10, -18, -26, -34, -42] as const
-const LAMP_ROW_Z = [4, -8, -20, -32, -44] as const
-
-/**
- * How much pavement a doorway keeps to itself.
- *
- * Palms and lamps are laid out on their own even rhythm, which takes no notice
- * of where the doors are — and the rhythms happened to collide: a palm stood
- * squarely in front of both the shop and the clinic, hiding the entrance you
- * are meant to be walking toward. Wider than the door trigger, so the approach
- * is clear as well as the door itself.
- */
-const DOORWAY_CLEARANCE = 3.5
-
-/** Whether a piece of street furniture may stand here. */
-function clearsDoorways(x: number, z: number): boolean {
-  return VENUES.every((venue) => {
-    const [doorX, , doorZ] = venue.doorPosition
-    return Math.hypot(x - doorX, z - doorZ) > DOORWAY_CLEARANCE
-  })
 }
 
 /** Deterministic palette pick so colours are stable across reloads. */
@@ -165,17 +135,53 @@ function StripLighting() {
   const minuteOfDay = useTimeStore((state) => state.minuteOfDay)
   const light = lightingAt(minuteOfDay)
 
+  /*
+   * Only the sun casts.
+   *
+   * Turning `castShadow` on unconditionally was right for the daytime street
+   * and wrong for the one the game actually opens on: at 21:00 the key is a
+   * cool fill standing in for moonlight, and it threw a hard black wedge across
+   * half the roadway — over the top of the wet reflection, which is the single
+   * strongest thing in the night reference. Moonlight does not do that, and
+   * nothing else out here is bright enough to. After dark the neon does the
+   * modelling.
+   */
+  const sunUp = quantize(daylightAt(minuteOfDay), 0.05) > 0.15
+
   return (
     <>
       {/* Fog tinted to the horizon so the far end of the street dissolves into it. */}
       <fog attach="fog" args={[light.fogColor, light.fogNear, light.fogFar]} />
 
       <ambientLight intensity={light.ambientIntensity} color={light.ambientColor} />
-      {/* Key light: cool moonlight at night, swinging low and warm at dawn and dusk. */}
+      {/*
+        Key light: cool moonlight at night, swinging low and warm at dawn and
+        dusk, and — new — actually casting.
+
+        `<Canvas shadows>` has been on since the first build and the towers, the
+        palms and the lamps have all been setting `castShadow` the whole time,
+        but this light never had it, so every one of those flags was dead. A
+        sunlit street with nothing casting a shadow is a lit diagram, and that
+        was most of why the daytime strip read flat next to the night one.
+
+        The frustum is fitted to the street rather than left at its default 5
+        units, which would have covered about a third of one building.
+      */}
       <directionalLight
+        castShadow={sunUp}
         position={[light.keyPosition[0], light.keyPosition[1], light.keyPosition[2]]}
         intensity={light.keyIntensity}
         color={light.keyColor}
+        shadow-mapSize={[1024, 1024]}
+        shadow-camera-left={-46}
+        shadow-camera-right={46}
+        shadow-camera-top={46}
+        shadow-camera-bottom={-46}
+        shadow-camera-near={1}
+        shadow-camera-far={140}
+        // Long thin geometry at a glancing sun is exactly the shadow-acne case.
+        shadow-bias={-0.0006}
+        shadow-normalBias={0.04}
       />
     </>
   )
@@ -197,10 +203,35 @@ function Roadway() {
   const bucket = useTimeStore((state) => skyBucket(state.minuteOfDay))
   const light = lightingAt(bucket * SKY_BUCKET_MINUTES)
 
+  /*
+   * Markings live in the surface, not on top of it.
+   *
+   * There used to be a note here explaining why the strip had no centre line: a
+   * flat-shaded stripe laid over the reflector came out brighter than the road,
+   * because the shader multiplies the reflection into the base colour and a
+   * stripe sitting above that multiply misses it. True, and an argument against
+   * that approach rather than against markings. In the `map` the paint is
+   * multiplied along with everything else, so on a wet night the reflection
+   * drags the white into streaks exactly the way it drags the neon.
+   *
+   * The offset is what puts a crossing outside each door — see
+   * `roadTextureOffset`.
+   */
+  const surface = useMemo(() => {
+    const texture = getRoadTexture().clone()
+    texture.wrapS = RepeatWrapping
+    texture.wrapT = RepeatWrapping
+    texture.repeat.set((ROAD_HALF_WIDTH * 2) / BLOCK_DEPTH, STRIP_LENGTH / BLOCK_DEPTH)
+    texture.offset.set(0, roadTextureOffset())
+    texture.needsUpdate = true
+    return texture
+  }, [])
+
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -20]}>
-      <planeGeometry args={[ROAD_HALF_WIDTH * 2, 140]} />
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, STRIP_CENTER_Z]} receiveShadow>
+      <planeGeometry args={[ROAD_HALF_WIDTH * 2, STRIP_LENGTH]} />
       <MeshReflectorMaterial
+        map={surface}
         resolution={512}
         mixBlur={1}
         mixStrength={light.roadMixStrength}
@@ -224,7 +255,7 @@ function Roadway() {
 }
 
 /**
- * Repaints the shared facade texture for the hour.
+ * Repaints the shared facade and roadway textures for the hour.
  *
  * The walls were authored dark enough for a night scene that no plausible
  * daylight rig lifts them — under a noon sky the street stayed a row of night
@@ -233,11 +264,13 @@ function Roadway() {
  *
  * Renders nothing; it exists to own the side effect.
  */
-function FacadeDaylight() {
+function SurfaceDaylight() {
   const bucket = useTimeStore((state) => skyBucket(state.minuteOfDay))
 
   useLayoutEffect(() => {
-    setFacadeDaylight(bucket, daylightAt(bucket * SKY_BUCKET_MINUTES))
+    const daylight = daylightAt(bucket * SKY_BUCKET_MINUTES)
+    setFacadeDaylight(bucket, daylight)
+    setRoadDaylight(bucket, daylight)
   }, [bucket])
 
   return null
@@ -255,28 +288,30 @@ export function Strip() {
   return (
     <>
       <SkyDome />
+      <Celestial />
       <StripLighting />
       <Roadway />
-      <FacadeDaylight />
+      <SurfaceDaylight />
 
-      {/*
-        No centre line. The reflector darkens the roadway by multiplying in the
-        reflection, so any flat-shaded stripe laid on top ends up brighter than
-        the road and pulls the eye straight off the neon — and the reference is
-        an unmarked pedestrian strip anyway.
-      */}
-
-      {/* Raised sidewalks either side of the roadway. */}
+      {/* Raised sidewalks either side of the roadway, kerb to kerb. */}
       {[-1, 1].map((side) => (
         <mesh
           key={side}
-          position={[side * (ROAD_HALF_WIDTH + (FACADE_X - ROAD_HALF_WIDTH) / 2), SIDEWALK_HEIGHT / 2, -20]}
+          position={[
+            side * (ROAD_HALF_WIDTH + (FACADE_X - ROAD_HALF_WIDTH) / 2),
+            SIDEWALK_HEIGHT / 2,
+            STRIP_CENTER_Z,
+          ]}
           receiveShadow
         >
-          <boxGeometry args={[FACADE_X - ROAD_HALF_WIDTH, SIDEWALK_HEIGHT, 140]} />
+          <boxGeometry args={[FACADE_X - ROAD_HALF_WIDTH, SIDEWALK_HEIGHT, STRIP_LENGTH]} />
           <meshStandardMaterial color={sidewalkColor} roughness={0.85} />
         </mesh>
       ))}
+
+      {/* The junction at each end, and the block that closes the view. */}
+      <StreetEnd side={1} neonLevel={neonLevel} />
+      <StreetEnd side={-1} neonLevel={neonLevel} />
 
       {BUILDING_ROWS.map((row, index) => (
         <group key={row.z}>
@@ -289,6 +324,7 @@ export function Strip() {
             facing={1}
             signName={signFor(row.z, -1)}
             neonLevel={neonLevel}
+            daylight={daylight}
           />
           <Building
             position={[BUILDING_CENTER_X, 0, row.z]}
@@ -299,6 +335,7 @@ export function Strip() {
             facing={-1}
             signName={signFor(row.z, 1)}
             neonLevel={neonLevel}
+            daylight={daylight}
           />
         </group>
       ))}
