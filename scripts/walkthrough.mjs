@@ -195,8 +195,14 @@ try {
    *    without being offered a thing, because the middle of a shop is empty by
    *    design — the stock is against the walls. It ended up flat against the
    *    back wall having passed nothing. A scan has to hug a run of fixtures.
+   *
+   *    Named, rather than scanning for the generic phrase. Where a scan stops
+   *    depends on how far a burst carries, which is a different distance on a
+   *    deployed build than on localhost — and where this leg stops is what the
+   *    walk to the mirror below starts from. Stopping at a known fixture makes
+   *    the rest of the beat the same walk on both.
    */
-  await walkUntil(['KeyA'], 'to try it on', { burstMs: DOOR_BURST_MS, bursts: 30 })
+  await walkUntil(['KeyA'], 'Ivory Tuxedo', { burstMs: DOOR_BURST_MS, bursts: 30 })
   await interact()
   await expectText('on approval', 'trying something on')
   await capture('5-trying-on')

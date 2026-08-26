@@ -107,10 +107,16 @@ export const MIRROR_STAND: readonly [number, number, number] = [0, 0, -2.4]
  * offered inside a narrow window is one a single stride steps over, and here
  * stepping over it means never finding out that anything costs money.
  *
- * `shopLayout.test.ts` holds it clear of every fixture, and 2.2 leaves better
- * than two metres of slack to the nearest one.
+ * It went 1.4 -> 2.2 -> 2.6. The last step was the walkthrough failing against
+ * the deployed build after passing locally: the headless browser renders far
+ * slower over the network, so the same scripted walk covers different ground
+ * and arrived at the mirror from a metre further out. A prompt whose margin is
+ * the difference between a fast machine and a slow one is too tight.
+ *
+ * `shopLayout.test.ts` holds it clear of every fixture, and 2.6 still leaves
+ * most of a metre of slack to the nearest one.
  */
-export const MIRROR_RADIUS = 2.2
+export const MIRROR_RADIUS = 2.6
 
 /**
  * The fixed camera used while the player is on the fitting plinth.
