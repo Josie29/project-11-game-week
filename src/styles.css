@@ -914,3 +914,171 @@ kbd {
 .shop__leave .button {
   flex: 1;
 }
+
+/*
+ * The welcome screen.
+ *
+ * Centred rather than a side panel like the designer, because it is a title
+ * screen and the strip behind it is the point. `dvh` rather than `vh` so a
+ * mobile browser's collapsing chrome cannot push the primary action off the
+ * bottom.
+ */
+.welcome {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  height: 100dvh;
+  /*
+    Light enough to read the strip through.
+
+    It was twice this dark first, which passed as a panel on a background and
+    failed at the only job the background has: the neon is what the screen is
+    selling, and at 0.72 in the centre the street behind read as black. The
+    panel carries its own opaque surface, so the scrim only has to lift text
+    off the buildings at the edges, not hide them.
+  */
+  background: radial-gradient(
+    ellipse at center,
+    rgba(5, 6, 15, 0.35) 0%,
+    rgba(5, 6, 15, 0.78) 100%
+  );
+  color: var(--color-text);
+  font-family: var(--font-ui);
+  overflow-y: auto;
+}
+
+.welcome__panel {
+  width: min(28rem, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.welcome__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.welcome__title {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-neon-pink);
+}
+
+.welcome__subtitle {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.welcome__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.welcome__legend {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.welcome__account {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: 0.9375rem;
+}
+
+.welcome__avatar {
+  border-radius: 50%;
+}
+
+.welcome__note {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+}
+
+.welcome__error {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--color-loss);
+}
+
+.welcome__choices {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.welcome__choices .button {
+  flex: 1;
+}
+
+.welcome__disclosure {
+  align-self: flex-start;
+}
+
+.welcome__start {
+  font-size: 1rem;
+  padding: var(--space-3) var(--space-4);
+}
+
+/* The controls list, shared by the welcome screen and anywhere else it lands. */
+.controls {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.controls__row {
+  display: grid;
+  grid-template-columns: 5rem 1fr;
+  gap: var(--space-3);
+  align-items: baseline;
+}
+
+.controls__key {
+  font-family: var(--font-numeric);
+  font-size: 0.8125rem;
+  letter-spacing: 0.08em;
+  color: var(--color-neon-cyan);
+}
+
+.controls__what {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+/* Primary and skip sit in a row; skip is quieter and only on the first run. */
+.designer__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.designer__skip {
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+}

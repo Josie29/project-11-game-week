@@ -194,9 +194,28 @@ export function CharacterDesigner() {
         onPick={(garmentColor) => update({ garmentColor })}
       />
 
-      <button type="button" className="button button--primary designer__done" onClick={done}>
-        {hasDesigned ? 'Done' : 'Hit the strip'}
-      </button>
+      <div className="designer__actions">
+        <button type="button" className="button button--primary designer__done" onClick={done}>
+          {hasDesigned ? 'Done' : 'Hit the strip'}
+        </button>
+
+        {/*
+          Only on the first run, and deliberately not styled as a peer of the
+          primary action. Somebody returning to change their look has nothing to
+          skip — `done` already keeps what they have — so offering it there
+          would be a second button that does the same thing as the first.
+
+          Skipping leaves `appearance` at whatever the store already holds,
+          which `sanitizeAppearance` guarantees is drawable. It does not invent
+          a second set of defaults for a character that would then differ from
+          the one the designer opens on.
+        */}
+        {!hasDesigned && (
+          <button type="button" className="button designer__skip" onClick={done}>
+            Skip for now
+          </button>
+        )}
+      </div>
     </div>
   )
 }

@@ -15,6 +15,7 @@ import {
   STALE_AFTER_MS,
 } from '../world/presence'
 import type { WalkBounds } from '../scenes/components/WalkingPlayer'
+import { PlayMode, useSessionStore } from './useSessionStore'
 
 /*
  * Who else is in the room.
@@ -91,6 +92,13 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     connected: false,
 
     enterRoom: (roomId, bounds, identity) => {
+      /*
+       * The mode check is deliberately here rather than in the scene that calls
+       * this. "Play alone" has to mean no socket was ever opened — not peers
+       * hidden after connecting — or `shouldSend`'s cost model stops describing
+       * what a single-player session actually costs.
+       */
+      if (useSessionStore.getState().mode !== PlayMode.Multiplayer) return
       if (!isMultiplayerConfigured || isPresenceSuppressed()) return
       // Re-entering the same room on a re-render must not churn the socket.
       if (currentRoom === roomId) return

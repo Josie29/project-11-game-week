@@ -210,6 +210,18 @@ try {
   await page.goto(baseUrl, { waitUntil: 'load' })
   await page.waitForSelector('canvas', { timeout: 20000 })
 
+  /*
+   * 0. The welcome screen, which is the first thing a new player sees.
+   *
+   *    Clicked through rather than skipped with `?boot=`. Those links are
+   *    stripped from production builds, and this script is the only check that
+   *    runs against a deployed URL — bypassing the screen here would mean the
+   *    one path nobody ever verifies is the one every real player takes.
+   */
+  await expectText('Neon Strip', 'welcome screen')
+  await capture('0-welcome')
+  await page.getByRole('button', { name: 'Enter the strip' }).click()
+
   // 1. First run opens the designer, not the street.
   await expectText('Who are you tonight?', 'first run')
   await page.getByRole('button', { name: 'Feminine' }).click()
