@@ -215,12 +215,39 @@ export default {
       return new Response('ok', { status: 200 })
     }
 
-    // /room/<name> — the name is the room, so the strip and each venue get
-    // their own object without the server knowing what any of them are.
-    const match = /^\/room\/([A-Za-z0-9:_-]{1,64})$/.exec(url.pathname)
-    if (!match?.[1]) return new Response('Not found', { status: 404 })
+    /*
+     * /room/<name> — the name is the room, so the strip and each venue get
+     * their own object without the server knowing what any of them are.
+     *
+     * Decoded before it is validated, and that is the whole bug this comment
+     * exists for. Venue rooms are named `venue:golden-ace`, the client sends
+     * them through `encodeURIComponent`, and the colon arrives as `%3A`. The
+     * pattern allowed a literal `:` but not a `%`, so every indoor room 404'd
+     * at the handshake and the client reconnected in a loop — for months, and
+     * on every deploy, because the only room anybody ever tested was `strip`
+     * and `strip` has no colon in it.
+     *
+     * The charset guard stays. It is what stops an arbitrary string becoming a
+     * Durable Object name, and it now checks the string that actually gets
+     * used rather than its wire spelling.
+     */
+    const encoded = /^\/room\/([^/]{1,96})$/.exec(url.pathname)?.[1]
+    if (encoded === undefined) return new Response('Not found', { status: 404 })
 
-    const id = env.ROOM.idFromName(match[1])
+    let room: string
+    try {
+      room = decodeURIComponent(encoded)
+    } catch {
+      // Malformed percent-encoding throws rather than returning anything, and
+      // an unhandled throw here is a 500 for what is really a bad request.
+      return new Response('Not found', { status: 404 })
+    }
+
+    if (!/^[A-Za-z0-9:_-]{1,64}$/.test(room)) {
+      return new Response('Not found', { status: 404 })
+    }
+
+    const id = env.ROOM.idFromName(room)
     return env.ROOM.get(id).fetch(request)
   },
 }
