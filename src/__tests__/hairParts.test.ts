@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { HairStyle } from '../character/appearance'
-import { hairParts, skullBounds } from '../character/hairParts'
+import { hairParts, partsOverFace, skullBounds } from '../character/hairParts'
 import {
   ColorRole,
+  containsPoint,
   fightingSurfaces,
   floatingParts,
   listBounds,
@@ -117,6 +118,75 @@ describe('hairParts', () => {
 
     expect(conflicts.length).toBeGreaterThan(0)
     expect(conflicts[0]?.gap).toBeLessThan(MIN_SURFACE_GAP)
+  })
+
+  /*
+   * The check the audit was actually asked for.
+   *
+   * Four of the eight styles were hanging over the face — the bob's fringe
+   * reached below the eye's own centre line, and the coils were spread evenly
+   * round the head, which puts four of them straight down the front of it with
+   * one over each eye and one across the mouth. Every existing test passed: a
+   * fringe over the eyes is attached, is on the skull, and is nowhere near
+   * another surface.
+   *
+   * Bounding boxes cannot ask this. A fringe is an ellipsoid whose box reaches
+   * the chin and whose surface at the chin has receded inside the skull, so a
+   * box test condemns every style there is. `partsOverFace` samples points just
+   * off the skin instead.
+   */
+  it('keeps every style clear of the face', () => {
+    for (const silhouette of SILHOUETTES) {
+      const body = PROPORTIONS[silhouette]
+
+      for (const style of STYLES) {
+        const covering = partsOverFace(hairParts(style, body), body)
+
+        expect(
+          covering,
+          `${style} on ${silhouette} hangs over the face: ${covering.join(', ')}`,
+        ).toEqual([])
+      }
+    }
+  })
+
+  /* And the same trap again: a predicate that cleared everything would prove nothing. */
+  it('rejects a fringe pulled down over the eyes', () => {
+    const body = PROPORTIONS[Silhouette.Androgynous]
+    const overgrown: Part = {
+      name: 'curtain',
+      shape: PartShape.Sphere,
+      // Squarely in front of the face, at eye level, standing off the skin.
+      at: [0, -body.headHeight * 0.05, body.headDepth * 0.6],
+      size: [body.headWidth * 0.4, body.headHeight * 0.2, body.headDepth * 0.2],
+      role: ColorRole.Hair,
+    }
+
+    expect(partsOverFace([...hairParts(HairStyle.Crop, body), overgrown], body)).toEqual([
+      'curtain',
+    ])
+  })
+
+  /*
+   * And the solid test underneath it has to be a solid test.
+   *
+   * `containsPoint` is what separates "this ellipsoid's box reaches the chin"
+   * from "this ellipsoid reaches the chin", and the whole check above rests on
+   * the difference. A version that fell back to the bounding box would report
+   * every style as covering the face and read as a very thorough test.
+   */
+  it('tells a shape from its bounding box', () => {
+    const ball: Part = {
+      name: 'ball',
+      shape: PartShape.Sphere,
+      at: [0, 0, 0],
+      size: [0.1, 0.1, 0.1],
+      role: ColorRole.Hair,
+    }
+
+    expect(containsPoint(ball, [0, 0, 0.09])).toBe(true)
+    // The corner of the box, which is well outside the sphere in it.
+    expect(containsPoint(ball, [0.08, 0.08, 0.08])).toBe(false)
   })
 
   /*

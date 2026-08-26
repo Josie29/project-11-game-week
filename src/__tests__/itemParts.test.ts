@@ -218,6 +218,7 @@ describe('itemParts', () => {
               ...options,
               suppressSkirt: item.shape === ItemShape.Gown,
               coveredByOuterwear: item.slot === Slot.Outerwear,
+              eyesCovered: item.slot === Slot.Eyes,
             }
 
             const worn = translateParts(

@@ -51,8 +51,16 @@ export function StageLighting({ spread = 1.9, shadows = true }: StageLightingPro
          * grazing angles on an ellipsoid than on a box.
          */
         shadow-bias={-0.0009}
-        shadow-normalBias={0.02}
-        shadow-mapSize={[1024, 1024]}
+        /*
+         * Raised with the figure.
+         *
+         * 0.02 was tuned against a 24cm head. On the stylised one it is not
+         * enough and the shadow map's own depth error draws a hard arc across
+         * the cheeks at nose level — read as a jaw seam, chased as geometry,
+         * and it was the light all along.
+         */
+        shadow-normalBias={0.055}
+        shadow-mapSize={[2048, 2048]}
       />
 
       {/*

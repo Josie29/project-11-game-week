@@ -42,13 +42,28 @@ Concretely, the three categories that have caught real bugs here:
   has caught a stash overhanging the rail, a split payout falling off the table
   edge, and a chip tray corner clipping a split hand.
 
-  There are now five of these predicates and they all exist for the same
+  There are now six of these predicates and they all exist for the same
   reason: `isOnFelt`, `isOnBody` in `src/character/anchors.ts`,
   `isOnShopFloor` in `src/scenes/shopLayout.ts`, `isOnClinicFloor` in
-  `src/scenes/clinicLayout.ts` and `isOnStrip` in `src/scenes/stripLayout.ts`.
-  Each one is paired with a test that feeds it a point it must *reject* — a
-  predicate that returned true everywhere would leave its whole suite passing
-  while proving nothing.
+  `src/scenes/clinicLayout.ts`, `isOnStrip` in `src/scenes/stripLayout.ts` and
+  `partsOverFace` in `src/character/hairParts.ts`. Each one is paired with a
+  test that feeds it a point it must *reject* — a predicate that returned true
+  everywhere would leave its whole suite passing while proving nothing.
+
+  **A predicate whose window is a box will condemn correct art.** The first
+  `partsOverFace` drew a rectangle across the face and asked whether any hair
+  reached into it. Every style failed, because a hairline legitimately dips at
+  the temples and any rectangle wide enough to hold the eyes also holds the
+  patch of temple beside them. It samples the *features themselves* now — the
+  eyes, nose and mouth, each at points just proud of its own front face — and
+  skips samples where the feature is behind the skull at that point, because
+  the corners of a flat panel on a curved head are inside the skull and hair
+  behind a skull covers nothing. Brows are exempt on purpose: a fringe over the
+  eyebrows is a haircut, a fringe over the eyes is a bug.
+
+  `containsPoint` in `parts.ts` is what makes that possible — a solid test per
+  shape rather than a bounding box. A fringe's box reaches the chin and its
+  surface at the chin has receded inside the skull.
 
   Where a fixed camera has to see something, the *angle it subtends across the
   view* is the assertable thing, not its size in the world.
@@ -186,7 +201,71 @@ shoulders and limbs that narrow toward the joint. What shipped first was a
 rectangular slab with capsules hanging off it, and it read as a crate with
 limbs. The body is a stack of squashed, tapered cylinders now, the head is an
 ellipsoid, and the face features are set into the skull rather than laid on it
-— `faceSurfaceZ` is what keeps an eye on a curved cheek.
+— `faceSurfaceZ` in `src/character/face.ts` is what keeps an eye on a curved
+cheek.
+
+Corollary: **a hanging cylinder is a rectangle in silhouette**, however many
+segments it has. Side panels of hair, a ponytail and a row of coils were all
+cylinders, and from the one angle each of them exists to be seen from they read
+as boards bolted to a head. Anything that hangs is a capsule or is tapered and
+tipped with a sphere.
+
+**The figure is stylised, and one number says how far.** `HEADS_TALL` in
+`proportions.ts` is 5.5, against the reference sheet's seven and a half. The
+sheet is life drawing; at the size a figure occupies on the strip that leaves no
+room on the head for a face anyone can see. `STANDING_HEIGHT` does *not* move —
+the follow camera, the stool, the door triggers and every table anchor are tuned
+against it — so the stylisation is spent on how the height is divided up.
+
+**Limb thickness is a fraction of the torso, never a constant.** They were
+absolute, which meant the broad silhouette and the narrow one had identical
+arms and legs — half of what makes them different bodies, thrown away below the
+shoulder — and when the figure was restyled chunkier the limbs stayed behind and
+it came out as a heavy torso on wire legs.
+
+**A face at this scale is flat graphic panels, not modelled features.** A
+rounded, glossy version — an eyeball with a catchlight, a mouth with lifted
+corners — is fussy up close and mush at any distance. Hard-edged eyes with a
+plain dark pupil is what the figure had before anyone tried to improve on it,
+and it was better. The nose is the exception and stays a rounded bump: a flat
+panel on the centre line has nothing to catch the light and disappears.
+
+**A drawn feature has to read against six skins.** The lip colour sat within a
+shade of the palette's darker tones and the mouth simply vanished on three of
+them — a face with eyes, brows and no mouth, on half the swatches the designer
+offers.
+
+**Two joined solids show their join wherever the outer one is narrower.** The
+neck ran up to a centimetre below the lip, and at that height a stylised head
+has narrowed almost to its pole, so the top of the neck came *through* the chin
+as a bright oval under the mouth. It was mistaken for a jaw seam twice. A neck
+ends at the jaw; only the join belongs inside the head.
+
+**Shadow bias is a function of how big the geometry is.** `shadow-normalBias`
+was tuned against a 24cm head. On the stylised one it drew a hard arc across
+both cheeks at nose level — chased as geometry, and it was the light all along.
+
+**Tessellation is cosmetic everywhere except the hairline.** Hair is a shell
+that breaks the surface of the skull, and the two meet at a very shallow angle,
+so the polygon boundary between them moves a long way for a very small error.
+It came out as a visible sawtooth on all eight styles at 20 segments and was
+still ragged at 40; the shell runs at 96 and the skull at 48. Nothing else on
+the figure needs more than 24.
+
+That geometry is also why there is no separate fringe part any more. Two shells
+crossing the skull at two shallow angles is two ragged boundaries, and the fix
+that worked was to merge them: **a fringe is a low hairline**, which is also what
+a fringe is. `cap` in `hairParts.ts` takes the hairline as an argument and
+*derives* the depth it has to sit at — given where the crossing has to be there
+is exactly one answer, so it is arithmetic rather than a number anyone tunes.
+
+**Two things that cannot both be visible should not both be drawn.** The eyes
+are not rendered under opaque sunglasses (`eyesCovered`), the same way a shirt
+front is not rendered under a jacket. That is worth doing for its own sake, and
+it also deletes a whole family of near-coincident planes: four hand-placed
+rectangles in one small patch of face meant every attempt to position a temple
+arm landed one of its faces within a millimetre of a sclera's or a pupil's, on
+one silhouette or another.
 
 **Check the sign on a rotation against what it does, not what it is called.**
 `IDLE_ARM_SPLAY` was documented as holding the arms clear of the body and was
@@ -492,6 +571,12 @@ fresh clone and every existing capture behaving exactly as before.
 - **Characters are procedural primitives** with named joint groups, so gestures
   can be authored directly, and now so the player can be built at runtime from a
   saved appearance.
+- - **An item's size is a fraction of the body it is worn on.** The watch strap
+  was a fixed 36mm hoop, which is smaller than the broad silhouette's wrist — a
+  band rendering *through* an arm. The fedora's brim was `headWidth * 1.04` as a
+  radius, which is a boater. Absolute numbers in `itemParts.ts` are the same
+  trap `proportions.ts` was pulled out of `CasinoCharacter` to escape, and they
+  survive until the body changes size.
 - **Anything read out of a save is coerced, never trusted.** `localStorage` is
   user-writable and the wardrobe save feeds geometry directly, so
   `sanitizeAppearance`, `sanitizeOwned` and `sanitizeEquipped` are total: they

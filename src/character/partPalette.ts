@@ -40,7 +40,15 @@ export const MANNEQUIN_FORM = '#c6b9a6'
 
 const SCLERA = '#f4f2ee'
 const PUPIL = '#20161a'
-const LIP = '#8a4f45'
+/*
+ * Darker than a lip actually is, on purpose.
+ *
+ * At `#8a4f45` the mouth sat within a shade of every skin tone in the palette
+ * and simply vanished on the darker three — a face with eyes, brows and no
+ * mouth. A drawn feature has to read against the skin behind it, and there are
+ * six skins.
+ */
+const LIP = '#5c2f2c'
 
 /**
  * The palette for a figure: its garment, its skin and its hair.

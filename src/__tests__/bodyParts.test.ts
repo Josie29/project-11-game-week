@@ -2,16 +2,18 @@ import { describe, expect, it } from 'vitest'
 import { Garment, PLAYER_GARMENTS } from '../character/appearance'
 import {
   DEFAULT_BODY_OPTIONS,
-  faceSurfaceZ,
   restPoseSegments,
   thighParts,
   torsoParts,
+  upperArmParts,
   type BodyOptions,
 } from '../character/bodyParts'
+import { faceParts, faceSurfaceZ, FACES } from '../character/face'
 import {
   fightingSurfaces,
   floatingParts,
   listBounds,
+  partHalfExtents,
   translateParts,
   type Part,
 } from '../character/parts'
@@ -104,7 +106,13 @@ describe('bodyParts', () => {
         expect(floatingParts(wholeFigure(silhouette, options))).toEqual([])
 
         for (const segment of restPoseSegments(silhouette, PROPORTIONS[silhouette], options)) {
-          expect(fightingSurfaces(segment.parts), `${silhouette} ${segment.name}`).toEqual([])
+          const conflicts = fightingSurfaces(segment.parts)
+          expect(
+            conflicts,
+            `${silhouette} ${segment.name}: ${conflicts
+              .map((c) => `${c.a}/${c.b} ${c.gap.toFixed(4)} on ${c.axis}`)
+              .join(', ')}`,
+          ).toEqual([])
         }
       }
     }
@@ -193,6 +201,117 @@ describe('bodyParts', () => {
     expect(faceSurfaceZ(body, body.headWidth * 0.25)).toBeLessThan(body.headDepth / 2)
     // Never returns a value behind the centre of the head, whatever it is fed.
     expect(faceSurfaceZ(body, body.headWidth * 4)).toBeGreaterThanOrEqual(0)
+  })
+
+  /*
+   * And it curves away going *down* the face as well as across it.
+   *
+   * The `y` argument arrived with the mouth: the mouth sits well below the
+   * head's centre, where the skull has come back a centimetre, and a lip
+   * placed at the centre-line depth floats clear of the chin. It defaulted to
+   * zero for a long time and every caller took the default.
+   */
+  it('follows the skull down the face as well as across it', () => {
+    const body = PROPORTIONS[Silhouette.Androgynous]
+
+    expect(faceSurfaceZ(body, 0, -body.headHeight * 0.3)).toBeLessThan(faceSurfaceZ(body, 0, 0))
+    // And nowhere near the head it reports nothing at all.
+    expect(faceSurfaceZ(body, 0, body.headHeight)).toBe(0)
+  })
+
+  /*
+   * Every feature is set into the surface it sits on.
+   *
+   * The old face was six flat plates floating a millimetre or two off a flat
+   * head, which is what reads as a sticker at any distance. A feature whose
+   * centre is *outside* the skin is a bead glued on; one whose front is behind
+   * the skin is invisible. Both are silent, and both have happened here.
+   */
+  it('sets every face feature into the skin rather than onto it', () => {
+    for (const silhouette of SILHOUETTES) {
+      const body = PROPORTIONS[silhouette]
+
+      for (const part of faceParts(body)) {
+        const [x, y, z] = part.at
+        const surface = faceSurfaceZ(body, Math.abs(x), y)
+        // Read off the part rather than its `size`, which means radii on a
+        // sphere and full extents on a box — the face now uses both.
+        const halfDepth = partHalfExtents(part)[2]
+
+        expect(
+          z - halfDepth,
+          `${part.name} on ${silhouette} floats off the face`,
+        ).toBeLessThan(surface)
+        expect(
+          z + halfDepth,
+          `${part.name} on ${silhouette} is buried under the skin`,
+        ).toBeGreaterThan(surface)
+      }
+    }
+  })
+
+  /*
+   * The three silhouettes have three faces.
+   *
+   * The designer opens on the silhouette control, and it changed the shoulders,
+   * the hip and the leg length and nothing at all above the neck — three
+   * bodies wearing one face. Comparing the parts rather than the traits table
+   * is the point: a trait nothing reads is a trait that does nothing.
+   */
+  it('gives each silhouette its own face', () => {
+    const shapeOf = (silhouette: Silhouette) =>
+      faceParts(PROPORTIONS[silhouette])
+        .map((part) => `${part.name}:${part.size.join(',')}`)
+        .join('|')
+
+    const feminine = shapeOf(Silhouette.Feminine)
+    const masculine = shapeOf(Silhouette.Masculine)
+
+    expect(feminine).not.toEqual(masculine)
+    expect(FACES[Silhouette.Feminine].eyeSize).toBeGreaterThan(
+      FACES[Silhouette.Masculine].eyeSize,
+    )
+    expect(FACES[Silhouette.Masculine].browWeight).toBeGreaterThan(
+      FACES[Silhouette.Feminine].browWeight,
+    )
+  })
+
+  /*
+   * The shoulders reach the sockets the arms actually hang from.
+   *
+   * They did not: two small spheres set well inboard of `shoulderX`, so each
+   * arm's own flat top cap sat in the open under a ball that read as a shoulder
+   * pad. This is the same class of error as `shoulderX` being set inside
+   * `torsoWidth / 2` — a relationship between two numbers in two places, with
+   * nothing holding them to each other.
+   */
+  it('carries the shoulders out to the sockets the arms hang from', () => {
+    for (const silhouette of SILHOUETTES) {
+      const body = PROPORTIONS[silhouette]
+
+      const shoulders = torsoParts(body, DEFAULT_BODY_OPTIONS).find(
+        (part) => part.name === 'shoulders',
+      )
+      const deltoid = upperArmParts(body, DEFAULT_BODY_OPTIONS).find(
+        (part) => part.name === 'deltoid',
+      )
+
+      expect(shoulders, `${silhouette} has no shoulder mass`).toBeDefined()
+      expect(deltoid, `${silhouette} has no deltoid to cap the arm`).toBeDefined()
+      if (!shoulders || !deltoid) continue
+
+      expect(
+        shoulders.size[0],
+        `${silhouette} leaves a gap between shoulder and arm`,
+      ).toBeGreaterThan(body.shoulderX)
+
+      // And the cap on the arm covers the cylinder's own top.
+      const upperArm = upperArmParts(body, DEFAULT_BODY_OPTIONS).find(
+        (part) => part.name === 'upper-arm',
+      )
+      expect(deltoid.size[0]).toBeGreaterThan(upperArm?.size[0] ?? 0)
+      expect(deltoid.at[1] + deltoid.size[1], `${silhouette} leaves the arm's top cap bare`).toBeGreaterThan(0)
+    }
   })
 
   /*

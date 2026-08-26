@@ -21,7 +21,8 @@
 
 import { ItemShape, type ShopItem } from './catalog'
 import { ColorRole, Finish, PartShape, type Part, type Vec3 } from './parts'
-import type { BodyProportions } from './proportions'
+import { forearmRadius } from './bodyParts'
+import { SHOULDER_TORSO_FRACTION, type BodyProportions } from './proportions'
 
 /**
  * Turned a quarter circle about X: rings that lie flat, cases that face front.
@@ -77,21 +78,28 @@ function fedora(body: BodyProportions): Part[] {
      * A flat disc is what the old hat had and it read as a plate. The
      * difference between the two radii is the whole of the shape.
      */
-    piece('brim', PartShape.Cylinder, [0, 0.008, 0], [hw * 1.04, 0.014, hw * 0.94], ColorRole.Primary, {
+    /*
+     * Sat down onto the skull rather than balanced on the crown.
+     *
+     * The brim's underside was a millimetre above the top of the head — close
+     * enough to fight, and not deep enough to count as attached to anything.
+     * A hat is worn *on* a head.
+     */
+    piece('brim', PartShape.Cylinder, [0, -0.014, 0], [hw * 0.86, 0.018, hw * 0.78], ColorRole.Primary, {
       segments: 28,
       finish: Finish.Cloth,
     }),
-    piece('crown', PartShape.Cylinder, [0, 0.068, 0], [hw * 0.42, 0.115, hw * 0.5], ColorRole.Primary, {
+    piece('crown', PartShape.Cylinder, [0, 0.052, 0], [hw * 0.5, 0.13, hw * 0.57], ColorRole.Primary, {
       segments: 24,
       finish: Finish.Cloth,
     }),
     // Rounds the top, so the crown stops reading as a paper cup.
-    piece('crown-top', PartShape.Sphere, [0, 0.1255, 0], [hw * 0.42, 0.022, hw * 0.42], ColorRole.Primary, {
+    piece('crown-top', PartShape.Sphere, [0, 0.114, 0], [hw * 0.5, 0.026, hw * 0.5], ColorRole.Primary, {
       segments: 20,
       finish: Finish.Cloth,
     }),
     // The band, which is what a fedora is recognised by at any distance.
-    piece('band', PartShape.Torus, [0, 0.036, 0], [hw * 0.47, 0.016, hw * 0.47], ColorRole.Secondary, {
+    piece('band', PartShape.Torus, [0, 0.014, 0], [hw * 0.56, 0.017, hw * 0.56], ColorRole.Secondary, {
       rotation: LIE_FLAT,
       segments: 24,
       finish: Finish.Cloth,
@@ -101,35 +109,61 @@ function fedora(body: BodyProportions): Part[] {
 
 /* --------------------------------------------------------------- eyewear */
 
-function shades(): Part[] {
+function shades(body: BodyProportions): Part[] {
+  const { headWidth: hw, headHeight: hh } = body
+
+  /*
+   * Sized off the head rather than typed in.
+   *
+   * They were absolute — a 96mm lens spacing that was right for a 195mm head
+   * and is a pair of reading glasses on a 285mm one. Everything a worn item
+   * has to line up with is a fraction of the body, so the item has to be too.
+   * The lens sits on `EYE_Y`'s own line for the same reason.
+   */
+  const lensX = hw * 0.22
+  const templeX = hw * 0.29
+
   return [
     ...[1, -1].map((side) =>
       piece(
         side === 1 ? 'lens-right' : 'lens-left',
         PartShape.Sphere,
-        [side * 0.048, 0, 0.005],
-        [0.032, 0.021, 0.009],
+        [side * lensX, 0, 0.006],
+        [hw * 0.155, hh * 0.1, 0.011],
         ColorRole.Primary,
         { segments: 18, finish: Finish.Glass },
       ),
     ),
-    piece('bridge', PartShape.Box, [0, 0.004, 0.004], [0.046, 0.009, 0.008], ColorRole.Secondary, {
-      finish: Finish.Metal,
-    }),
+    piece(
+      'bridge',
+      PartShape.Box,
+      // Stood clear of the head's own front plane, which the anchor sits on:
+      // half a millimetre behind it and the two faces fight.
+      [0, hh * 0.012, 0.014],
+      [hw * 0.17, 0.01, 0.009],
+      ColorRole.Secondary,
+      { finish: Finish.Metal },
+    ),
     /*
      * The temple arms, which the old shades did not have at all.
      *
      * Two lenses and a bridge floating in front of a face read as a domino
      * mask. The arms are what make them sit *on* someone.
+     *
+     * Rods rather than the square bars they were. An arm is round, and a round
+     * arm has no flat face to land on the jaw's plane, the bridge's or the
+     * pupil's — all three of which a bar with a flat inner face managed in
+     * turn, each on a different silhouette, as it was moved about trying to
+     * satisfy the last one.
      */
     ...[1, -1].map((side) =>
       piece(
         side === 1 ? 'temple-right' : 'temple-left',
-        PartShape.Box,
-        [side * 0.078, 0.006, -0.028],
-        [0.008, 0.007, 0.074],
+        PartShape.Capsule,
+        [side * templeX, hh * 0.018, -0.03],
+        [0.006, 0.07, 0.006],
         ColorRole.Secondary,
-        { finish: Finish.Metal },
+        { rotation: [Math.PI / 2, 0, 0], segments: 10, finish: Finish.Metal },
       ),
     ),
   ]
@@ -145,19 +179,23 @@ function shades(): Part[] {
  * of the body — a hoop in front of someone rather than a chain around their
  * neck.
  */
-function chainRing(): Part {
-  return piece('chain', PartShape.Torus, [0, 0.014, -0.055], [0.078, 0.009, 0.078], ColorRole.Primary, {
+function chainRing(body: BodyProportions): Part {
+  const ring = body.torsoWidth * 0.2
+
+  return piece('chain', PartShape.Torus, [0, 0.014, -ring * 0.7], [ring, ring * 0.12, ring], ColorRole.Primary, {
     rotation: LIE_FLAT,
     segments: 28,
     finish: Finish.Metal,
   })
 }
 
-function ropeChain(): Part[] {
+function ropeChain(body: BodyProportions): Part[] {
+  const ring = body.torsoWidth * 0.2
+
   return [
-    chainRing(),
+    chainRing(body),
     // The heavier front section — this one is sold on being seen.
-    piece('chain-front', PartShape.Torus, [0, 0.006, -0.05], [0.07, 0.013, 0.07], ColorRole.Secondary, {
+    piece('chain-front', PartShape.Torus, [0, 0.006, -ring * 0.64], [ring * 0.9, ring * 0.17, ring * 0.9], ColorRole.Secondary, {
       rotation: LIE_FLAT,
       segments: 24,
       finish: Finish.Metal,
@@ -165,9 +203,11 @@ function ropeChain(): Part[] {
   ]
 }
 
-function pendant(): Part[] {
+function pendant(body: BodyProportions): Part[] {
+  const stone = body.torsoWidth * 0.052
+
   return [
-    chainRing(),
+    chainRing(body),
     /*
      * The bail: the link between the chain and the stone.
      *
@@ -176,8 +216,9 @@ function pendant(): Part[] {
      * below it share no actual geometry — a chain needs something joining them
      * and now has one.
      */
-    piece('bail', PartShape.Cylinder, [0, -0.018, 0.024], [0.005, 0.078, 0.005], ColorRole.Primary, {
-      segments: 12,
+    piece('bail', PartShape.Capsule, [0, -0.018, 0.024], [0.005, 0.062, 0.005], ColorRole.Primary, {
+      // A rounded link, so its ends have no flat face to land on a tie knot's.
+      segments: 10,
       finish: Finish.Metal,
     }),
     /*
@@ -185,11 +226,11 @@ function pendant(): Part[] {
      * the girdle, a pavilion below. Two cones, and it reads as a cut stone
      * instead of a diamond-shaped bead.
      */
-    piece('stone-crown', PartShape.Cone, [0, -0.0605, 0.028], [0.023, 0.018, 0.023], ColorRole.Accent, {
+    piece('stone-crown', PartShape.Cone, [0, -0.052, 0.028], [stone, stone * 0.78, stone], ColorRole.Accent, {
       segments: 16,
       finish: Finish.Gem,
     }),
-    piece('stone-pavilion', PartShape.Cone, [0, -0.081, 0.028], [0.023, 0.034, 0.023], ColorRole.Accent, {
+    piece('stone-pavilion', PartShape.Cone, [0, -0.052 - stone * 0.88, 0.028], [stone, stone * 1.48, stone], ColorRole.Accent, {
       rotation: [Math.PI, 0, 0],
       segments: 16,
       finish: Finish.Gem,
@@ -246,21 +287,25 @@ function jacket(body: BodyProportions): Part[] {
     limbPiece('jacket-chest', [0, th * 0.19, 0], [tw * 0.56, th * 0.36, tw * 0.5], ColorRole.Primary, shell),
     limbPiece('jacket-yoke', [0, th * 0.4, 0], [tw * 0.46, th * 0.15, tw * 0.52], ColorRole.Primary, shell),
     /*
-     * Rounded shoulders.
+     * Rounded shoulders, as one mass reaching both sockets.
      *
      * The single change that does most to stop a jacket reading as a crate. A
      * shoulder is the one part of a suit that is deliberately shaped, and a box
      * has a hard corner exactly where it should be soft.
+     *
+     * Two separate balls set inboard of the arms was the first attempt and it
+     * had the body's own defect: the arms hang at `shoulderX`, so anything that
+     * stops short of `shoulderX` leaves the sleeve's top cap on show. The
+     * jacket's colour is carried down the arm by `armPalette`, so the deltoid
+     * under this is already wearing the jacket.
      */
-    ...[1, -1].map((side) =>
-      piece(
-        side === 1 ? 'shoulder-right' : 'shoulder-left',
-        PartShape.Sphere,
-        [side * tw * 0.41, th * 0.4, 0],
-        [tw * 0.14, th * 0.11, body.torsoDepth * 0.5],
-        ColorRole.Primary,
-        { segments: 18, finish: Finish.Cloth },
-      ),
+    piece(
+      'jacket-shoulders',
+      PartShape.Sphere,
+      [0, th * (SHOULDER_TORSO_FRACTION - 0.5), 0],
+      [body.shoulderX + tw * 0.06, th * 0.105, body.torsoDepth * 0.52],
+      ColorRole.Primary,
+      { segments: 22, finish: Finish.Cloth },
     ),
     // Lapels, turned out from the centre line.
     ...[1, -1].map((side) =>
@@ -359,45 +404,69 @@ function gown(body: BodyProportions, compact: boolean): Part[] {
 
 /* ------------------------------------------------------------ wrist, hand */
 
-function watch(): Part[] {
+/**
+ * A wristwatch, sized to the wrist it goes round.
+ *
+ * The strap was a fixed 36mm hoop. The forearm is a fraction of the torso now,
+ * so on the broad silhouette that hoop is smaller than the arm inside it — a
+ * band that renders *through* a wrist, which reads as a bracelet cut in half.
+ */
+function watch(body: BodyProportions): Part[] {
+  const wrist = forearmRadius(body) * 0.86
+
   return [
     // The strap, around the wrist.
-    piece('strap', PartShape.Torus, [0, 0, 0], [0.036, 0.009, 0.036], ColorRole.Secondary, {
+    piece('strap', PartShape.Torus, [0, 0, 0], [wrist, wrist * 0.2, wrist], ColorRole.Secondary, {
       rotation: LIE_FLAT,
       segments: 24,
       finish: Finish.Metal,
     }),
     // The case, on the outside of the wrist rather than through it.
-    piece('case', PartShape.Cylinder, [0, 0, 0.038], [0.026, 0.014, 0.026], ColorRole.Primary, {
-      rotation: LIE_FLAT,
-      segments: 20,
-      finish: Finish.Metal,
-    }),
-    piece('dial', PartShape.Cylinder, [0, 0, 0.043], [0.02, 0.004, 0.02], ColorRole.Accent, {
-      rotation: LIE_FLAT,
-      segments: 20,
-      finish: Finish.Glass,
-    }),
+    piece(
+      'case',
+      PartShape.Cylinder,
+      [0, 0, wrist * 0.82],
+      [wrist * 0.58, wrist * 0.3, wrist * 0.58],
+      ColorRole.Primary,
+      { rotation: LIE_FLAT, segments: 20, finish: Finish.Metal },
+    ),
+    piece(
+      'dial',
+      PartShape.Cylinder,
+      [0, 0, wrist * 0.94],
+      [wrist * 0.44, wrist * 0.09, wrist * 0.44],
+      ColorRole.Accent,
+      { rotation: LIE_FLAT, segments: 20, finish: Finish.Glass },
+    ),
   ]
 }
 
-function ring(): Part[] {
+/** A ring, sized to the finger it goes on — same reasoning as the watch. */
+function ring(body: BodyProportions): Part[] {
+  const finger = forearmRadius(body) * 0.32
+
   return [
-    piece('band', PartShape.Torus, [0, 0, 0], [0.014, 0.005, 0.014], ColorRole.Primary, {
+    piece('band', PartShape.Torus, [0, 0, 0], [finger, finger * 0.34, finger], ColorRole.Primary, {
       rotation: LIE_FLAT,
       segments: 18,
       finish: Finish.Metal,
     }),
-    piece('setting', PartShape.Cylinder, [0, 0, 0.016], [0.009, 0.006, 0.009], ColorRole.Secondary, {
-      rotation: LIE_FLAT,
-      segments: 14,
-      finish: Finish.Metal,
-    }),
-    piece('stone', PartShape.Cone, [0, 0, 0.022], [0.011, 0.014, 0.011], ColorRole.Accent, {
-      rotation: [-Math.PI / 2, 0, 0],
-      segments: 14,
-      finish: Finish.Gem,
-    }),
+    piece(
+      'setting',
+      PartShape.Cylinder,
+      [0, 0, finger * 1.1],
+      [finger * 0.62, finger * 0.42, finger * 0.62],
+      ColorRole.Secondary,
+      { rotation: LIE_FLAT, segments: 14, finish: Finish.Metal },
+    ),
+    piece(
+      'stone',
+      PartShape.Cone,
+      [0, 0, finger * 1.5],
+      [finger * 0.76, finger * 0.96, finger * 0.76],
+      ColorRole.Accent,
+      { rotation: [-Math.PI / 2, 0, 0], segments: 14, finish: Finish.Gem },
+    ),
   ]
 }
 
@@ -505,19 +574,19 @@ export function itemParts(item: ShopItem, body: BodyProportions, compact = false
     case ItemShape.Fedora:
       return fedora(body)
     case ItemShape.Shades:
-      return shades()
+      return shades(body)
     case ItemShape.Chain:
-      return ropeChain()
+      return ropeChain(body)
     case ItemShape.Pendant:
-      return pendant()
+      return pendant(body)
     case ItemShape.Jacket:
       return jacket(body)
     case ItemShape.Gown:
       return gown(body, compact)
     case ItemShape.Watch:
-      return watch()
+      return watch(body)
     case ItemShape.Ring:
-      return ring()
+      return ring(body)
     case ItemShape.Oxford:
       return oxford()
     case ItemShape.Heel:

@@ -265,6 +265,87 @@ export function partBounds(part: Part): Bounds {
   return { minX, maxX, minY, maxY, minZ, maxZ }
 }
 
+/** The inverse of `rotatePoint`: undoes an Euler XYZ triple, Z first. */
+function unrotatePoint(point: Vec3, rotation: Vec3): Vec3 {
+  const [rx, ry, rz] = rotation
+  let [x, y, z] = point
+
+  const cosZ = Math.cos(rz)
+  const sinZ = Math.sin(rz)
+  ;[x, y] = [x * cosZ + y * sinZ, -x * sinZ + y * cosZ]
+
+  const cosY = Math.cos(ry)
+  const sinY = Math.sin(ry)
+  ;[x, z] = [x * cosY - z * sinY, x * sinY + z * cosY]
+
+  const cosX = Math.cos(rx)
+  const sinX = Math.sin(rx)
+  ;[y, z] = [y * cosX + z * sinX, -y * sinX + z * cosX]
+
+  return [x, y, z]
+}
+
+/**
+ * Whether a point is inside a part's actual solid, not merely inside its box.
+ *
+ * The bounds above are deliberately coarse, which is right for asking whether
+ * two pieces touch and useless for asking whether a piece is *in front of*
+ * something. A fringe is an ellipsoid whose bounding box reaches the chin and
+ * whose surface, at the chin, has receded to nothing — bounding boxes would
+ * condemn every hairstyle in the catalogue. `partsOverFace` needs the solid.
+ *
+ * @param part The part to test.
+ * @param point A point in the part list's own frame.
+ * @returns True if the point is inside the part.
+ */
+export function containsPoint(part: Part, point: Vec3): boolean {
+  const [sx, sy, sz] = part.scale ?? [1, 1, 1]
+  const offset: Vec3 = [
+    point[0] - part.at[0],
+    point[1] - part.at[1],
+    point[2] - part.at[2],
+  ]
+  const turned = part.rotation ? unrotatePoint(offset, part.rotation) : offset
+
+  // Divided out of the mesh scale, so every test below is against the raw
+  // geometry the shape was authored with.
+  const x = turned[0] / sx
+  const y = turned[1] / sy
+  const z = turned[2] / sz
+  const [a, b, c] = part.size
+
+  switch (part.shape) {
+    case PartShape.Box:
+      return Math.abs(x) <= a / 2 && Math.abs(y) <= b / 2 && Math.abs(z) <= c / 2
+
+    case PartShape.Sphere:
+      return (x / a) ** 2 + (y / b) ** 2 + (z / c) ** 2 <= 1
+
+    case PartShape.Cylinder: {
+      if (Math.abs(y) > b / 2) return false
+      // Radius interpolates from the bottom to the top, so a taper is honoured.
+      const radius = c + (a - c) * ((y + b / 2) / b)
+      return radius > 0 && x * x + z * z <= radius * radius
+    }
+
+    case PartShape.Cone: {
+      if (Math.abs(y) > b / 2) return false
+      const radius = a * ((b / 2 - y) / b)
+      return radius > 0 && x * x + z * z <= radius * radius
+    }
+
+    case PartShape.Capsule: {
+      const straight = Math.max(0, Math.abs(y) - b / 2)
+      return x * x + z * z + straight * straight <= a * a
+    }
+
+    case PartShape.Torus: {
+      const fromRing = Math.sqrt(x * x + y * y) - a
+      return fromRing * fromRing + z * z <= b * b
+    }
+  }
+}
+
 /** The overlap of two intervals; negative means a gap of that size. */
 function overlap1D(minA: number, maxA: number, minB: number, maxB: number): number {
   return Math.min(maxA, maxB) - Math.max(minA, minB)

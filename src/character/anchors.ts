@@ -16,6 +16,7 @@
  */
 
 import { Slot } from './catalog'
+import { EYE_Y } from './face'
 import { metricsFor, PROPORTIONS, Silhouette } from './proportions'
 
 export type Anchor = readonly [number, number, number]
@@ -44,8 +45,16 @@ export function anchorFor(slot: Slot, silhouette: Silhouette, side: Side = Side.
       return [0, metrics.crownY, -0.005]
 
     case Slot.Eyes:
-      // Slightly above the head's centre, on the front face.
-      return [0, metrics.headCenterY + 0.025, body.headDepth / 2]
+      /*
+       * On the eye line, read off the face rather than typed in.
+       *
+       * It was a flat 25mm above the head's centre, which was about right for
+       * the face as it stood and became a pair of sunglasses worn on the
+       * forehead the moment the eyes moved down. Two constants in two files
+       * that quietly disagree, again — and glasses are the one item where the
+       * disagreement is unmissable.
+       */
+      return [0, metrics.headCenterY + body.headHeight * EYE_Y, body.headDepth / 2]
 
     case Slot.Neck:
       return [0, metrics.torsoTopY - body.torsoHeight * 0.22, body.torsoDepth / 2]
@@ -87,7 +96,8 @@ function bodyBoxes(silhouette: Silhouette): readonly Box[] {
   const body = PROPORTIONS[silhouette]
   const metrics = metricsFor(silhouette)
 
-  const armHalfWidth = 0.07
+  // Read off the torso rather than typed in, like the limbs themselves.
+  const armHalfWidth = body.torsoWidth * 0.22
   const armMinY = metrics.wristY - 0.14
 
   const arms: Box[] = [Side.Left, Side.Right].map((side) => ({
