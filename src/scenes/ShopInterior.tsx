@@ -67,7 +67,12 @@ import {
   type Display,
 } from './shopLayout'
 import { getPriceCardTexture } from './priceCardTexture'
-import { getShopWallTexture, getVelvetNormalTexture } from './shopTexture'
+import {
+  getShopFloorRoughnessTexture,
+  getShopFloorTexture,
+  getShopWallTexture,
+  getVelvetNormalTexture,
+} from './shopTexture'
 import { useActionKey } from './useActionKey'
 
 /*
@@ -85,7 +90,6 @@ import { useActionKey } from './useActionKey'
  */
 
 /** Read off the reference. Nothing here is a hex value chosen at a keyboard. */
-const FLOOR = '#241d29'
 const BRASS = '#c9a227'
 const BRASS_LIT = '#e6c765'
 const CASE_GLOW = '#f5e6c8'
@@ -589,8 +593,9 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
     [],
   )
 
-  const wallTexture = getShopWallTexture()
   const velvet = getVelvetNormalTexture()
+  const floorTexture = getShopFloorTexture()
+  const floorRoughness = getShopFloorRoughnessTexture()
 
   const solids = useMemo(() => obstacles(), [])
 
@@ -711,7 +716,9 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
           receiveShadow
         >
           <planeGeometry args={size as [number, number]} />
-          <meshStandardMaterial map={wallTexture} roughness={0.92} />
+          {/* Sized from the wall's own length, so a bay is the same width on
+              the long walls and the short ones and no panel is sliced. */}
+          <meshStandardMaterial map={getShopWallTexture(size[0] ?? 0)} roughness={0.92} />
         </mesh>
       ))}
 
@@ -743,7 +750,24 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
           visible pools at all, and the only bright thing near the door was the
           flat quad the exit paints there — which then read as a plank.
         */}
-        <meshStandardMaterial color={FLOOR} roughness={0.48} metalness={0.22} />
+        {/*
+          The pigment and the polish are both maps now.
+
+          `roughnessMap` is the one that earns its place: a floor at one
+          roughness across twelve metres is uniformly shiny, which reads as
+          plastic. Varying it — glassier down the middle, duller at the edges
+          where the fixtures stand — is most of what says "polished". The base
+          value stays where it was for the reason recorded below it.
+        */}
+        {/* No `color` alongside the map: a colour multiplies the map, and both
+            of these are the floor's dark plum, so keeping it darkened the floor
+            twice and sank the whole room. */}
+        <meshStandardMaterial
+          map={floorTexture}
+          roughnessMap={floorRoughness}
+          roughness={0.48}
+          metalness={0.22}
+        />
       </mesh>
 
       {/*
