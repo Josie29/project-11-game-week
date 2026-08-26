@@ -10,6 +10,7 @@ import {
 } from '../games/craps/engine'
 import { CHIP_DENOMINATIONS, heldChipValue } from '../scenes/chipLayout'
 import { type CrapsState, CrapsPhase, RollOutcome } from '../games/craps/types'
+import { useSharedCraps } from '../net/useSharedCraps'
 import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
 import { MARKER_AMOUNT } from '../world/money'
@@ -147,7 +148,6 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
   const takeDown = useCrapsStore((state) => state.takeDown)
   const pickedChip = useCrapsStore((state) => state.heldChip)
   const holdChip = useCrapsStore((state) => state.holdChip)
-  const throwDice = useCrapsStore((state) => state.throwDice)
   const resetTable = useCrapsStore((state) => state.reset)
 
   const bankroll = useGameStore((state) => state.bankroll)
@@ -160,7 +160,13 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
   const payout = totalCrapsPayout(game)
 
   /** The dice cannot be thrown with nothing at risk. */
-  const canRoll = !isRolling && staked > 0
+  /*
+   * Shared tables take the dice from the room rather than throwing their own,
+   * and only one player holds them at a time. Alone, `shared` is false and
+   * `isShooter` is always true, so this reduces to exactly what it was.
+   */
+  const table = useSharedCraps()
+  const canRoll = !isRolling && staked > 0 && table.isShooter
 
   /** No point yet, so the line bets are live and the numbers are not. */
   const comeOut = game.phase === CrapsPhase.ComeOut
@@ -188,7 +194,7 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
 
       if (event.key === ' ') {
         event.preventDefault()
-        if (canRoll) throwDice()
+        if (canRoll) table.roll()
         return
       }
 
@@ -364,9 +370,14 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
           type="button"
           className="button button--primary"
           disabled={!canRoll}
-          onClick={throwDice}
+          onClick={table.roll}
         >
-          {isRolling ? 'Rolling…' : 'Roll the dice'} <kbd>Space</kbd>
+          {isRolling
+            ? 'Rolling…'
+            : table.shared && !table.isShooter
+              ? 'Waiting for the shooter'
+              : 'Roll the dice'}{' '}
+          <kbd>Space</kbd>
         </button>
 
         <button

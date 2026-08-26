@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { getLocalTransform } from '../net/localTransform'
 import { TableId } from '../scenes/casinoFloorLayout'
+import { useCrapsStore } from './useCrapsStore'
 import {
   isMultiplayerConfigured,
   joinRoom,
@@ -49,6 +50,16 @@ interface PresenceStore {
   leaveRoom: () => void
   /** Re-announces after a wardrobe or name change. */
   updateIdentity: (identity: LocalIdentity) => void
+  /** Who holds the dice at the craps table, or null if nobody is there. */
+  shooterId: string | null
+  /** This player's own id in the room, so the HUD can say "your roll". */
+  selfId: string | null
+  /** Asks the room to throw. It refuses unless it is this player's turn. */
+  requestRoll: () => void
+  /** Gives up the dice after a seven-out. */
+  passDice: () => void
+  /** Publishes the table for whoever walks up next. */
+  publishTable: (value: unknown) => void
   setSeated: (seated: boolean, table: TableId | null) => void
 }
 
@@ -91,6 +102,12 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
   return {
     peers: {},
     connected: false,
+    shooterId: null,
+    selfId: null,
+
+    requestRoll: () => connection?.requestRoll(),
+    passDice: () => connection?.passDice(),
+    publishTable: (value) => connection?.publishTable(value),
 
     enterRoom: (roomId, bounds, identity) => {
       /*
@@ -129,6 +146,30 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
         },
 
         onConnectedChange: (connected) => set({ connected }),
+
+        /*
+         * The room threw. Every client at the table settles the same numbers
+         * with its own engine, which is what makes shared craps affordable:
+         * `phase` and `point` depend only on the roll, never on anybody's bets,
+         * so identical rolls give identical tables without the room knowing
+         * what a point is.
+         */
+        onRolled: (_table, roll) => {
+          useCrapsStore.getState().applyRoll({ ...roll, total: roll.first + roll.second })
+        },
+
+        onSelf: (id) => set({ selfId: id }),
+
+        onShooter: (_table, id) => set({ shooterId: id }),
+
+        /*
+         * The table as it stood when somebody last published it. Only adopted
+         * when this client has not rolled yet — otherwise a late packet would
+         * drag a table that has moved on back to an older hand.
+         */
+        onTableState: (_table, value) => {
+          useCrapsStore.getState().adoptTable(value)
+        },
       })
 
       if (!connection) {
