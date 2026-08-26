@@ -11,6 +11,7 @@ import {
   BUILDING_WIDTH,
   clearsDoorways,
   FACADE_X,
+  hasColonnade,
   LAMP_ROW_Z,
   PALM_ROW_Z,
   ROAD_HALF_WIDTH,
@@ -325,6 +326,7 @@ export function Strip() {
             signName={signFor(row.z, -1)}
             neonLevel={neonLevel}
             daylight={daylight}
+            colonnade={hasColonnade(row.z, -1)}
           />
           <Building
             position={[BUILDING_CENTER_X, 0, row.z]}
@@ -336,6 +338,7 @@ export function Strip() {
             signName={signFor(row.z, 1)}
             neonLevel={neonLevel}
             daylight={daylight}
+            colonnade={hasColonnade(row.z, 1)}
           />
         </group>
       ))}

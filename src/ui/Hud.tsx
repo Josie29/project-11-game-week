@@ -173,7 +173,17 @@ export function Hud() {
           <span>
             {nearby.available ? (
               <>
-                Press <kbd>{INTERACT_LABEL}</kbd> to {nearby.invitation}
+                {/*
+                  "enter", not the verb for what is inside.
+
+                  Each venue used to carry its own — "shop", "play", "donate" —
+                  and the line promised something F does not do: F opens the
+                  door, and buying, betting or donating all take a second action
+                  once you are through it. The name above says what the place
+                  is, which is the part that has to vary; the action line says
+                  what the key does, which does not.
+                */}
+                Press <kbd>{INTERACT_LABEL}</kbd> to enter
               </>
             ) : daylightAt(minuteOfDay) > 0.5 ? (
               'Closed today'

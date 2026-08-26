@@ -4,6 +4,8 @@ import {
   BUILDING_DEPTH,
   BUILDING_ROWS,
   clearsDoorways,
+  colonnadeColumns,
+  hasColonnade,
   CROSS_NORTH_KERB,
   CROSS_NORTH_Z,
   CROSS_HALF_WIDTH,
@@ -183,6 +185,49 @@ describe('street furniture', () => {
   it('rejects a spot in a doorway', () => {
     const [doorX, , doorZ] = VENUES[0]?.doorPosition ?? [0, 0, 0]
     expect(clearsDoorways(doorX, doorZ)).toBe(false)
+  })
+
+  /*
+   * The colonnade is street furniture too, and for months it was the one piece
+   * that never went through this rule.
+   *
+   * Every tower carries a column on its own centre line and every venue door is
+   * on a tower's centre line, so all three entrances had a 3.4-metre column
+   * standing 55cm in front of them: the shop's display window and the clinic's
+   * blinds were each split down the middle, and a third of the Golden Ace's lit
+   * doorway was behind a pillar. The canopy above them crossed the casino's
+   * marquee band and the bottom of both fascia signs.
+   */
+  it('keeps every colonnade column clear of a doorway', () => {
+    for (const row of BUILDING_ROWS) {
+      for (const side of [1, -1] as const) {
+        if (!hasColonnade(row.z, side)) continue
+
+        for (const [x, z] of colonnadeColumns(row.z, side)) {
+          expect(
+            clearsDoorways(x, z),
+            `a column at ${x}, ${z} stands in a doorway`,
+          ).toBe(true)
+        }
+      }
+    }
+  })
+
+  // ...and the paired negative. A rule that switched the colonnade off
+  // everywhere would pass the test above while stripping the street of the one
+  // piece of relief the player walks right past.
+  it('leaves the colonnade on every tower without a venue in it', () => {
+    const venueFaces = new Set(
+      VENUES.map((venue) => `${venue.doorPosition[2]}:${Math.sign(venue.doorPosition[0])}`),
+    )
+
+    for (const row of BUILDING_ROWS) {
+      for (const side of [1, -1] as const) {
+        expect(hasColonnade(row.z, side), `row ${row.z} on side ${side}`).toBe(
+          !venueFaces.has(`${row.z}:${side}`),
+        )
+      }
+    }
   })
 })
 

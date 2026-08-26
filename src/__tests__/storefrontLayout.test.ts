@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
   AWNING_FRONT_OUT,
+  BENCH_HALF_LENGTH,
+  BENCH_OUT,
+  BENCH_Z,
+  clearsDoorway,
   DOOR_HALF_WIDTH,
   DOOR_HEIGHT,
+  DOORWAY_KEEP_CLEAR,
   FRONT_OUT,
+  RAIL_OUT,
+  RAIL_Z,
   isInWindow,
   isOnShopFront,
   isSolidFrontage,
@@ -155,5 +162,40 @@ describe('shop front layout', () => {
     expect(isOnShopFront(0, STOREFRONT_HEIGHT + 1)).toBe(false)
     expect(isInWindow(0, 2)).toBe(false)
     expect(isInWindow(WINDOW_MIN_Z + 0.5, WINDOW_TOP_Y + 1)).toBe(false)
+  })
+})
+
+describe('the pavement outside a storefront', () => {
+  /*
+   * The clinic's queue rail had a stanchion at z = -0.05 — five centimetres off
+   * the door's centre line and a metre tall, so the entrance the player walks
+   * toward had a post growing out of the middle of it. The strip's own
+   * `clearsDoorways` could never have caught it: at 3.5 units it would reject
+   * the bench and the rail wholesale, and both are meant to be there.
+   */
+  it('keeps the clinic bench and queue rail out of the doorway', () => {
+    for (const z of [BENCH_Z - BENCH_HALF_LENGTH, BENCH_Z + BENCH_HALF_LENGTH, ...RAIL_Z]) {
+      expect(clearsDoorway(z), `something stands in the doorway at z=${z}`).toBe(true)
+    }
+  })
+
+  // The paired negative: the door's own centre line is the case the predicate
+  // exists to reject.
+  it('rejects the doorway itself', () => {
+    expect(clearsDoorway(0)).toBe(false)
+    expect(clearsDoorway(DOORWAY_KEEP_CLEAR - 0.01)).toBe(false)
+  })
+
+  // Furniture has to stand on the pavement in front of the glass, not inside
+  // the shop and not out in the roadway. `FRONT_OUT` is the glass line.
+  it('stands the furniture on the pavement, clear of the glass', () => {
+    for (const out of [BENCH_OUT, RAIL_OUT]) {
+      expect(out).toBeGreaterThan(FRONT_OUT)
+      // The awning is the furthest anything on this frontage reaches over the
+      // pavement; past it the furniture is out where the player walks.
+      expect(out).toBeLessThan(AWNING_FRONT_OUT + 0.6)
+    }
+    // ...and the rail is the piece nearer the kerb, or it is inside the bench.
+    expect(RAIL_OUT).toBeGreaterThan(BENCH_OUT)
   })
 })

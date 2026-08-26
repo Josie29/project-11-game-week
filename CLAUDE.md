@@ -200,6 +200,7 @@ Dev-only deep links, stripped from production builds:
 | `?boot=display` | at the sequin jacket, its prompt and price card up |
 | `?boot=mirror` | on the fitting plinth, a gown and a pendant on approval, only one affordable |
 | `?boot=shopfront` | at the shop's door, prompt up, to look at the storefront |
+| `?boot=casinofront` | the same at the Golden Ace, across the road; takes `?look=90` |
 | `?boot=dressed` | the shop, every wardrobe slot filled |
 | `?boot=strip` | the street, with the first-run designer skipped |
 | `?boot=northend` | at the north junction, where the strip meets its cross street |
@@ -305,6 +306,17 @@ the first 420 ms of a round.
   could have said so — there was no relationship to assert. The limit is derived
   from a kerb now. `BLOCK_DEPTH` is the same story: the towers, the doors and
   the road markings had all silently agreed on 8 for months.
+
+  Anything laid out on a *building's* rhythm collides with anything laid out on
+  a *door's*, and the palms were only the first case. The towers' street-level
+  colonnade put a column on every tower's centre line, and every venue door is
+  on a tower's centre line, so a 3.4-metre pillar stood in front of all three
+  entrances — splitting the shop's window and the clinic's blinds down the
+  middle and covering a third of the Golden Ace's doorway — with the canopy
+  above it lying across the casino's marquee and both fascia signs. It shipped
+  because it was drawn as relief rather than as furniture and so never went
+  through `clearsDoorways`. Everything that stands on the pavement does now,
+  and `hasColonnade` derives the exemption rather than listing it.
 - **Characters are procedural primitives** with named joint groups, so gestures
   can be authored directly, and now so the player can be built at runtime from a
   saved appearance.

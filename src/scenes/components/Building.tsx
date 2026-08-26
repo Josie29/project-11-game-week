@@ -3,6 +3,7 @@ import { DoubleSide, RepeatWrapping } from 'three'
 import { dimHex, lerpHex } from '../../world/timeOfDay'
 import { getFacadeTexture } from '../facadeTexture'
 import { getBladeTexture, getMarqueeTexture } from '../signTexture'
+import { COLONNADE_OFFSETS, COLONNADE_OUT } from '../stripLayout'
 
 interface BuildingProps {
   position: readonly [number, number, number]
@@ -27,6 +28,16 @@ interface BuildingProps {
    * can never get closer to than forty units.
    */
   relief?: boolean
+  /**
+   * Whether the tower gets its street-level canopy and columns.
+   *
+   * Separate from `relief` because it is the one piece that shares the pavement
+   * with the doors. See `hasColonnade` in `stripLayout.ts`, which is what
+   * decides it — a tower with a venue in its base does not get one, because
+   * there is nowhere to stand the columns that is not in front of the window,
+   * the door or the sign.
+   */
+  colonnade?: boolean
 }
 
 /**
@@ -66,6 +77,7 @@ export function Building({
   neonLevel = 1,
   daylight = 0,
   relief = true,
+  colonnade = true,
 }: BuildingProps) {
   const [x, y, z] = position
   // Nudge lit geometry clear of the wall so it never z-fights with the facade.
@@ -137,26 +149,35 @@ export function Building({
             The colonnade at street level, from the daytime reference: a deep
             canopy with the wall set back in shadow behind it. It is the one
             piece of relief the player walks right past, so it is the one that
-            has to be more than a ledge.
+            has to be more than a ledge — and the one that has to get out of the
+            way where a venue's own frontage occupies the same pavement.
           */}
-          <mesh
-            position={[x + facing * (width / 2 + 0.5), y + 3.6, z]}
-            castShadow
-            receiveShadow
-          >
-            <boxGeometry args={[1.2, 0.45, depth]} />
-            <meshStandardMaterial color={trim} roughness={0.85} />
-          </mesh>
-          {[-0.34, 0, 0.34].map((offset) => (
-            <mesh
-              key={offset}
-              position={[x + facing * (width / 2 + 0.85), y + 1.7, z + depth * offset]}
-              castShadow
-            >
-              <boxGeometry args={[0.42, 3.4, 0.42]} />
-              <meshStandardMaterial color={trim} roughness={0.85} />
-            </mesh>
-          ))}
+          {colonnade && (
+            <>
+              <mesh
+                position={[x + facing * (width / 2 + 0.5), y + 3.6, z]}
+                castShadow
+                receiveShadow
+              >
+                <boxGeometry args={[1.2, 0.45, depth]} />
+                <meshStandardMaterial color={trim} roughness={0.85} />
+              </mesh>
+              {COLONNADE_OFFSETS.map((offset) => (
+                <mesh
+                  key={offset}
+                  position={[
+                    x + facing * (width / 2 + COLONNADE_OUT),
+                    y + 1.7,
+                    z + depth * offset,
+                  ]}
+                  castShadow
+                >
+                  <boxGeometry args={[0.42, 3.4, 0.42]} />
+                  <meshStandardMaterial color={trim} roughness={0.85} />
+                </mesh>
+              ))}
+            </>
+          )}
         </>
       )}
 

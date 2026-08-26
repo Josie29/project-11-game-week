@@ -20,14 +20,6 @@ export interface VenueConfig {
   readonly doorPosition: readonly [number, number, number]
   /** Facade neon colour, also used for signage and the HUD accent. */
   readonly neonColor: string
-  /**
-   * What is on offer inside, as the verb alone — "play", "shop".
-   *
-   * The prompt reads "Press F to play", so this is a fragment rather than a
-   * sentence. It used to be the whole line, "Walk in to play", which stopped
-   * being true the moment walking in stopped being how you get in.
-   */
-  readonly invitation: string
   /** False while whatever is behind the door is still unbuilt. */
   readonly available: boolean
 }
@@ -59,7 +51,6 @@ export const VENUES: readonly VenueConfig[] = [
     // The third neon in art/refs/strip_exterior.png, and unclaimed by either
     // casino.
     neonColor: '#ff4fa3',
-    invitation: 'shop',
     available: true,
   },
   {
@@ -70,7 +61,6 @@ export const VENUES: readonly VenueConfig[] = [
     kind: VenueKind.Casino,
     doorPosition: [-8.5, 0, -14],
     neonColor: '#ffc63f',
-    invitation: 'play',
     available: true,
   },
   {
@@ -92,7 +82,6 @@ export const VENUES: readonly VenueConfig[] = [
     // Cold, and deliberately not a neon colour. Everything else on this street
     // glows; the clinic is lit.
     neonColor: '#cfe9ff',
-    invitation: 'donate',
     available: true,
   },
 ]

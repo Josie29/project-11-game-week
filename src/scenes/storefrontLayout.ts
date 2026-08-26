@@ -80,6 +80,48 @@ export const MANNEQUIN_OUT = -0.08
 export const MANNEQUIN_Z: readonly number[] = [-3.4, -2.5, -1.6]
 export const MANNEQUIN_PLATFORM_Y = 0.12
 
+/**
+ * How much of the frontage's own pavement the doorway keeps to itself.
+ *
+ * `DOORWAY_CLEARANCE` in `stripLayout.ts` is the same rule for the street's
+ * furniture, but it cannot be used here: a storefront's bench and rail are
+ * *meant* to stand within a few metres of its door, so the strip's 3.5 would
+ * reject all of it. This is the narrower rule — nothing may stand in the
+ * opening itself. The clinic's queue rail had a stanchion at z = -0.05, five
+ * centimetres off the door's centre line and a metre tall, so the entrance you
+ * walk toward had a post growing out of the middle of it.
+ */
+export const DOORWAY_KEEP_CLEAR = DOOR_HALF_WIDTH + 0.45
+
+/** Whether a piece of pavement furniture may stand at this z. */
+export function clearsDoorway(z: number): boolean {
+  return Math.abs(z) > DOORWAY_KEEP_CLEAR
+}
+
+/*
+ * The clinic's pavement furniture: a bench and a belted queue rail.
+ *
+ * Out here rather than inline in `ClinicFront` for the usual reason — they are
+ * hand-placed and they share the pavement with the door, which is exactly the
+ * pair of facts that produced the stanchion in the doorway.
+ */
+export const BENCH_OUT = FRONT_OUT + 0.55
+export const BENCH_Z = -2.1
+export const BENCH_HALF_LENGTH = 0.8
+
+/**
+ * The rail stands proud of the frontage and beyond the far end of the bench.
+ *
+ * Not in front of it: a belt at knee-and-a-half height crossing a bench reads
+ * as a hurdle rather than as a queue, and the two together stopped being two
+ * objects. Side by side, the lane runs along the frontage toward the door with
+ * the bench at the end of it, which is what waiting outside a clinic looks
+ * like.
+ */
+export const RAIL_OUT = FRONT_OUT + 1.45
+export const RAIL_HEIGHT = 1
+export const RAIL_Z: readonly number[] = [-4.15, -2.95]
+
 export interface FrontagePanel {
   readonly minZ: number
   readonly maxZ: number

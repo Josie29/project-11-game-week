@@ -228,3 +228,48 @@ export function clearsDoorways(x: number, z: number): boolean {
 
 export const PALM_ROW_Z: readonly number[] = [6, -2, -10, -18, -26, -34, -42]
 export const LAMP_ROW_Z: readonly number[] = [4, -8, -20, -32, -44]
+
+/**
+ * The street-level colonnade: how far a column's centre stands out from the
+ * tower's face, and where along the tower's depth the three of them fall.
+ *
+ * Here rather than in `Building.tsx` with the rest of the relief because the
+ * colonnade is the only piece of it that shares the pavement with the doors —
+ * and it was laid out on the tower's own rhythm, which is the same mistake the
+ * palms and the lamps made. Every tower carries a column on its centre line,
+ * and every venue door is on a tower's centre line, so a 3.4-metre column stood
+ * squarely in front of all three entrances: splitting the shop's display window
+ * and the clinic's blinds in half, and covering a third of the Golden Ace's lit
+ * doorway. The canopy those columns hold up did the same to the signage — it
+ * crosses the casino's marquee band and the bottom of both fascia signs.
+ */
+export const COLONNADE_OUT = 0.85
+export const COLONNADE_OFFSETS: readonly number[] = [-0.34, 0, 0.34]
+
+/**
+ * Where a strip tower's colonnade columns stand, as world `[x, z]`.
+ *
+ * `Building` applies `COLONNADE_OUT` and `COLONNADE_OFFSETS` to its own width
+ * and depth; every tower on the strip is `BUILDING_WIDTH` by `BUILDING_DEPTH`,
+ * so these are the positions it draws.
+ *
+ * @param rowZ The tower's row, from `BUILDING_ROWS`.
+ * @param side 1 for the towers on +X, -1 for those on -X.
+ */
+export function colonnadeColumns(rowZ: number, side: 1 | -1): readonly [number, number][] {
+  const x = side * (BUILDING_CENTER_X - (BUILDING_WIDTH / 2 + COLONNADE_OUT))
+  return COLONNADE_OFFSETS.map((offset) => [x, rowZ + BUILDING_DEPTH * offset])
+}
+
+/**
+ * Whether this tower face carries a street-level colonnade at all.
+ *
+ * Derived rather than kept as a list of exempt rows, so a venue that moves to
+ * another block takes its clearance with it. A tower whose colonnade would
+ * stand in a doorway does not get one: at a venue the frontage *is* the street
+ * level, and there is nowhere along a seven-metre tower to put the columns that
+ * is not in front of the window, the door or the sign.
+ */
+export function hasColonnade(rowZ: number, side: 1 | -1): boolean {
+  return colonnadeColumns(rowZ, side).every(([x, z]) => clearsDoorways(x, z))
+}
