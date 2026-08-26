@@ -375,7 +375,7 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
           {isRolling
             ? 'Rolling…'
             : table.shared && !table.isShooter
-              ? 'Waiting for the shooter'
+              ? `Waiting for ${table.shooterName ?? 'the shooter'}`
               : 'Roll the dice'}{' '}
           <kbd>Space</kbd>
         </button>

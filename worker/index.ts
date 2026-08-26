@@ -92,6 +92,12 @@ interface BetMessage {
  * every client rejects an out-of-turn action identically, because the rule is
  * in the engine rather than here.
  */
+/** "I can take a turn" / "I cannot." Relayed meaning, never interpreted. */
+interface ReadyMessage {
+  readonly t: 'ready'
+  readonly ready?: unknown
+}
+
 interface ActionMessage {
   readonly t: 'action'
   readonly action?: unknown
@@ -106,6 +112,7 @@ type Incoming =
   | StateMessage
   | BetMessage
   | ActionMessage
+  | ReadyMessage
 
 /**
  * What the server remembers about one connection.
@@ -137,6 +144,16 @@ interface Attachment {
    * first lull and the table would deal a round nobody had staked.
    */
   bet: number | null
+  /**
+   * Whether this player may take a turn, as they themselves reported it.
+   *
+   * A bare boolean, and deliberately nothing more. At craps it means "I have a
+   * line bet down", because a casino will not hand you the dice without one —
+   * but the room does not know that and must not. It filters its queue by a
+   * flag the clients set, exactly as it groups them by a table string it never
+   * interprets.
+   */
+  canShoot: boolean
 }
 
 export interface Env {
@@ -243,6 +260,9 @@ export class Room implements DurableObject {
       pose: null,
       tookTableAt: null,
       bet: null,
+      // Nobody is eligible until they say so, so an empty table hands the dice
+      // to nobody rather than to whoever happens to be standing closest.
+      canShoot: false,
     }
     server.serializeAttachment(attachment)
 
@@ -375,6 +395,18 @@ export class Room implements DurableObject {
         return
       }
 
+      case 'ready': {
+        const table = attachment.identity?.table
+        if (typeof table !== 'string') return
+
+        attachment.canShoot = message.ready === true
+        ws.serializeAttachment(attachment)
+        // Becoming eligible can hand somebody the dice, and giving up the last
+        // line bet at the table can take them away from everybody.
+        void this.announceShooter(table)
+        return
+      }
+
       case 'action': {
         const table = attachment.identity?.table
         if (typeof table !== 'string') return
@@ -474,7 +506,17 @@ export class Room implements DurableObject {
 
   /** Whoever currently holds the dice at a table, or null if nobody is there. */
   private shooterAt(table: string): { id: string; socket: WebSocket } | null {
-    return this.queueFor(table)[0] ?? null
+    /*
+     * The first player in line who says they can take a turn, not simply the
+     * first in line. Somebody standing at the rail with nothing on the line is
+     * skipped rather than left holding dice they are not allowed to throw.
+     */
+    for (const place of this.queueFor(table)) {
+      const held = place.socket.deserializeAttachment() as Attachment | null
+      if (held?.canShoot) return place
+    }
+
+    return null
   }
 
   /**
@@ -522,7 +564,18 @@ export class Room implements DurableObject {
   /** Tells the room who holds the dice now, and starts their clock. */
   private async announceShooter(table: string): Promise<void> {
     const shooter = this.shooterAt(table)
-    this.sendAll({ t: 'shooter', table, id: shooter?.id ?? null })
+    /*
+     * The whole lineup rides along, because the clients have to place people as
+     * well as gate them: the shooter stands at the shooter's end and everybody
+     * else along the rail in the order they arrived. Without the order, five
+     * players stand in one spot.
+     */
+    this.sendAll({
+      t: 'shooter',
+      table,
+      id: shooter?.id ?? null,
+      lineup: this.queueFor(table).map((place) => place.id),
+    })
     await this.armRollTimeout(table)
   }
 

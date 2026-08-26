@@ -37,7 +37,7 @@ export interface RoomHandlers {
   /** The room threw the dice. Everyone at that table gets the same numbers. */
   readonly onRolled?: (table: string, roll: { first: number; second: number }) => void
   /** Who holds the dice now, or null when nobody is at the table. */
-  readonly onShooter?: (table: string, id: string | null) => void
+  readonly onShooter?: (table: string, id: string | null, lineup: readonly string[]) => void
   /** The table as somebody else last published it, for a mid-hand arrival. */
   readonly onTableState?: (table: string, value: unknown) => void
   /** A player joined, or their identity changed. */
@@ -89,6 +89,8 @@ export interface RoomConnection {
   announce: (identity: LocalIdentity) => void
   /** Puts a wager in. The room deals once every seat has one. */
   sendBet: (amount: number) => void
+  /** Says whether this player may take a turn. The room never asks why. */
+  sendReady: (ready: boolean) => void
   /** Sends an action for the room to order and echo back. */
   sendAction: (action: string) => void
   /** Asks the room to throw. It refuses unless it is this player's turn. */
@@ -208,7 +210,14 @@ export function joinRoom(
 
       case 'shooter': {
         if (typeof message.table === 'string') {
-          handlers.onShooter?.(message.table, typeof message.id === 'string' ? message.id : null)
+          const lineup = Array.isArray(message.lineup)
+            ? message.lineup.filter((id): id is string => typeof id === 'string')
+            : []
+          handlers.onShooter?.(
+            message.table,
+            typeof message.id === 'string' ? message.id : null,
+            lineup,
+          )
         }
         return
       }
@@ -324,6 +333,12 @@ export function joinRoom(
     sendBet: (amount) => {
       if (socket?.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ t: 'bet', amount }))
+      }
+    },
+
+    sendReady: (ready) => {
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ t: 'ready', ready }))
       }
     },
 

@@ -28,6 +28,7 @@ import { BlackjackTable } from './components/BlackjackTable'
 import { CasinoCharacter } from './components/CasinoCharacter'
 import { CasinoRoom } from './components/CasinoRoom'
 import { CrapsTable } from './components/CrapsTable'
+import { useSharedCraps } from '../net/useSharedCraps'
 import { Stool } from './components/Stool'
 import { PLAYER_SEATS } from './tableLayout'
 import { WalkingPlayer, type ProximityTarget } from './components/WalkingPlayer'
@@ -196,6 +197,8 @@ export function CasinoInterior({ venueId }: CasinoInteriorProps) {
   const appearance = useAppearanceStore((state) => state.appearance)
   const equipped = useAppearanceStore((state) => state.equipped)
   const activeTable = useGameStore((state) => state.activeTable)
+  // Where this player stands at the craps rail, and who has the dice.
+  const craps = useSharedCraps()
   const floorPosition = useGameStore((state) => state.floorPosition)
 
   /**
@@ -296,7 +299,17 @@ export function CasinoInterior({ venueId }: CasinoInteriorProps) {
         <>
           <TableCamera table={activeTable} />
           <group
-            position={[SEATS[activeTable][0], 0, SEATS[activeTable][2]]}
+            /*
+             * Craps spreads people along the rail, with whoever holds the dice
+             * at the shooter's end. Everybody used to be put on that one spot,
+             * so two players stood inside each other and neither looked like
+             * the shooter. Blackjack is still a single seat here.
+             */
+            position={
+              activeTable === TableId.Craps
+                ? [craps.railSpot[0], 0, craps.railSpot[2]]
+                : [SEATS[activeTable][0], 0, SEATS[activeTable][2]]
+            }
             rotation={[0, Math.PI, 0]}
           >
             {/*

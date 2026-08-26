@@ -55,6 +55,8 @@ interface PresenceStore {
   updateIdentity: (identity: LocalIdentity) => void
   /** Who holds the dice at the craps table, or null if nobody is there. */
   shooterId: string | null
+  /** Everyone at the table, in arrival order, for placing them along the rail. */
+  lineup: readonly string[]
   /** This player's own id in the room, so the HUD can say "your roll". */
   selfId: string | null
   /** Asks the room to throw. It refuses unless it is this player's turn. */
@@ -65,6 +67,8 @@ interface PresenceStore {
   publishTable: (value: unknown) => void
   /** Puts a blackjack wager in. The room deals once every seat has one. */
   sendBet: (amount: number) => void
+  /** Says whether this player may take a turn at their table. */
+  sendReady: (ready: boolean) => void
   /** Sends a blackjack action for the room to order and echo back. */
   sendAction: (action: string) => void
   setSeated: (seated: boolean, table: TableId | null) => void
@@ -110,12 +114,14 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     peers: {},
     connected: false,
     shooterId: null,
+    lineup: [],
     selfId: null,
 
     requestRoll: () => connection?.requestRoll(),
     passDice: () => connection?.passDice(),
     publishTable: (value) => connection?.publishTable(value),
     sendBet: (amount) => connection?.sendBet(amount),
+    sendReady: (ready) => connection?.sendReady(ready),
     sendAction: (action) => connection?.sendAction(action),
 
     enterRoom: (roomId, bounds, identity) => {
@@ -186,7 +192,7 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
 
         onExpired: () => useBlackjackStore.getState().applyExpiry(),
 
-        onShooter: (_table, id) => set({ shooterId: id }),
+        onShooter: (_table, id, lineup) => set({ shooterId: id, lineup }),
 
         /*
          * The table as it stood when somebody last published it. Only adopted

@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { RollOutcome } from '../games/craps/types'
-import { TableId } from '../scenes/casinoFloorLayout'
+import { crapsRailSpot, TableId } from '../scenes/casinoFloorLayout'
+import { CrapsBet } from '../scenes/crapsFeltLayout'
 import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
 import { usePresenceStore } from '../store/usePresenceStore'
@@ -14,6 +15,10 @@ export interface SharedCraps {
   readonly connected: boolean
   /** True when this player holds the dice. Always true playing alone. */
   readonly isShooter: boolean
+  /** "You", a name, or null when nobody holds the dice. */
+  readonly shooterName: string | null
+  /** Which place at the rail this player stands in. */
+  readonly railSpot: readonly [number, number, number]
   /** Whether anything is stopping a throw right now. */
   readonly canRoll: boolean
   /** Throws — locally when alone, by asking the room when not. */
@@ -39,6 +44,9 @@ export function useSharedCraps(): SharedCraps {
   const shooterId = usePresenceStore((state) => state.shooterId)
   const selfId = usePresenceStore((state) => state.selfId)
   const requestRoll = usePresenceStore((state) => state.requestRoll)
+  const sendReady = usePresenceStore((state) => state.sendReady)
+  const lineup = usePresenceStore((state) => state.lineup)
+  const peers = usePresenceStore((state) => state.peers)
   const passDice = usePresenceStore((state) => state.passDice)
   const publishTable = usePresenceStore((state) => state.publishTable)
 
@@ -79,6 +87,22 @@ export function useSharedCraps(): SharedCraps {
    * timer, because the engine is the only thing that knows a seven-out has
    * happened — the room deliberately does not.
    */
+  /*
+   * Tells the room whether this player may shoot.
+   *
+   * A casino will not hand you the dice without a line bet, so the eligibility
+   * is exactly "is there something on the pass line or the don't pass bar".
+   * Sent as a bare boolean: the room skips players who say no when it picks a
+   * shooter, and never learns that it is a bet it is skipping them over.
+   */
+  const hasLineBet =
+    (game.bets[CrapsBet.PassLine] ?? 0) > 0 || (game.bets[CrapsBet.DontPass] ?? 0) > 0
+
+  useEffect(() => {
+    if (!shared) return
+    sendReady(hasLineBet)
+  }, [shared, hasLineBet, sendReady])
+
   useEffect(() => {
     if (!shared) return
 
@@ -86,8 +110,19 @@ export function useSharedCraps(): SharedCraps {
     if (game.lastOutcome === RollOutcome.SevenOut) passDice()
   }, [shared, game.lastOutcome, game.lastRoll, publishTable, passDice])
 
+  /** Who has the dice, in words, so nobody wonders what they are waiting for. */
+  const shooterName =
+    shooterId === null
+      ? null
+      : shooterId === selfId
+        ? 'You'
+        : (peers[shooterId]?.name ?? 'Another player')
+
   return {
     shared,
+    shooterName,
+    /** Where this player stands at the rail, shooter's end included. */
+    railSpot: crapsRailSpot(selfId ?? '', shooterId, lineup),
     /** True while the room is reachable. False means the table is waiting. */
     connected,
     isShooter,
