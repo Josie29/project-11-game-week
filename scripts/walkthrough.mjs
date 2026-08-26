@@ -167,7 +167,25 @@ async function capture(name) {
   console.log(`ok   ${name}`)
 }
 
-/** Fails loudly rather than screenshotting whatever happened to be on screen. */
+/**
+ * Fails loudly rather than screenshotting whatever happened to be on screen.
+ *
+ * A single `isVisible()` on purpose, and not the `waitFor({ state: 'visible' })`
+ * it looks like it should be.
+ *
+ * `isVisible` is one of the few Playwright calls that does not auto-wait, which
+ * reads like a bug here — it asks once, a fixed 900 ms after the keypress. It
+ * was changed to a wait with an eight-second deadline and the walkthrough
+ * immediately started failing at whichever beat crossed a door, on assertions
+ * whose text the failure screenshot then showed on screen.
+ *
+ * The difference is what a deadline means when the main thread is blocked.
+ * Entering or leaving a venue mounts a whole scene, and under SwiftShader that
+ * is seconds of one synchronous task; a `waitFor` timer expires during it and
+ * reports a timeout for a DOM that had already updated. `isVisible` has no
+ * deadline: it is answered when the thread is free again, which is the moment
+ * the answer becomes meaningful. Slower, and right.
+ */
 async function expectText(text, step) {
   const found = await page.getByText(text, { exact: false }).first().isVisible()
   if (!found) throw new Error(`${step}: expected to see "${text}"`)
@@ -218,8 +236,14 @@ try {
    *    both what a player does now and what makes the rest of this script
    *    tractable: the legs that walk the length of the strip no longer have to
    *    be threaded between doorways that would swallow them.
+   *
+   *    Keyed on the venue's *name*, not on its action line. Every door now says
+   *    "Press F to enter" — F opens a door and nothing else, whichever door it
+   *    is — so the action line no longer tells the three apart, and a leg
+   *    waiting for it would stop at whichever doorway it wandered into first.
+   *    The name is the part that varies, and it is on the same prompt.
    */
-  await walkUntil(['KeyW', 'KeyD'], 'Press F to shop', { burstMs: DOOR_BURST_MS, bursts: 40 })
+  await walkUntil(['KeyW', 'KeyD'], 'The Gilded Hanger', { burstMs: DOOR_BURST_MS, bursts: 40 })
   await interact()
 
   //    Asserted on the standing hint, which is the shop's own: it is a room you
@@ -411,7 +435,7 @@ try {
   // proof that a purchase survives the walk out of the room it was made in.
   await capture('9-out-in-it')
 
-  await walkUntil(['KeyW', 'KeyD'], 'Press F to donate', {
+  await walkUntil(['KeyW', 'KeyD'], 'Red River Plasma', {
     burstMs: DOOR_BURST_MS,
     bursts: 45,
   })
@@ -498,8 +522,8 @@ try {
    *    keeps the player off the diagonal, which reaches the casino's row while
    *    still out in the middle of the road, seven units short of the door.
    */
-  await walkAtMost(['KeyA'], 'Press F to play', { bursts: 20 })
-  await walkUntil(['KeyS', 'KeyA'], 'Press F to play', {
+  await walkAtMost(['KeyA'], 'Golden Ace', { bursts: 20 })
+  await walkUntil(['KeyS', 'KeyA'], 'Golden Ace', {
     burstMs: DOOR_BURST_MS,
     bursts: 60,
   })

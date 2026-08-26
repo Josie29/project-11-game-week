@@ -65,6 +65,18 @@ const SHOPFRONT_VIEWPOINT: readonly [number, number, number] = [6.6, 0, -6]
 const CLINICFRONT_VIEWPOINT: readonly [number, number, number] = [6.6, 0, -22]
 
 /**
+ * The same for the Golden Ace, on the other side of the street.
+ *
+ * The two storefronts have had one of these for as long as they have existed
+ * and the casino never did, so its entrance was the one piece of the strip that
+ * appeared in no capture at all — the walkthrough passes it on the way in
+ * without ever looking at it. A column of the tower's colonnade stood squarely
+ * in front of that doorway for months, and this is the shot that would have
+ * shown it. Compose with `?look=90`, which is the shop's `-90` mirrored.
+ */
+const CASINOFRONT_VIEWPOINT: readonly [number, number, number] = [-6.6, 0, -14]
+
+/**
  * The two ends of the street, where the strip meets its cross streets.
  *
  * These exist because the thing they show could not otherwise be photographed.
@@ -221,6 +233,8 @@ function applyTimeShortcut(): void {
  *   which is the only way to look at the storefront without walking there.
  * - `?boot=clinicfront` does the same for Red River Plasma, further down the
  *   same side of the street.
+ * - `?boot=casinofront` does the same for the Golden Ace, across the road, and
+ *   takes `?look=90` rather than `-90` because it faces the other way.
  * - `?look=DEGREES` swings the strip camera round the player before it settles,
  *   so a facade can be captured face-on instead of at the glancing angle the
  *   play camera gives. Positive swings toward the left of the street.
@@ -261,6 +275,7 @@ export function applyBootShortcut(): void {
     'held',
     'shopfront',
     'clinicfront',
+    'casinofront',
     'strip',
     'northend',
     'southend',
@@ -288,6 +303,13 @@ export function applyBootShortcut(): void {
     // Same side as the shop, so the same `?look=-90` frames it face-on.
     useAppearanceStore.getState().completeDesign()
     useGameStore.setState({ spawnPosition: CLINICFRONT_VIEWPOINT })
+    return
+  }
+
+  if (boot === 'casinofront') {
+    // Other side of the street, so `?look=90` rather than `-90`.
+    useAppearanceStore.getState().completeDesign()
+    useGameStore.setState({ spawnPosition: CASINOFRONT_VIEWPOINT })
     return
   }
 

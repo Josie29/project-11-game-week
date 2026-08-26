@@ -6,6 +6,7 @@ import { useAppearanceStore, useFittedEquipped } from '../../store/useAppearance
 import { useGameStore } from '../../store/useGameStore'
 import { Control } from '../../world/controls'
 import { useOrbitInput } from '../useOrbitInput'
+import { setLocalTransform } from '../../net/localTransform'
 import { CasinoCharacter } from './CasinoCharacter'
 
 /*
@@ -329,6 +330,17 @@ export function WalkingPlayer({
         }
       }
     }
+
+    /*
+     * Publish where we are, for anyone else in the room.
+     *
+     * Written every frame into a plain mutable object rather than a store: the
+     * presence sender samples it on its own much slower timer, and routing a
+     * sixty-times-a-second transform through zustand would re-render the world
+     * to move one figure. Costs nothing when multiplayer is off — nobody reads
+     * it.
+     */
+    setLocalTransform(group.position.x, group.position.z, group.rotation.y, speedRef.current)
 
     // Trailing camera, seated on the orbit sphere around the player.
     const { pitch: orbitPitch, distance: orbitDistance } = orbit.current

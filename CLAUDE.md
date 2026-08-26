@@ -203,8 +203,10 @@ Dev-only deep links, stripped from production builds:
 | `?boot=short` | the same counter, $820 short of the bill |
 | `?boot=held` | at the door in an unpaid gown, the clerk calling you back |
 | `?boot=shopfront` | at the shop's door, prompt up, to look at the storefront |
+| `?boot=casinofront` | the same at the Golden Ace, across the road; takes `?look=90` |
 | `?boot=dressed` | the shop, every wardrobe slot filled |
 | `?boot=strip` | the street, with the first-run designer skipped |
+| `?mp=1` | re-enables multiplayer under a `?boot=` link, which otherwise suppresses it |
 | `?boot=northend` | at the north junction, where the strip meets its cross street |
 | `?boot=southend` | the same at the south end |
 | `?look=DEGREES` | swings the strip camera round before it settles |
@@ -278,6 +280,51 @@ round cannot mutate the next one.
 chip travel time on the action guard silently swallowed every hit and stand for
 the first 420 ms of a round.
 
+## Multiplayer
+
+Presence only, and deliberately: other players walk the same street and stand
+in the same rooms, but every table is still played alone. Blackjack and craps
+are against the house, so there is no pot to share — which is why none of this
+needs authority, accounts, or server-authoritative money.
+
+**A room is derived, not invented.** The street is a room and each venue floor
+is a room, from `location` + `activeVenue` in `roomIdFor`. Two players are in
+the same room exactly when they can see each other, which is exactly when it is
+worth sending either of them the other's position.
+
+**`src/world/presence.ts` is pure and tested**, on the same rule as the game
+engines and for the same reason: none of it survives a screenshot. A figure
+that teleports on every packet and one that interpolates smoothly are the same
+still image. `interpolateAt` draws each peer 120 ms behind live, between the
+two snapshots straddling that moment, taking the short way round through the
+±180° wrap — without which a player turning from 170° to -170° spins 340° on
+the spot.
+
+**Poses never enter React state.** `WalkingPlayer` writes a mutable transform
+each frame and the sender samples it on its own timer. Routing a
+sixty-times-a-second transform through zustand re-renders the world to move one
+figure — the same reason the walk cycle takes a `speedRef` rather than a prop.
+
+Two traps, both of which cost money or captures rather than correctness:
+
+- **`acceptWebSocket`, never `accept()`.** The plain accept pins the Durable
+  Object in memory and bills duration for the entire time the socket is open,
+  turning a free hibernating room into a rented server from a one-word
+  difference. For the same reason identity lives in the socket's
+  `serializeAttachment`, not a `Map`: a hibernating object keeps its sockets
+  and loses its memory.
+- **`?boot=` links suppress the socket.** Those links exist to make a capture
+  reproducible and a stranger wandering into a regression shot is the opposite.
+  `?mp=1` opts back in, for `npm run multiplayer` and nothing else.
+
+`shouldSend` is the cost model written down as a test: a player stood at a
+table sends nothing, the room hibernates, and the bill stays at zero. If it
+ever returns true for a stationary player the running cost silently becomes a
+rented server.
+
+The whole feature is off without `VITE_MULTIPLAYER_URL`, which is what keeps a
+fresh clone and every existing capture behaving exactly as before.
+
 ## Conventions in use
 
 - **Textures are drawn to canvas at runtime**, not shipped as images — cards,
@@ -308,6 +355,17 @@ the first 420 ms of a round.
   could have said so — there was no relationship to assert. The limit is derived
   from a kerb now. `BLOCK_DEPTH` is the same story: the towers, the doors and
   the road markings had all silently agreed on 8 for months.
+
+  Anything laid out on a *building's* rhythm collides with anything laid out on
+  a *door's*, and the palms were only the first case. The towers' street-level
+  colonnade put a column on every tower's centre line, and every venue door is
+  on a tower's centre line, so a 3.4-metre pillar stood in front of all three
+  entrances — splitting the shop's window and the clinic's blinds down the
+  middle and covering a third of the Golden Ace's doorway — with the canopy
+  above it lying across the casino's marquee and both fascia signs. It shipped
+  because it was drawn as relief rather than as furniture and so never went
+  through `clearsDoorways`. Everything that stands on the pavement does now,
+  and `hasColonnade` derives the exemption rather than listing it.
 - **Characters are procedural primitives** with named joint groups, so gestures
   can be authored directly, and now so the player can be built at runtime from a
   saved appearance.
@@ -351,7 +409,27 @@ npm run typecheck   # tsc --noEmit, strict + exactOptionalPropertyTypes
 npm run build
 npm run shot <url> <out.png> [settleMs] [keys]
 npm run locate <url> [prefix]   # world positions of named objects
+npm run multiplayer [baseUrl]   # two players at once; needs the worker running
+npm run worker:dev              # the presence worker, locally
+npm run worker:deploy           # the presence worker, to Cloudflare
+npm run typecheck:worker
 ```
+
+`npm run multiplayer` drives two browser *contexts* — separate `localStorage`,
+so genuinely two players — and asserts each sees the other, by name, moving.
+`npm run walkthrough` drives one browser and cannot tell a room that never
+connected from one that did.
+
+It needs `VITE_MULTIPLAYER_URL` in `.env.local`, which is deliberately not
+committed — without it the game runs exactly as it did before multiplayer and
+the check silently passes over an empty room. Point it at the deployed worker
+(`wss://neon-strip-presence.twobearslabs.workers.dev`) or at `npm run
+worker:dev` on `ws://127.0.0.1:8787`.
+
+**Against a deployed URL is the run that counts.** `wrangler dev` is miniflare
+with no network in front of it, so anything racing the WebSocket handshake
+passes locally and fails in production — which is exactly how the first pose
+went missing for a player who joined and stood still.
 
 TypeScript is pinned to **^6**, not 7.x — R3F's JSX namespace augmentation plus
 the `@types/three` surface is the wrong thing to put on a brand-new compiler.

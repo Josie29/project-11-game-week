@@ -2,6 +2,8 @@ import { KeyboardControls } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 import { Bloom, EffectComposer, Vignette } from '@react-three/postprocessing'
 import { DevBridge } from './dev/DevBridge'
+import { usePresenceRoom } from './net/usePresenceRoom'
+import { RemotePlayers } from './scenes/components/RemotePlayers'
 import { CasinoInterior } from './scenes/CasinoInterior'
 import { TimeDriver } from './scenes/components/TimeDriver'
 import { DesignerStage } from './scenes/DesignerStage'
@@ -28,6 +30,10 @@ export function App() {
   const activeVenue = useGameStore((state) => state.activeVenue)
   const hasDesigned = useAppearanceStore((state) => state.hasDesigned)
   const activeTable = useGameStore((state) => state.activeTable)
+
+  // Joins whichever room the player is standing in, and leaves it on the way
+  // out. A no-op when multiplayer is unconfigured.
+  usePresenceRoom()
   const atChair = useGameStore((state) => state.atChair)
   const atMirror = useGameStore((state) => state.atMirror)
   const atCheckout = useGameStore((state) => state.atCheckout)
@@ -78,6 +84,15 @@ export function App() {
         ) : (
           <Strip />
         )}
+
+        {/*
+          Everyone else in the room, at the canvas root rather than inside a
+          scene. Each scene has its own coordinate space and its own room id, so
+          drawing peers here is correct for all of them — and it survives the
+          local player sitting down, which unmounts `WalkingPlayer` but should
+          certainly not empty the room.
+        */}
+        {!isDesigning && <RemotePlayers />}
 
         {/*
           Bloom is what turns emissive planes into neon. The materials are all

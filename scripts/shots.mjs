@@ -54,6 +54,7 @@ const SCENES = [
   // a sliver of shop window cannot tell a built storefront from a broken one.
   { name: 'shopfront', path: '/?boot=shopfront&look=-90&time=21:00&freeze', settleMs: 2600 },
   { name: 'clinicfront', path: '/?boot=clinicfront&look=-90&time=21:00&freeze', settleMs: 2600 },
+  { name: 'casinofront', path: '/?boot=casinofront&look=90&time=21:00&freeze', settleMs: 2600 },
   { name: 'clinic', path: '/?boot=clinic&time=21:00&freeze', settleMs: 2600 },
   { name: 'drawing', path: '/?boot=drawing&time=21:00&freeze', settleMs: 2600 },
   // Both exits looked into. They spent their whole life invisible — unrotated

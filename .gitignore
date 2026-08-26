@@ -14,3 +14,6 @@ shots/
 
 # Agent worktrees, which are their own git repositories.
 .claude/worktrees/
+
+# Wrangler local state: miniflare caches, sqlite, tmp bundles.
+.wrangler/
