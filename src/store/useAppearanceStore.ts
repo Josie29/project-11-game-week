@@ -20,6 +20,7 @@ import {
   withoutSlot,
   type Fitting,
 } from '../character/fitting'
+import { FALLBACK_NAME, sanitizePlayerName } from '../world/presence'
 import { useGameStore } from './useGameStore'
 
 /** Why a purchase did not go through, or that it did. */
@@ -45,8 +46,16 @@ interface AppearanceStore {
   fitting: Fitting
   /** False until the designer has been through once, which gates the first spawn. */
   hasDesigned: boolean
+  /**
+   * What other players see over this one's head.
+   *
+   * Lives with the wardrobe rather than the bankroll because it is part of who
+   * the player decided to be, chosen in the same screen as the rest of it.
+   */
+  playerName: string
 
   setAppearance: (appearance: Appearance) => void
+  setPlayerName: (name: string) => void
   completeDesign: () => void
   /**
    * Debits the bankroll, adds the item to the wardrobe and puts it on.
@@ -88,8 +97,13 @@ export const useAppearanceStore = create<AppearanceStore>()(
       equipped: {},
       fitting: NO_FITTING,
       hasDesigned: false,
+      playerName: FALLBACK_NAME,
 
       setAppearance: (appearance) => set({ appearance }),
+
+      // Sanitized on the way in as well as on the way out: this is the one
+      // field a player types, and it is drawn to a canvas for strangers.
+      setPlayerName: (name) => set({ playerName: sanitizePlayerName(name) }),
 
       completeDesign: () => set({ hasDesigned: true }),
 
@@ -190,6 +204,7 @@ export const useAppearanceStore = create<AppearanceStore>()(
           owned,
           equipped: sanitizeEquipped(saved.equipped, owned),
           hasDesigned: saved.hasDesigned === true,
+          playerName: sanitizePlayerName(saved.playerName),
         }
       },
       /*
@@ -203,6 +218,7 @@ export const useAppearanceStore = create<AppearanceStore>()(
        */
       partialize: (state) => ({
         appearance: state.appearance,
+        playerName: state.playerName,
         owned: state.owned,
         equipped: state.equipped,
         hasDesigned: state.hasDesigned,

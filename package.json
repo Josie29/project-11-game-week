@@ -13,7 +13,11 @@
     "shot": "node scripts/shot.mjs",
     "shots": "node scripts/shots.mjs",
     "locate": "node scripts/locate.mjs",
-    "walkthrough": "node scripts/walkthrough.mjs"
+    "walkthrough": "node scripts/walkthrough.mjs",
+    "multiplayer": "node scripts/multiplayer.mjs",
+    "typecheck:worker": "tsc --noEmit -p worker/tsconfig.json",
+    "worker:dev": "wrangler dev --config worker/wrangler.toml",
+    "worker:deploy": "wrangler deploy --config worker/wrangler.toml"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.8",
@@ -27,6 +31,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260826.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/three": "^0.185.4",
@@ -34,6 +39,7 @@
     "playwright-core": "^1.62.1",
     "typescript": "^6.0.3",
     "vite": "^8.2.2",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "wrangler": "^4.126.0"
   }
 }

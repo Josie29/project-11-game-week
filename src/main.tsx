@@ -2,7 +2,10 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import { applyBootShortcut } from './dev/bootShortcut'
+import { useAppearanceStore } from './store/useAppearanceStore'
+import { poseBuffer, usePresenceStore } from './store/usePresenceStore'
 import { useGameStore } from './store/useGameStore'
+import { INTERPOLATION_DELAY_MS, interpolateAt } from './world/presence'
 import './styles.css'
 
 const container = document.getElementById('root')
@@ -14,7 +17,19 @@ if (import.meta.env.DEV) {
   // Dev-only handle for driving the game from the console or a browser harness,
   // e.g. jumping straight to a table without walking there first. Stripped from
   // production builds by the DEV guard.
-  ;(window as unknown as { gameStore: typeof useGameStore }).gameStore = useGameStore
+  const bridge = window as unknown as Record<string, unknown>
+  bridge.gameStore = useGameStore
+  bridge.appearanceStore = useAppearanceStore
+  bridge.presenceStore = usePresenceStore
+  /*
+   * The interpolated pose of a peer, which is the one thing a harness cannot
+   * read off the store: poses deliberately live outside it, in a buffer read
+   * each frame. `npm run multiplayer` asserts on this to tell a peer that
+   * joined and went silent from one that is actually walking.
+   */
+  bridge.peerPose = (id: string) =>
+    interpolateAt(poseBuffer(id), performance.now() - INTERPOLATION_DELAY_MS)
+
   applyBootShortcut()
 }
 

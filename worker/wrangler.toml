@@ -1,0 +1,16 @@
+name = "neon-strip-presence"
+main = "index.ts"
+compatibility_date = "2026-08-01"
+
+# Free-plan Durable Objects must be SQLite-backed. `new_sqlite_classes` rather
+# than `new_classes` is what makes this deployable without a Workers Paid plan.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+# Deliberately no compatibility flags and no extra bindings. This worker relays
+# poses between people in a room and holds nothing that outlives them.
