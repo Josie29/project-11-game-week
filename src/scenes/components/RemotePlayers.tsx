@@ -32,6 +32,21 @@ function RemotePlayer({ player }: { player: RemoteIdentity }) {
      * slightly in the past turns the same packets into continuous motion.
      */
     const pose = interpolateAt(poseBuffer(player.id), performance.now() - INTERPOLATION_DELAY_MS)
+
+    /*
+     * Hidden until they have actually said where they are.
+     *
+     * A group with no pose applied sits at its own default, which is the world
+     * origin — and the craps table is deliberately *at* the world origin, so
+     * the failure mode was a stranger standing in the middle of the felt. A
+     * player who has sent nothing yet is far better drawn nowhere than drawn
+     * somewhere false: they appear the moment their first pose lands.
+     *
+     * It happens at all because a seated player deliberately transmits nothing
+     * — `shouldSend` is what keeps the room hibernating and the bill at zero —
+     * so somebody who arrives already sitting has no pose to draw.
+     */
+    group.visible = pose !== null
     if (!pose) return
 
     group.position.set(pose.x, 0, pose.z)

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { getLocalTransform } from '../net/localTransform'
 import { TableId } from '../scenes/casinoFloorLayout'
 import { useCrapsStore } from './useCrapsStore'
+import { useGameStore } from './useGameStore'
 import {
   isMultiplayerConfigured,
   joinRoom,
@@ -186,6 +187,21 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
        * a table sends nothing, so the room hibernates.
        */
       sender = setInterval(() => {
+        /*
+         * A seated player transmits nothing at all.
+         *
+         * `WalkingPlayer` unmounts when you sit down, so the transform it feeds
+         * this loop stops being written — and for somebody who arrived already
+         * seated it was never written at all, leaving it at the origin. The
+         * craps table is deliberately *at* the world origin, so the result was
+         * a figure standing in the middle of the felt.
+         *
+         * `shouldSend` already keeps a stationary player quiet; this keeps a
+         * seated one honest, and costs nothing either way.
+         */
+        const game = useGameStore.getState()
+        if (game.activeTable !== null || game.atChair !== null) return
+
         const pose = getLocalTransform()
         if (!shouldSend(lastSent, pose)) return
 
