@@ -76,7 +76,36 @@ interface StateMessage {
   readonly value?: unknown
 }
 
-type Incoming = JoinMessage | MoveMessage | SeatMessage | RollMessage | PassMessage | StateMessage
+/** "Here is my wager." Held until every seat has one, then dealt on. */
+interface BetMessage {
+  readonly t: 'bet'
+  readonly amount?: unknown
+}
+
+/**
+ * "I hit / stand / double / split." Relayed in the order it arrives.
+ *
+ * The order *is* the protocol: one object processes messages serially, so the
+ * sequence it broadcasts is a total order, and every client replaying that
+ * sequence through the same pure engine consumes the same cards. The room does
+ * not know what any of these words mean and does not check whose turn it is —
+ * every client rejects an out-of-turn action identically, because the rule is
+ * in the engine rather than here.
+ */
+interface ActionMessage {
+  readonly t: 'action'
+  readonly action?: unknown
+}
+
+type Incoming =
+  | JoinMessage
+  | MoveMessage
+  | SeatMessage
+  | RollMessage
+  | PassMessage
+  | StateMessage
+  | BetMessage
+  | ActionMessage
 
 /**
  * What the server remembers about one connection.
@@ -99,6 +128,15 @@ interface Attachment {
    * happened to move next.
    */
   tookTableAt: number | null
+  /**
+   * This player's wager for the round being gathered, or null if not in yet.
+   *
+   * On the attachment rather than in memory or in storage, for the reason the
+   * whole file keeps repeating: a hibernating object keeps its sockets and
+   * loses everything else. A `Map` of bets would come back empty after the
+   * first lull and the table would deal a round nobody had staked.
+   */
+  bet: number | null
 }
 
 export interface Env {
@@ -122,6 +160,16 @@ const MAX_MESSAGE_BYTES = 4_096
 const MAX_AT_TABLE = 8
 
 /**
+ * What the room should do when a turn clock runs out.
+ *
+ * The one place any game knowledge reaches the server, and it is here because a
+ * closed tab cannot roll its own dice: somebody has to, and only the room is
+ * still there. It is two words rather than a rule — throw, or say the turn is
+ * over — and which one applies is chosen by the client that armed the clock.
+ */
+type ExpiryKind = 'roll' | 'turn'
+
+/**
  * How long the holder of the dice has to roll before the room rolls for them.
  *
  * The room is not judging a game here — it does not know what a point is. It
@@ -137,6 +185,18 @@ const ROLL_TIMEOUT_MS = 30_000
  * modulo would make ones and twos fractionally likelier than fives and sixes.
  * Nobody would ever notice, and it would still be a loaded die in a casino.
  */
+/**
+ * A 32-bit seed for a shoe, from the same source as the dice.
+ *
+ * `crypto.getRandomValues`, not `Math.random`: this decides the order of three
+ * hundred and twelve cards that five people are about to be paid out of.
+ */
+function seed32(): number {
+  const words = new Uint32Array(1)
+  crypto.getRandomValues(words)
+  return words[0]! >>> 0
+}
+
 /** Two dice, thrown together. */
 function die2(): { first: number; second: number } {
   return { first: die(), second: die() }
@@ -182,6 +242,7 @@ export class Room implements DurableObject {
       identity: null,
       pose: null,
       tookTableAt: null,
+      bet: null,
     }
     server.serializeAttachment(attachment)
 
@@ -297,6 +358,41 @@ export class Room implements DurableObject {
         return
       }
 
+      case 'bet': {
+        const table = attachment.identity?.table
+        if (typeof table !== 'string') return
+
+        const amount = Number(message.amount)
+        if (!Number.isInteger(amount) || amount < 0) return
+
+        attachment.bet = amount
+        ws.serializeAttachment(attachment)
+        // Relayed as it lands so the felt can show chips arriving one at a
+        // time, rather than five stacks appearing at the moment of the deal.
+        this.sendAll({ t: 'bet', table, id: attachment.id, amount })
+
+        void this.dealIfEverybodyHasBet(table)
+        return
+      }
+
+      case 'action': {
+        const table = attachment.identity?.table
+        if (typeof table !== 'string') return
+        if (typeof message.action !== 'string') return
+
+        /*
+         * Relayed without asking whose turn it is.
+         *
+         * Every client applies this through the same pure engine, which refuses
+         * an out-of-turn action — so an illegal one is rejected identically
+         * everywhere and the room never has to learn the rule. This is the same
+         * bargain as the dice: the room orders, it does not referee.
+         */
+        this.sendAll({ t: 'action', table, id: attachment.id, action: message.action })
+        void this.armTurnClock(table, 'turn')
+        return
+      }
+
       case 'state': {
         const table = attachment.identity?.table
         if (typeof table !== 'string') return
@@ -328,6 +424,52 @@ export class Room implements DurableObject {
     // Ties broken by id so every client and the room agree on the same order.
     line.sort((a, b) => a.at - b.at || a.id.localeCompare(b.id))
     return line.slice(0, MAX_AT_TABLE).map(({ id, socket }) => ({ id, socket }))
+  }
+
+  /**
+   * Deals once every occupied seat has staked something.
+   *
+   * The only place the room waits for the whole table rather than relaying one
+   * player's move, and it exists because one `placeBets` deals every seat at
+   * once — unlike a roll, a deal cannot happen a player at a time.
+   *
+   * "Everybody" is a count of sockets at the table, not a rule about blackjack.
+   */
+  private async dealIfEverybodyHasBet(table: string): Promise<void> {
+    const line = this.queueFor(table)
+    if (line.length === 0) return
+
+    const bets: { id: string; amount: number }[] = []
+    for (const { id, socket } of line) {
+      const held = socket.deserializeAttachment() as Attachment | null
+      if (!held || held.bet === null) return
+      bets.push({ id, amount: held.bet })
+    }
+
+    await this.dealRound(table, bets)
+  }
+
+  /**
+   * Starts a round: one seed for the shoe, and the wagers in seat order.
+   *
+   * The seed rather than the cards, because every client already has
+   * `createShoe` and building the same shoe from the same number is cheaper
+   * than sending three hundred and twelve of them — and it keeps the room from
+   * ever holding a deck.
+   */
+  private async dealRound(table: string, bets: { id: string; amount: number }[]): Promise<void> {
+    this.sendAll({ t: 'deal', table, seed: seed32(), bets })
+
+    // Cleared as the round starts, so the next gather begins from nobody.
+    for (const socket of this.state.getWebSockets()) {
+      const held = socket.deserializeAttachment() as Attachment | null
+      if (held && held.identity?.table === table && held.bet !== null) {
+        held.bet = null
+        socket.serializeAttachment(held)
+      }
+    }
+
+    await this.armTurnClock(table, 'turn')
   }
 
   /** Whoever currently holds the dice at a table, or null if nobody is there. */
@@ -392,6 +534,17 @@ export class Room implements DurableObject {
    * holds the dice and cleared the moment nobody does — an alarm that can be
    * set at an empty table is a rented server by another route.
    */
+  private async armTurnClock(table: string, kind: ExpiryKind): Promise<void> {
+    try {
+      await this.state.storage.put('alarmTable', table)
+      await this.state.storage.put('alarmKind', kind)
+      await this.state.storage.setAlarm(Date.now() + ROLL_TIMEOUT_MS)
+    } catch {
+      // Best-effort, like every other storage touch here. Losing the clock
+      // costs a stalled seat; letting it throw would cost the whole relay.
+    }
+  }
+
   private async armRollTimeout(table: string): Promise<void> {
     /*
      * Best-effort, and deliberately so. Everything this room exists to do is a
@@ -407,6 +560,7 @@ export class Room implements DurableObject {
       }
 
       await this.state.storage.put('alarmTable', table)
+      await this.state.storage.put('alarmKind', 'roll')
       await this.state.storage.setAlarm(Date.now() + ROLL_TIMEOUT_MS)
     } catch {
       // No alarm. The table still plays; a vanished shooter just holds the dice
@@ -429,6 +583,26 @@ export class Room implements DurableObject {
       return
     }
     if (typeof table !== 'string') return
+
+    let kind: unknown = 'roll'
+    try {
+      kind = await this.state.storage.get('alarmKind')
+    } catch {
+      // Fall through on 'roll', which is the older of the two behaviours.
+    }
+
+    /*
+     * A turn that ran out, at a table where nobody is waiting on dice.
+     *
+     * The room says only that the clock expired. Each client applies its own
+     * rule — a stand, which can neither bust a hand the player might have kept
+     * nor spend money they did not stake. The room still does not know what
+     * standing is.
+     */
+    if (kind === 'turn') {
+      this.sendAll({ t: 'expired', table })
+      return
+    }
 
     const shooter = this.shooterAt(table)
     if (!shooter) {
