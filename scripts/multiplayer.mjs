@@ -97,6 +97,19 @@ async function openPlayer(browser, name, look) {
      * the field a player would use, then leave — which also exercises the name
      * entry itself, something the dev path skips entirely.
      */
+
+    /*
+     * The welcome screen first, and picking Multiplayer on it is not optional.
+     *
+     * `?mp=1` cannot help here: it only lifts the `?boot=` suppression, and
+     * `?boot=` does not exist in a production build at all — so the mode this
+     * script needs is the one the toggle sets, and the toggle defaults to
+     * Single. Without this click both players load, neither opens a socket, and
+     * the room they are supposed to share is never joined by anybody.
+     */
+    await page.getByRole('button', { name: 'Multiplayer' }).click()
+    await page.getByRole('button', { name: 'Enter the strip' }).click()
+
     await page.getByRole('textbox', { name: /your name/i }).fill(name)
     await page.getByRole('button', { name: 'Hit the strip' }).click()
     await page.getByText('WASD to walk').waitFor({ timeout: 15_000 })
