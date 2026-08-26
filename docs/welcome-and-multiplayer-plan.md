@@ -74,13 +74,16 @@ From `origin/feature/supabase-accounts`, auth-only files:
 | `src/store/saveSync.ts` | 228 | **see below** |
 | `src/world/saveSync.ts` | 183 | **see below** |
 
-**Open question for the survey, not an assumption:** the branch shows *two*
-`saveSync` files at different paths and different sizes. One is likely a move
-the diff did not detect. Establish which is current before either is picked.
+**Resolved — and not a move.** The two `saveSync` files are a deliberate split
+on the same rule as the game engines. `src/world/saveSync.ts` is pure and
+tested: `SaveData`, `resolveSave`, `rowFromSave`, `sanitizeSave`, no React and
+no Supabase, because it decides where a bankroll goes when two devices disagree
+and getting that wrong deletes money silently. `src/store/saveSync.ts` is the
+impure layer that talks to Supabase and the stores. Both are needed.
 
-The branch predates the shop and strip work, so a straight merge shows it
-deleting `shopLayout.ts`, `stripLayout.ts` and `useActionKey.ts`. It is behind,
-not in conflict. Pick files, do not merge the branch.
+**Also resolved:** only *two* commits are unique to the branch — `199b9b7` and
+`ed1bce0`. The rest of the 68-file diff was the branch being behind main, not
+in conflict with it. Cherry-pick those two rather than picking files.
 
 **External configuration, and the most likely thing to eat an evening:** Google
 OAuth needs the redirect URL registered in both the Supabase dashboard (project
@@ -137,8 +140,13 @@ Modified: `src/dev/bootShortcut.ts`, `scripts/shots.mjs`.
 - `?boot=welcome` added, so the screen itself is capturable. Pin `?time=` and
   `?freeze` like every other shot.
 
-Acceptance: `npm run shots` passes and gains one image. `npm run walkthrough`
-passes unchanged — it must not have to click through a new screen.
+Acceptance: `npm run shots` passes and gains one image.
+
+**This criterion was wrong as first written.** It said the walkthrough "must not
+have to click through a new screen." It must: `?boot=` links are stripped from
+production builds and the walkthrough is the only check that runs against a
+deployed URL, so bypassing the welcome screen there would leave the first thing
+every real player sees as the one path nothing verifies. It clicks through.
 
 ---
 
