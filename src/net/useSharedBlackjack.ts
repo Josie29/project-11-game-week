@@ -7,8 +7,10 @@ import { PlayMode, useSessionStore } from '../store/useSessionStore'
 
 /** What the blackjack table needs to know about the people sitting at it. */
 export interface SharedBlackjack {
-  /** True when the room is dealing this table rather than this client. */
+  /** True when the room deals this table, whether or not it is reachable now. */
   readonly shared: boolean
+  /** False while the socket is down; the table waits rather than dealing itself. */
+  readonly connected: boolean
   /** True when it is this player's turn, or they are playing alone. */
   readonly isMyTurn: boolean
   /** Puts a wager in — locally when alone, into the gather when not. */
@@ -42,8 +44,21 @@ export function useSharedBlackjack(): SharedBlackjack {
   const mySeatIndex = useBlackjackStore((state) => state.mySeatIndex)
   const activeSeatIndex = useBlackjackStore((state) => state.game.activeSeatIndex)
 
-  const shared =
-    mode === PlayMode.Multiplayer && connected && activeTable === TableId.Blackjack
+  /*
+   * Keyed on the chosen mode, not on whether the socket is up right now.
+   *
+   * `connected` drops to false for a moment on every room change, because
+   * `enterRoom` stops the old socket before opening the new one. A wager placed
+   * in that window took the solo path — applied locally instead of being handed
+   * to the room — and from then on that client had a private game with its own
+   * shoe. Two people sat at one table and played entirely separate hands, which
+   * is precisely what that window buys you.
+   *
+   * Waiting is the honest failure. A player who chose Multiplayer should see a
+   * table that is not ready yet, not a private game they cannot tell apart from
+   * a shared one until somebody else's cards never appear.
+   */
+  const shared = mode === PlayMode.Multiplayer && activeTable === TableId.Blackjack
 
   // Alone, every turn is yours. Shared, the engine decides the order and this
   // only reports it — the refusal itself lives in `actAs`.
@@ -51,9 +66,13 @@ export function useSharedBlackjack(): SharedBlackjack {
 
   return {
     shared,
+    connected,
     isMyTurn,
 
     wager: (amount) => {
+      // A shared table with no room does nothing at all. Betting locally here is
+      // what forked the two players into separate games.
+      if (shared && !connected) return
       if (shared) sendBet(amount)
       else placeWager(amount)
     },
@@ -65,6 +84,7 @@ export function useSharedBlackjack(): SharedBlackjack {
        * in the sequence from everybody else's and the shoe would drift apart on
        * the first hit. This client applies its own action when it comes back.
        */
+      if (shared && !connected) return
       if (shared) sendAction(action)
       else takeAction(action)
     },

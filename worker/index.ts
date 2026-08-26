@@ -647,7 +647,37 @@ export class Room implements DurableObject {
      * `queueFor` by the time this runs and the next player is simply the head.
      */
     const table = attachment.identity?.table
-    if (typeof table === 'string') void this.announceShooter(table)
+    if (typeof table === 'string') void this.tableEmptied(table)
+  }
+
+  /**
+   * Hands the dice on, and forgets the round once the last player has gone.
+   *
+   * A table that empties has to forget what it was doing. The state kept for a
+   * mid-hand arrival is *only* useful while somebody is still playing the hand;
+   * once nobody is, it becomes a lie told to whoever walks up next — a point of
+   * 8 from a session that ended hours ago, which closes the pass line for a
+   * player standing at an empty table wondering why they cannot make the one
+   * bet the game opens with.
+   *
+   * Deliberately not cleared on a handover. One player leaving mid-point while
+   * another is still there must leave the point exactly where it is.
+   */
+  private async tableEmptied(table: string): Promise<void> {
+    if (this.queueFor(table).length > 0) {
+      await this.announceShooter(table)
+      return
+    }
+
+    this.sendAll({ t: 'shooter', table, id: null })
+
+    try {
+      await this.state.storage.delete(`state:${table}`)
+      await this.state.storage.deleteAlarm()
+    } catch {
+      // Best-effort, like every storage touch here. A state that outlives its
+      // table is a bad round; a throw here would be a dead relay.
+    }
   }
 
   /** Everyone in the room except `self`, with whatever pose they last sent. */

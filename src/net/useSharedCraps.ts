@@ -8,8 +8,10 @@ import { PlayMode, useSessionStore } from '../store/useSessionStore'
 
 /** What the craps table needs to know about the people around it. */
 export interface SharedCraps {
-  /** True when other people are at this table and the room owns the dice. */
+  /** True when the room owns the dice, whether or not it is reachable now. */
   readonly shared: boolean
+  /** False while the socket is down; the table waits rather than playing alone. */
+  readonly connected: boolean
   /** True when this player holds the dice. Always true playing alone. */
   readonly isShooter: boolean
   /** Whether anything is stopping a throw right now. */
@@ -45,8 +47,23 @@ export function useSharedCraps(): SharedCraps {
   const isRolling = useCrapsStore((state) => state.isRolling)
   const game = useCrapsStore((state) => state.game)
 
-  const shared =
-    mode === PlayMode.Multiplayer && connected && activeTable === TableId.Craps
+  /*
+   * Keyed on the mode the player chose, never on whether the socket happens to
+   * be up this instant.
+   *
+   * `connected` is false for a moment every time the room changes — `enterRoom`
+   * stops the old socket before opening the new one — and it goes false again
+   * on any drop. With `connected` in here, a player who reached the rail during
+   * that window silently fell through to the solo path: `isShooter` is
+   * `!shared`, so the roll button went live for everybody at the table at once.
+   * That is the bug two people found by standing at one table and both being
+   * able to throw.
+   *
+   * Failing closed is also the honest behaviour. Somebody who chose Multiplayer
+   * should wait for the room, not quietly be given a private game they did not
+   * ask for and cannot tell apart.
+   */
+  const shared = mode === PlayMode.Multiplayer && activeTable === TableId.Craps
 
   /*
    * Alone, the dice are always yours. `shooterId` is null until the room says
@@ -71,10 +88,15 @@ export function useSharedCraps(): SharedCraps {
 
   return {
     shared,
+    /** True while the room is reachable. False means the table is waiting. */
+    connected,
     isShooter,
-    canRoll: !isRolling && isShooter,
+    canRoll: !isRolling && isShooter && (!shared || connected),
     roll: () => {
       if (isRolling) return
+      // Nothing to ask, and nothing to throw locally: a shared table that has
+      // lost its room waits for it rather than dealing itself a private game.
+      if (shared && !connected) return
       // Asking rather than throwing. The room refuses if it is not your turn,
       // so the check above is a courtesy to the player and this is the rule.
       if (shared) requestRoll()
