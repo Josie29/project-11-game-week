@@ -29,6 +29,17 @@ const outDir = resolve(process.argv[3] ?? 'shots/walkthrough')
 /** Long enough for a scene transition plus its settle animation. */
 const SETTLE_MS = 2000
 
+/**
+ * Burst length for a leg that has to stop *at* a door.
+ *
+ * A door offers itself across about six units of kerb, and the player now has
+ * to be inside that when a burst ends rather than merely to have crossed it
+ * mid-burst — pressing F is a separate act from walking. Half a second is
+ * 1.9 units at the three frames a second headless manages and 3.75 at sixty, so
+ * neither end of that range can step over the window.
+ */
+const DOOR_BURST_MS = 500
+
 await rm(outDir, { recursive: true, force: true })
 await mkdir(outDir, { recursive: true })
 
@@ -69,17 +80,6 @@ async function isVisible(text) {
   return page.getByText(text, { exact: false }).first().isVisible()
 }
 
-/** Walks in short bursts until `text` is gone, or gives up. */
-async function walkUntilGone(keys, text, { burstMs = 700, bursts = 30 } = {}) {
-  for (let i = 0; i < bursts; i++) {
-    if (!(await isVisible(text))) return
-    await walk(keys, burstMs)
-    await page.waitForTimeout(120)
-  }
-
-  throw new Error(`walked ${bursts} bursts of ${keys.join('+')} still seeing "${text}"`)
-}
-
 /**
  * Walks in short bursts until `text` appears, or gives up.
  *
@@ -116,6 +116,18 @@ async function walkAtMost(keys, text, { burstMs = 700, bursts = 20 } = {}) {
   }
 }
 
+/**
+ * Presses the interact key once, and waits for whatever it opened.
+ *
+ * A press rather than a hold. `useActionKey` ignores auto-repeat, so a hold
+ * would act exactly once anyway — but a press is what a player does, and this is
+ * the script that is supposed to behave like one.
+ */
+async function interact() {
+  await page.keyboard.press('KeyF')
+  await page.waitForTimeout(900)
+}
+
 async function capture(name) {
   await page.waitForTimeout(SETTLE_MS)
   await page.screenshot({ path: resolve(outDir, `${name}.png`) })
@@ -145,16 +157,27 @@ try {
 
   // 2. Head diagonally for the shop's side of the street. The player clamps at
   //    the kerb, so the D component stops mattering once they reach it and the
-  //    W component carries them down to the door.
-  //
-  //    Note there is no waiting on the "Walk in to shop" prompt here. `Player`
-  //    calls `enterVenue` in the same frame it sets `nearbyVenue`, so for an
-  //    available venue the prompt is replaced by the interior before it ever
-  //    paints — it only really shows for a venue that is closed.
+  //    W component carries them down the row of doors.
   for (let i = 0; i < 6; i++) await walk(['KeyW', 'KeyD'], 700)
   await capture('3-approaching')
 
-  await walkUntil(['KeyW', 'KeyD'], 'The Gilded Hanger')
+  /*
+   * 3. Stop at the shop's door and knock.
+   *
+   *    Walking past a venue used to be impossible — `Player` entered on contact,
+   *    in the same frame it noticed the door, so the prompt below never once
+   *    painted for an open venue. Waiting for it to paint and then pressing F is
+   *    both what a player does now and what makes the rest of this script
+   *    tractable: the legs that walk the length of the strip no longer have to
+   *    be threaded between doorways that would swallow them.
+   */
+  await walkUntil(['KeyW', 'KeyD'], 'Press F to shop', { burstMs: DOOR_BURST_MS, bursts: 40 })
+  await interact()
+
+  //    Asserted on something only the panel has. The shop's *name* is no longer
+  //    proof of being inside it — the door prompt out on the street carries it
+  //    too.
+  await page.getByRole('button', { name: 'Buy' }).last().waitFor({ timeout: 5000 })
   await capture('4-shop')
 
   // 4. Buy the cheapest thing in the shop and put it on.
@@ -164,53 +187,29 @@ try {
   await wear.click()
   await capture('5-wearing')
 
-  // 5. Out of the shop and further down the same kerb to the clinic.
-  //
-  //    The clinic before the casino, deliberately: they are on the same side of
-  //    the street with nothing between them, whereas walking back *up* from the
-  //    casino means passing the shop's door, and a burst covers more ground
-  //    than the door's trigger is wide.
+  /*
+   * 5. Out of the shop and on down the same kerb to the clinic.
+   *
+   *    Escape rather than a door: the shop is a panel, not a room you can walk
+   *    around, so it has no exit to stand at.
+   *
+   *    This leg used to be the worst thing in this file. Leaving a venue puts
+   *    the player three and a half units into the road, the shop's door used to
+   *    grab anything within two and a half, and the first step back toward the
+   *    kerb was inside that — so the run would walk straight back into the shop
+   *    it had just left, and the open panel would eat every keystroke remaining.
+   *    Three different arrangements of counted bursts failed, in both directions.
+   *    Now it is one scan: walk down the kerb until the clinic offers.
+   */
   await page.keyboard.press('Escape')
-  //    Long enough for the strip to be drawing frames again. The first burst
-  //    after a scene change routinely covers no ground at all, and this leg has
-  //    no slack to spend on it — see below.
   await page.waitForTimeout(1200)
 
-  /*
-   *    Down the kerb, shrugging the shop off if it grabs us on the way past.
-   *
-   *    Every counted version of this leg failed, and it is worth saying why,
-   *    because the instinct is always to retune the count. Leaving a venue puts
-   *    the player 3.5 units into the road against a trigger 2.6 wide, so the
-   *    first step back toward the kerb is within half a unit of walking straight
-   *    back in. Stepping *down* the street first fixes that — but the step has
-   *    to be at least four units to clear the door and at most sixteen to stop
-   *    short of the clinic, and a burst covers anywhere from half a unit to five
-   *    depending on what the renderer managed. No fixed count lives in that
-   *    window; two different ones failed in opposite directions.
-   *
-   *    So it does not count. It walks in steps small enough not to step over the
-   *    clinic's trigger, and if the shop takes it, it leaves and carries on.
-   *    Walking back into the shop is not a failure to prevent, just something to
-   *    recover from — and it is recoverable, because leaving always puts the
-   *    player in the same spot and the step down the street is pure forward,
-   *    which is the one direction that reliably holds its line.
-   */
-  for (let i = 0; i < 40; i++) {
-    if (await isVisible('F to use a chair')) break
-
-    if (await isVisible('The Gilded Hanger')) {
-      await page.keyboard.press('Escape')
-      await page.waitForTimeout(900)
-      await walk(['KeyW'], 700)
-      continue
-    }
-
-    await walk(['KeyW', 'KeyD'], 350)
-    await page.waitForTimeout(120)
-  }
-
-  await expectText('F to use a chair', 'walking down to the clinic')
+  await walkUntil(['KeyW', 'KeyD'], 'Press F to donate', {
+    burstMs: DOOR_BURST_MS,
+    bursts: 45,
+  })
+  await interact()
+  await expectText('F at a chair or the door', 'walking into the clinic')
   await capture('6-clinic')
 
   // 6. Sell a pint. Ten seconds of nurse, and the bankroll is the proof.
@@ -264,30 +263,50 @@ try {
   console.log(`     the pint paid $${after - before}`)
   await capture('8-donated')
 
-  // 7. Out of the clinic, across the street and up to the casino.
+  /*
+   * 7. Out of the clinic by its door, then across the street to the casino.
+   *
+   *    Escape stands the donor up; it does not leave the building. There is no
+   *    Escape-from-anywhere for a room — the door is the only way out, which is
+   *    the whole reason the exit carries a prompt and a lit sign.
+   *
+   *    S and D together because the door is at the far corner from the chairs:
+   *    the recliners run down the left wall and the way out is centre-right.
+   */
   await page.keyboard.press('Escape')
   await page.waitForTimeout(700)
-  await walkUntilGone(['KeyS'], 'F to use a chair', { bursts: 30 })
+
+  await walkUntil(['KeyS', 'KeyD'], 'Press F to step out', {
+    burstMs: DOOR_BURST_MS,
+    bursts: 40,
+  })
+  await interact()
+  await expectText('F at a door', 'stepping back onto the strip')
 
   /*
-   *    Cross, then ride the kerb up to the door.
+   *    Cross, then ride the kerb up to the casino's door.
    *
    *    The crossing is the leg that does not behave the same way twice. Movement
    *    is camera-relative and `walk` re-pins the camera each burst, so whether
    *    the player finishes it pinned square against the far kerb at the clinic's
-   *    row or curls the last few units up into the casino's doorway is decided
-   *    by frame timing. Both were observed on the same machine minutes apart.
+   *    row or curls the last few units up level with the casino is decided by
+   *    frame timing. Both were observed on the same machine minutes apart.
    *
    *    Hence a leg that tolerates either, followed by one that only has work to
-   *    do in the first case. Going up rather than straight across also keeps the
-   *    player off the diagonal, which reaches the casino's row while still out
-   *    in the middle of the road, seven units short of the door.
+   *    do in the first case. Going up the kerb rather than straight across also
+   *    keeps the player off the diagonal, which reaches the casino's row while
+   *    still out in the middle of the road, seven units short of the door.
    */
-  await walkAtMost(['KeyA'], 'F to sit at a table', { bursts: 20 })
-  await walkUntil(['KeyS', 'KeyA'], 'F to sit at a table', { burstMs: 350, bursts: 60 })
+  await walkAtMost(['KeyA'], 'Press F to play', { bursts: 20 })
+  await walkUntil(['KeyS', 'KeyA'], 'Press F to play', {
+    burstMs: DOOR_BURST_MS,
+    bursts: 60,
+  })
+  await interact()
+  await expectText('F at a table or the door', 'walking into the casino')
 
   /*
-   *    Shorter bursts for the last few feet, and only here.
+   *    Shorter bursts for the last few feet across the floor.
    *
    *    A counted leg cannot use them — under about 330 ms no frame lands and the
    *    player moves nothing, so shortening the burst only wastes the count. A
@@ -320,7 +339,7 @@ try {
   //    the only part of the room a `?boot=` link cannot reach.
   await page.keyboard.press('Escape')
   await page.waitForTimeout(800)
-  await expectText('F to sit at a table', 'standing back up')
+  await expectText('F at a table or the door', 'standing back up')
 
   /*
    *    Straight across, at the depth the blackjack seat already put the player.

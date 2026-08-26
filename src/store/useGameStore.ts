@@ -16,8 +16,17 @@ export enum Location {
 
 export const STARTING_BANKROLL = 500
 
-/** Pushes the player back from a door on exit so they do not instantly re-enter. */
-const EXIT_OFFSET = 3.5
+/**
+ * How far out onto the pavement leaving a venue puts the player.
+ *
+ * It was 3.5, which is out in the road, and it was 3.5 because a door opened on
+ * contact: anything less and stepping out put you straight back in. Now that
+ * going in takes a keypress, the number is free to be what it should always
+ * have been — a step outside the door, close enough that the prompt to go back
+ * in is still up, so leaving is visibly undoable rather than a shove into
+ * traffic.
+ */
+const EXIT_OFFSET = 2.4
 
 interface GameStore {
   bankroll: number
@@ -31,8 +40,18 @@ interface GameStore {
   debt: number
   location: Location
   activeVenue: VenueId | null
-  /** Casino the player is standing next to, for the HUD prompt. */
+  /** Venue the player is standing at the door of, for the HUD prompt. */
   nearbyVenue: VenueId | null
+  /**
+   * Whether the player is standing at the way out of the room they are in.
+   *
+   * A flag rather than an id because a room has exactly one door. It exists at
+   * all because the exit used to work on contact: walking within three units of
+   * the clinic's door put you back on the street, which is a distance that also
+   * covers the end recliner. The way out now offers itself and waits, like every
+   * other thing F acts on.
+   */
+  nearbyExit: boolean
   /**
    * The table the player is sitting at, or `null` while walking the floor.
    *
@@ -91,6 +110,7 @@ interface GameStore {
 
   enterVenue: (id: VenueId) => void
   leaveVenue: () => void
+  setNearbyExit: (near: boolean) => void
   sitAt: (table: TableId) => void
   standUp: () => void
   setNearbyTable: (table: TableId | null) => void
@@ -151,6 +171,7 @@ export const useGameStore = create<GameStore>()(
       location: Location.Strip,
       activeVenue: null,
       nearbyVenue: null,
+      nearbyExit: false,
       activeTable: null,
       nearbyTable: null,
       floorPosition: ENTRANCE,
@@ -169,6 +190,9 @@ export const useGameStore = create<GameStore>()(
           location: Location.Interior,
           activeVenue: id,
           nearbyVenue: null,
+          // Arriving is never also standing at the way out — see the exit
+          // radius assertions in `venueDoors.test.ts`.
+          nearbyExit: false,
           // Always arrive on your feet at the door, never already seated.
           activeTable: null,
           nearbyTable: null,
@@ -289,13 +313,14 @@ export const useGameStore = create<GameStore>()(
         }
 
         const [x, y, z] = getVenue(activeVenue).doorPosition
-        // Step back toward the centre of the street, away from the facade.
+        // Out toward the middle of the road, whichever side the door is on.
         const offsetX = x < 0 ? EXIT_OFFSET : -EXIT_OFFSET
 
         set({
           location: Location.Strip,
           activeVenue: null,
           nearbyVenue: null,
+          nearbyExit: false,
           activeTable: null,
           nearbyTable: null,
           atChair: null,
@@ -304,6 +329,12 @@ export const useGameStore = create<GameStore>()(
           nurseTask: NurseTask.Patrolling,
           spawnPosition: [x + offsetX, y, z],
         })
+      },
+
+      setNearbyExit: (near) => {
+        // Called from the render loop, so bail out unless it actually changed.
+        if (get().nearbyExit === near) return
+        set({ nearbyExit: near })
       },
 
       setNearbyVenue: (id) => {

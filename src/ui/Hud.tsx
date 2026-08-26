@@ -1,6 +1,7 @@
 import { STANDING_TABLES, TABLE_LABELS } from '../scenes/casinoFloorLayout'
 import { Location, useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
+import { INTERACT_LABEL } from '../world/controls'
 import { getVenue, VenueKind } from '../world/venues'
 import { daylightAt, formatClock } from '../world/timeOfDay'
 
@@ -14,6 +15,7 @@ export function Hud() {
   const activeTable = useGameStore((state) => state.activeTable)
   const atChair = useGameStore((state) => state.atChair)
   const nearbyChair = useGameStore((state) => state.nearbyChair)
+  const nearbyExit = useGameStore((state) => state.nearbyExit)
   const activeVenue = useGameStore((state) => state.activeVenue)
   const minuteOfDay = useTimeStore((state) => state.minuteOfDay)
 
@@ -41,24 +43,31 @@ export function Hud() {
 
       {location === Location.Strip && (
         <div className="hud__hint">
-          WASD to walk &middot; drag to look &middot; scroll to zoom &middot; R to reset
+          WASD to walk &middot; F at a door &middot; drag to look &middot; R to reset
         </div>
       )}
 
       {location === Location.Interior && (
         <div className="hud__hint">
+          {/*
+            The door is named here because it is the only way out — there is no
+            Escape-from-anywhere. A player who cannot find it is stuck, so the
+            standing hint says where to point F as well as the prompt at the
+            door itself.
+          */}
           {seated
             ? 'Drag to look · scroll to zoom · R to reset'
             : atClinic
-              ? 'WASD to walk · F to use a chair · drag to look · R to reset'
-              : 'WASD to walk · F to sit at a table · drag to look · R to reset'}
+              ? 'WASD to walk · F at a chair or the door · drag to look · R to reset'
+              : 'WASD to walk · F at a table or the door · drag to look · R to reset'}
         </div>
       )}
 
       {/*
-        The table prompt. Unlike the door prompt, this one actually paints —
-        walking up to a table only offers the seat, it does not take it, so the
-        player has time to read it.
+        Every prompt below is the same shape on purpose: what you are standing
+        at, and what F will do about it. There used to be two kinds — things
+        that offered, and doors, which simply happened to you on contact and
+        whose prompt therefore never painted at all.
       */}
       {nearbyTable !== null && activeTable === null && (
         <div className="hud__prompt">
@@ -67,7 +76,8 @@ export function Hud() {
             {/* You stand at craps and sit at blackjack, and the prompt should
                 say which — offering a seat at a table that has none is the kind
                 of small lie that makes the rest read as approximate. */}
-            Press <kbd>F</kbd> to {STANDING_TABLES.has(nearbyTable) ? 'take the rail' : 'sit'}
+            Press <kbd>{INTERACT_LABEL}</kbd> to{' '}
+            {STANDING_TABLES.has(nearbyTable) ? 'take the rail' : 'sit'}
           </span>
         </div>
       )}
@@ -77,7 +87,17 @@ export function Hud() {
         <div className="hud__prompt">
           <strong>Donation chair</strong>
           <span>
-            Press <kbd>F</kbd> to sit
+            Press <kbd>{INTERACT_LABEL}</kbd> to sit
+          </span>
+        </div>
+      )}
+
+      {/* The way back out to the strip. The only way, so it has to be read. */}
+      {nearbyExit && (
+        <div className="hud__prompt">
+          <strong>Out to the strip</strong>
+          <span>
+            Press <kbd>{INTERACT_LABEL}</kbd> to step out
           </span>
         </div>
       )}
@@ -91,11 +111,15 @@ export function Hud() {
             player reads once and stops trusting the rest of the screen over.
           */}
           <span>
-            {nearby.available
-              ? nearby.invitation
-              : daylightAt(minuteOfDay) > 0.5
-                ? 'Closed today'
-                : 'Closed tonight'}
+            {nearby.available ? (
+              <>
+                Press <kbd>{INTERACT_LABEL}</kbd> to {nearby.invitation}
+              </>
+            ) : daylightAt(minuteOfDay) > 0.5 ? (
+              'Closed today'
+            ) : (
+              'Closed tonight'
+            )}
           </span>
         </div>
       )}

@@ -1,9 +1,10 @@
 import { PerspectiveCamera } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
-import { useEffect, useMemo, useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { BackSide, PerspectiveCamera as PerspectiveCameraImpl, Vector3 } from 'three'
 import { useAppearanceStore } from '../store/useAppearanceStore'
 import { useGameStore } from '../store/useGameStore'
+import { INTERACT_KEY } from '../world/controls'
 import {
   CAMERA_BOUNDS,
   CHAIR_COUNT,
@@ -36,6 +37,7 @@ import { CasinoCharacter } from './components/CasinoCharacter'
 import { ClinicStaff } from './components/ClinicStaff'
 import { ExitDoor } from './components/ExitDoor'
 import { WalkingPlayer, type ProximityTarget } from './components/WalkingPlayer'
+import { useActionKey } from './useActionKey'
 
 /*
  * Red River Plasma's donation room.
@@ -162,25 +164,21 @@ export function ClinicInterior() {
   const donation = useGameStore((state) => state.donation)
 
   /**
-   * F sits down in whichever recliner the player is standing at.
+   * F acts on whatever the player is standing at: a recliner, or the way out.
    *
-   * The same plain listener as the casino floor, and F for the same reason: E
-   * is already `Control.OrbitRight`.
+   * The same arrangement as the casino floor, and for the same reasons. Note
+   * that it stays live while the player is in a chair: `leaveChair` is the Esc
+   * on the donation panel, and the exit is never in range of a recliner, so
+   * there is nothing here for a seated donor to trigger by accident.
    */
-  useEffect(() => {
-    if (atChair !== null) return
+  useActionKey(INTERACT_KEY, () => {
+    const store = useGameStore.getState()
 
-    function onKeyDown(event: KeyboardEvent): void {
-      if (event.metaKey || event.ctrlKey || event.altKey) return
-      if (event.key.toLowerCase() !== 'f') return
-
-      const store = useGameStore.getState()
-      if (store.nearbyChair !== null) store.sitInChair(store.nearbyChair)
+    if (store.nearbyExit) store.leaveVenue()
+    else if (store.atChair === null && store.nearbyChair !== null) {
+      store.sitInChair(store.nearbyChair)
     }
-
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [atChair])
+  })
 
   const targets = useMemo<readonly ProximityTarget[]>(
     () => [
@@ -211,12 +209,8 @@ export function ClinicInterior() {
   function handleNearest(id: string | null): void {
     const store = useGameStore.getState()
 
-    if (id === 'exit') {
-      store.leaveVenue()
-      return
-    }
-
-    store.setNearbyChair(id === null ? null : chairIndex(id))
+    store.setNearbyExit(id === 'exit')
+    store.setNearbyChair(id === null || id === 'exit' ? null : chairIndex(id))
   }
 
   function handleGlance(id: string | null): void {

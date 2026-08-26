@@ -1,10 +1,11 @@
 import { PerspectiveCamera } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
-import { useEffect, useMemo, useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { PerspectiveCamera as PerspectiveCameraImpl, Vector3 } from 'three'
 import { DEALER_APPEARANCE } from '../character/appearance'
 import { useAppearanceStore } from '../store/useAppearanceStore'
 import { useGameStore } from '../store/useGameStore'
+import { INTERACT_KEY } from '../world/controls'
 import { getVenue, type VenueId } from '../world/venues'
 import {
   CAMERA_BOUNDS,
@@ -27,6 +28,7 @@ import { CasinoRoom } from './components/CasinoRoom'
 import { CrapsTable } from './components/CrapsTable'
 import { Stool } from './components/Stool'
 import { WalkingPlayer, type ProximityTarget } from './components/WalkingPlayer'
+import { useActionKey } from './useActionKey'
 import { useOrbitInput } from './useOrbitInput'
 
 interface CasinoInteriorProps {
@@ -207,27 +209,19 @@ export function CasinoInterior({ venueId }: CasinoInteriorProps) {
   const floorPosition = useGameStore((state) => state.floorPosition)
 
   /**
-   * F sits down at whatever the player is standing at.
+   * F acts on whatever the player is standing at: a table, or the way out.
    *
-   * A plain listener rather than a `KeyboardControls` binding, because sitting
-   * is an edge — holding F should seat you once, not every frame. Same pattern
-   * as Escape in `ShopPanel`. Note F rather than E: E is already
-   * `Control.OrbitRight`.
+   * The two cannot both be on offer — `WalkingPlayer` reports only the single
+   * nearest target, and `venueDoors.test.ts` keeps the exit's radius clear of
+   * every sit spot — so this needs no ranking. Disabled while seated, when the
+   * only thing F could act on is a table you are already at.
    */
-  useEffect(() => {
-    if (activeTable !== null) return
+  useActionKey(INTERACT_KEY, activeTable !== null ? null : () => {
+    const store = useGameStore.getState()
 
-    function onKeyDown(event: KeyboardEvent): void {
-      if (event.metaKey || event.ctrlKey || event.altKey) return
-      if (event.key.toLowerCase() !== 'f') return
-
-      const store = useGameStore.getState()
-      if (store.nearbyTable !== null) store.sitAt(store.nearbyTable)
-    }
-
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [activeTable])
+    if (store.nearbyExit) store.leaveVenue()
+    else if (store.nearbyTable !== null) store.sitAt(store.nearbyTable)
+  })
 
   const targets = useMemo<readonly ProximityTarget[]>(
     () => [
@@ -246,13 +240,10 @@ export function CasinoInterior({ venueId }: CasinoInteriorProps) {
   function handleNearest(id: string | null): void {
     const store = useGameStore.getState()
 
-    // The exit works on contact, like every other door in the game.
-    if (id === 'exit') {
-      store.leaveVenue()
-      return
-    }
-
-    store.setNearbyTable((id as TableId | null) ?? null)
+    // The exit offers itself and waits, like every other door in the game. It
+    // used to leave on contact, which made crossing the room a hazard.
+    store.setNearbyExit(id === 'exit')
+    store.setNearbyTable(id === 'exit' ? null : ((id as TableId | null) ?? null))
   }
 
   return (

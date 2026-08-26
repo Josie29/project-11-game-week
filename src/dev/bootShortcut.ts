@@ -23,11 +23,18 @@ const SHOPPING_SPREE = 5000
 /** Which recliner `?boot=drawing` uses. Mid-row, so both neighbours are in shot. */
 const DRAWING_CHAIR = 1
 
-/** Where `?boot=shopfront` stands the player. Clear of the door trigger. */
-const SHOPFRONT_VIEWPOINT: readonly [number, number, number] = [4.2, 0, -6]
+/**
+ * Where `?boot=shopfront` stands the player: at the door, on the mat.
+ *
+ * It used to stand well clear of it, because a door that opened on contact
+ * meant standing at one was the same as being inside. Now that the door offers
+ * and waits, the capture from here shows the storefront *and* the prompt that
+ * gets you through it, which is the pair worth being able to look at.
+ */
+const SHOPFRONT_VIEWPOINT: readonly [number, number, number] = [6.6, 0, -6]
 
 /** Where `?boot=clinicfront` stands the player. The mirror of the shop's. */
-const CLINICFRONT_VIEWPOINT: readonly [number, number, number] = [4.2, 0, -22]
+const CLINICFRONT_VIEWPOINT: readonly [number, number, number] = [6.6, 0, -22]
 
 /**
  * A fully accessorised character, for `?dressed`.

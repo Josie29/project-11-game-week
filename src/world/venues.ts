@@ -20,7 +20,13 @@ export interface VenueConfig {
   readonly doorPosition: readonly [number, number, number]
   /** Facade neon colour, also used for signage and the HUD accent. */
   readonly neonColor: string
-  /** What the door prompt offers, e.g. "Walk in to play". */
+  /**
+   * What is on offer inside, as the verb alone — "play", "shop".
+   *
+   * The prompt reads "Press F to play", so this is a fragment rather than a
+   * sentence. It used to be the whole line, "Walk in to play", which stopped
+   * being true the moment walking in stopped being how you get in.
+   */
   readonly invitation: string
   /** False while whatever is behind the door is still unbuilt. */
   readonly available: boolean
@@ -53,7 +59,7 @@ export const VENUES: readonly VenueConfig[] = [
     // The third neon in art/refs/strip_exterior.png, and unclaimed by either
     // casino.
     neonColor: '#ff4fa3',
-    invitation: 'Walk in to shop',
+    invitation: 'shop',
     available: true,
   },
   {
@@ -64,7 +70,7 @@ export const VENUES: readonly VenueConfig[] = [
     kind: VenueKind.Casino,
     doorPosition: [-8.5, 0, -14],
     neonColor: '#ffc63f',
-    invitation: 'Walk in to play',
+    invitation: 'play',
     available: true,
   },
   {
@@ -86,7 +92,7 @@ export const VENUES: readonly VenueConfig[] = [
     // Cold, and deliberately not a neon colour. Everything else on this street
     // glows; the clinic is lit.
     neonColor: '#cfe9ff',
-    invitation: 'Walk in to donate',
+    invitation: 'donate',
     available: true,
   },
 ]
@@ -117,5 +123,14 @@ export const STREET_BOUNDS = {
 
 export const PLAYER_SPAWN: readonly [number, number, number] = [0, 0, 8]
 
-/** How close the player must get to a door before it opens. */
-export const DOOR_TRIGGER_RADIUS = 2.6
+/**
+ * How close the player must be for a door to offer itself.
+ *
+ * Wider than it was, because what it means changed. As a contact trigger its
+ * size was a hazard — anything you walked into, you were inside — so it was kept
+ * mean. As the window in which a prompt is on screen and F does something, it is
+ * the player's margin for stopping in the right place, and being generous costs
+ * nothing. The three doors are sixteen units apart, so no two ever offer at
+ * once; `venueDoors.test.ts` holds that.
+ */
+export const DOOR_TRIGGER_RADIUS = 3

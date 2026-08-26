@@ -179,13 +179,20 @@ export const VENDING: readonly [number, number, number] = [4.9, 0, 1.8]
 
 export const EXIT_DOOR: readonly [number, number, number] = [0, 0, 6.7]
 /**
- * Generous, like the strip's own doors.
+ * Just the doorway, and no more.
  *
- * The room is barely three paces wide at the door end, and a tight trigger
- * meant walking straight back from a recliner missed it — the player ended up
- * pressed into the corner beside the way out.
+ * This was 3, which was sized for an exit that fired on contact: a big circle
+ * was how you made sure a player heading for the door actually hit it. It also
+ * reached 3.6 to the end recliner's sit spot, close enough that walking over to
+ * that chair put you back on the street instead — and, being the nearer target
+ * on the way, took the chair's own prompt down with it.
+ *
+ * As a prompt the radius only has to cover where somebody stands to use the
+ * door, so it is now in line with the casino's 1.6. The door sits at z 6.7 and
+ * the player can walk to 6.5, so it is still trivially reachable;
+ * `venueDoors.test.ts` holds both ends of that.
  */
-export const EXIT_RADIUS = 3
+export const EXIT_RADIUS = 1.8
 
 /**
  * Where the player appears on walking in: beside the nearest recliner.

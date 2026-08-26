@@ -118,8 +118,9 @@ time, before saying it is done:
 Both steps have already earned it. The walkthrough found that one long frame
 teleported the player down the street, because movement integrated an unclamped
 `delta` — invisible in every screenshot and in every test. It also found that
-the "Walk in to shop" prompt never paints for an open venue, because `Player`
-enters in the same frame it sets `nearbyVenue`.
+the door prompt never painted for an open venue at all, because `Player` entered
+in the same frame it set `nearbyVenue` — a prompt written, shipped and never once
+seen, which is why doors now take a keypress.
 
 **Run `npm run shot <url> <out.png>` and look at the image before claiming
 visual work is done.** An entire session's worth of table work shipped with
@@ -155,12 +156,12 @@ Dev-only deep links, stripped from production builds:
 | `?boot=placed` | craps with a point set and all six numbers covered |
 | `?boot=floor` | standing on the casino floor, between the tables |
 | `?boot=clinic` | standing on Red River Plasma's floor |
-| `?boot=clinicfront` | on the street outside the clinic |
+| `?boot=clinicfront` | at the clinic's door, prompt up |
 | `?boot=broke` | at blackjack with nothing, marker on offer |
 | `?boot=debt` | at blackjack with nothing and a marker outstanding |
 | `?boot=designer` | the dressing-room stage |
 | `?boot=shop` | The Gilded Hanger, bankroll topped up |
-| `?boot=shopfront` | on the street outside the shop, to look at the storefront |
+| `?boot=shopfront` | at the shop's door, prompt up, to look at the storefront |
 | `?boot=dressed` | the shop, every wardrobe slot filled |
 | `?boot=strip` | the street, with the first-run designer skipped |
 | `?look=DEGREES` | swings the strip camera round before it settles |
@@ -188,6 +189,26 @@ die looked identical to a die that had tunnelled out of the world;
 `worn:<slot>` anchors sitting exactly where `anchorFor` said they should be,
 which turned "the cane is not rendering" into "the cane is too dark to see" and
 changed the fix from geometry to a hex value.
+
+## Interaction
+
+**Nothing happens to the player because they walked somewhere.** Proximity
+offers; F accepts. One key for every offer — a table, a recliner, a venue door,
+the way back out — because only one is ever in range at a time, and the prompt on
+screen says which. `useActionKey` is the only listener; it guards `event.repeat`,
+without which a held F walks out of a room and back into it several times a
+second.
+
+That rule is written here because the opposite was the whole design and it made
+the strip feel like it was grabbing at you. Entering fired on contact, so you
+could not walk past a venue; the exit fired on contact too, so in the clinic
+walking over to the end recliner put you out on the street instead; and leaving
+set you down inside the door's own trigger, so stepping out and being dragged
+back in were the same gesture.
+
+**Two things that offer must not overlap**, because the handler takes the nearest
+and does not rank. `venueDoors.test.ts` holds it for every door and every seat,
+and it is what lets those handlers stay three lines long.
 
 ## Timers
 
