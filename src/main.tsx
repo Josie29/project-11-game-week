@@ -4,6 +4,7 @@ import { App } from './App'
 import { applyBootShortcut } from './dev/bootShortcut'
 import { startSaveSync } from './store/saveSync'
 import { useAppearanceStore } from './store/useAppearanceStore'
+import { useSessionStore } from './store/useSessionStore'
 import { poseBuffer, usePresenceStore } from './store/usePresenceStore'
 import { useGameStore } from './store/useGameStore'
 import { INTERPOLATION_DELAY_MS, interpolateAt } from './world/presence'
@@ -22,6 +23,13 @@ if (import.meta.env.DEV) {
   bridge.gameStore = useGameStore
   bridge.appearanceStore = useAppearanceStore
   bridge.presenceStore = usePresenceStore
+  /*
+   * Exposed so a harness can change the play mode mid-session, which is the one
+   * thing no `?boot=` link can express: the links set up a starting state, and
+   * what needs testing here is the *transition* — a player who switches to
+   * Single must actually leave the room rather than keep the socket they had.
+   */
+  bridge.sessionStore = useSessionStore
   /*
    * The interpolated pose of a peer, which is the one thing a harness cannot
    * read off the store: poses deliberately live outside it, in a buffer read
