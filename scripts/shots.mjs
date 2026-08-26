@@ -42,6 +42,9 @@ const SCENES = [
    * link for by hand, in a browser that has been through the screen before.
    */
   { name: 'welcome', path: '/?boot=welcome&time=21:00&freeze', settleMs: 2400 },
+  // The settings panel, which is the only place the play mode can be changed
+  // after the welcome screen has been through once.
+  { name: 'settings', path: '/?boot=settings&time=21:00&freeze', settleMs: 2400 },
   { name: 'strip', path: '/?boot=strip&time=21:00&freeze', settleMs: 2400 },
   { name: 'strip-dawn', path: '/?boot=strip&time=05:30&freeze', settleMs: 2400 },
   { name: 'strip-noon', path: '/?boot=strip&time=12:00&freeze', settleMs: 2400 },

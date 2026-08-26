@@ -2,16 +2,18 @@ import { AuthStatus, useAuthStore } from '../store/useAuthStore'
 import { isSupabaseConfigured } from '../store/supabase'
 
 /**
- * The sign-in control, tucked under the bankroll.
+ * Who is playing, and the control to change it. Lives in the settings panel.
  *
- * Deliberately small and deliberately optional. The brief is a game demoable in
- * under five minutes, so there is no sign-in wall: play starts immediately as a
- * guest and an account only ever adds something — the same chips on a second
- * device. A modal in front of the strip would cost more than the feature is
- * worth.
+ * Deliberately optional. The brief is a game demoable in under five minutes, so
+ * there is no sign-in wall: play starts immediately as a guest and an account
+ * only ever adds something — the same chips on a second device.
  *
- * Renders nothing at all when Supabase is unconfigured, so a build without the
- * environment variables looks exactly like the game did before accounts.
+ * It used to render nothing at all when Supabase was unconfigured, which was
+ * right under the bankroll and wrong the moment it moved: in the panel it sits
+ * beneath a "Playing as" heading, and a heading with nothing under it reads as
+ * a screen that failed to load. Unconfigured now says "Guest", which is both
+ * true and the answer to the question the heading asks. The sign-in *button*
+ * still only appears when there is something to sign in to.
  */
 export function AccountBadge() {
   const status = useAuthStore((state) => state.status)
@@ -20,10 +22,19 @@ export function AccountBadge() {
   const signInWithGoogle = useAuthStore((state) => state.signInWithGoogle)
   const signOut = useAuthStore((state) => state.signOut)
 
-  if (!isSupabaseConfigured) return null
+  if (!isSupabaseConfigured) {
+    return (
+      <p className="welcome__account">
+        <span>Guest</span>
+        <span className="welcome__note">
+          Everything stays in this browser. Nothing is sent anywhere.
+        </span>
+      </p>
+    )
+  }
 
   // Restoring is usually a single frame. Holding the row's height while it
-  // resolves stops the bankroll jumping as the badge appears underneath it.
+  // resolves stops the panel reflowing as the badge resolves underneath it.
   if (status === AuthStatus.Restoring) {
     return <span className="hud__account hud__account--quiet">&nbsp;</span>
   }

@@ -1,11 +1,13 @@
+import { useEffect } from 'react'
 import { findItem } from '../character/catalog'
 import { approvalTotal, isFitting, onApproval } from '../character/fitting'
-import { AccountBadge } from './AccountBadge'
 import { STANDING_TABLES, TABLE_LABELS } from '../scenes/casinoFloorLayout'
 import { useAppearanceStore } from '../store/useAppearanceStore'
+import { useSessionStore } from '../store/useSessionStore'
 import { Location, useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
-import { INTERACT_LABEL } from '../world/controls'
+import { SettingsPanel } from './SettingsPanel'
+import { INTERACT_LABEL, SETTINGS_KEY, SETTINGS_LABEL } from '../world/controls'
 import { getVenue, VenueKind } from '../world/venues'
 import { daylightAt, formatClock } from '../world/timeOfDay'
 
@@ -31,6 +33,28 @@ export function Hud() {
   const owned = useAppearanceStore((state) => state.owned)
   const fitting = useAppearanceStore((state) => state.fitting)
   const minuteOfDay = useTimeStore((state) => state.minuteOfDay)
+  const settingsOpen = useSessionStore((state) => state.settingsOpen)
+  const toggleSettings = useSessionStore((state) => state.toggleSettings)
+
+  /*
+   * The settings key, owned here rather than inside the panel.
+   *
+   * The panel is unmounted while closed, so a listener living in it could only
+   * ever close the thing that was already open. The HUD is up for the whole of
+   * play, which makes it the only place that can hear the key that opens it.
+   *
+   * `event.repeat` is guarded on the same rule as `useActionKey`: a held key
+   * would otherwise open and close the panel several times a second.
+   */
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.repeat) return
+      if (event.key.toLowerCase() === SETTINGS_KEY) toggleSettings()
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [toggleSettings])
 
   const nearby = nearbyVenue ? getVenue(nearbyVenue) : null
   const venue = activeVenue !== null ? getVenue(activeVenue) : null
@@ -74,8 +98,17 @@ export function Hud() {
             on approval {onApproval(fitting).length} · ${owing.toLocaleString()}
           </span>
         )}
-        {/* Under the money, because that is what an account is for here. */}
-        <AccountBadge />
+        {/*
+          The way into the one menu.
+
+          A button rather than only a key, because a key nobody is told about is
+          a key nobody presses — and the label carries the shortcut, so finding
+          it once is enough. It lives under the money because that is the corner
+          the player already reads.
+        */}
+        <button type="button" className="hud__menu" onClick={toggleSettings}>
+          Menu <kbd>{SETTINGS_LABEL}</kbd>
+        </button>
       </div>
 
       {/* Deliberately still shown indoors, where a real casino would have none. */}
@@ -230,6 +263,9 @@ export function Hud() {
           </span>
         </div>
       )}
+
+      {/* Last, so it layers over every prompt above rather than under them. */}
+      {settingsOpen && <SettingsPanel />}
     </div>
   )
 }

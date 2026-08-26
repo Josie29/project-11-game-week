@@ -1082,3 +1082,83 @@ kbd {
   flex: 0 0 auto;
   color: var(--color-text-muted);
 }
+
+/*
+ * The settings panel.
+ *
+ * Reuses the welcome screen's section and note classes rather than restating
+ * them: the two screens show the same two choices, and a second set of rules
+ * for the same controls is how two screens start looking like two products.
+ */
+.settings {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  /* Above every HUD prompt, which is why it is rendered last. */
+  z-index: 10;
+  background: rgba(5, 6, 15, 0.72);
+  /* The HUD is click-through; this is not. */
+  pointer-events: auto;
+  overflow-y: auto;
+}
+
+.settings__panel {
+  width: min(26rem, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  font-family: var(--font-ui);
+  color: var(--color-text);
+}
+
+.settings__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.settings__title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.settings__reset {
+  align-self: flex-start;
+}
+
+/* The only destructive control in the game, and it says so before the confirm. */
+.settings__destructive {
+  border-color: var(--color-loss);
+  color: var(--color-loss);
+}
+
+.hud__menu {
+  margin-top: var(--space-2);
+  align-self: flex-start;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  /* The HUD is click-through so it cannot eat drags on the scene; this is the
+     one thing in it that has to be clickable. */
+  pointer-events: auto;
+}
+
+.hud__menu:hover {
+  color: var(--color-text);
+  border-color: var(--color-neon-cyan);
+}

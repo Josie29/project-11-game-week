@@ -4,6 +4,7 @@ import { isSupabaseConfigured } from '../store/supabase'
 import { AuthStatus, useAuthStore } from '../store/useAuthStore'
 import { PlayMode, useSessionStore } from '../store/useSessionStore'
 import { ControlsCard } from './ControlsCard'
+import { ModeChoice } from './ModeChoice'
 
 /**
  * The first screen, and the only one that asks anything before play starts.
@@ -93,31 +94,7 @@ export function WelcomeScreen() {
         <section className="welcome__section">
           <h2 className="welcome__legend">How to play</h2>
 
-          <div className="welcome__choices">
-            <button
-              type="button"
-              className={`button button--choice${chosenMode === PlayMode.Single ? ' button--choice-on' : ''}`}
-              onClick={() => setMode(PlayMode.Single)}
-            >
-              Single player
-            </button>
-            <button
-              type="button"
-              className={`button button--choice${chosenMode === PlayMode.Multiplayer ? ' button--choice-on' : ''}`}
-              disabled={!isMultiplayerConfigured}
-              onClick={() => setMode(PlayMode.Multiplayer)}
-            >
-              Multiplayer
-            </button>
-          </div>
-
-          <p className="welcome__note">
-            {!isMultiplayerConfigured
-              ? 'Multiplayer is unavailable in this build.'
-              : chosenMode === PlayMode.Multiplayer
-                ? 'Other players walk the same strip and stand in the same rooms.'
-                : 'Nobody else on your strip. No connection is made.'}
-          </p>
+          <ModeChoice value={chosenMode} onPick={setMode} />
         </section>
 
         <section className="welcome__section">

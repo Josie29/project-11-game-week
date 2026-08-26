@@ -25,10 +25,21 @@ interface SessionStore {
    */
   hasWelcomed: boolean
   mode: PlayMode
+  /**
+   * Whether the settings panel is up.
+   *
+   * Deliberately excluded from `partialize`. A reload that came back with the
+   * menu open would be a menu the player never asked for, over a scene they had
+   * already started playing.
+   */
+  settingsOpen: boolean
 
   /** Records the choice and puts the player into the game. */
   completeWelcome: (mode: PlayMode) => void
   setMode: (mode: PlayMode) => void
+  openSettings: () => void
+  closeSettings: () => void
+  toggleSettings: () => void
   /** Reopens the welcome screen. Dev and "start over" only. */
   reset: () => void
 }
@@ -47,7 +58,7 @@ export function sanitizeMode(value: unknown): PlayMode {
 
 export const useSessionStore = create<SessionStore>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       hasWelcomed: false,
       /*
        * Single until chosen otherwise, so nothing can open a socket on a player
@@ -55,10 +66,24 @@ export const useSessionStore = create<SessionStore>()(
        * fresh profile and would otherwise be the first to find out.
        */
       mode: PlayMode.Single,
+      settingsOpen: false,
 
       completeWelcome: (mode) => set({ hasWelcomed: true, mode }),
       setMode: (mode) => set({ mode }),
-      reset: () => set({ hasWelcomed: false, mode: PlayMode.Single }),
+
+      openSettings: () => set({ settingsOpen: true }),
+      closeSettings: () => set({ settingsOpen: false }),
+      toggleSettings: () => set({ settingsOpen: !get().settingsOpen }),
+
+      /*
+       * Closes the panel on the way out.
+       *
+       * "Start over" is pressed inside the settings panel and its whole effect
+       * is to put the welcome screen back up. Leaving `settingsOpen` true would
+       * stack the menu on top of it, and dismissing that would drop the player
+       * into a game they had just asked to restart.
+       */
+      reset: () => set({ hasWelcomed: false, mode: PlayMode.Single, settingsOpen: false }),
     }),
     {
       // Its own key, on the same rule as the wardrobe: adding this must not
@@ -79,6 +104,14 @@ export const useSessionStore = create<SessionStore>()(
           mode: sanitizeMode(saved.mode),
         }
       },
+      /*
+       * Only the two decisions, never the menu's own state.
+       *
+       * Without this every field is written, so a player who reloaded with the
+       * settings panel open would come back to it open — a menu in front of a
+       * game they were already playing.
+       */
+      partialize: (state) => ({ hasWelcomed: state.hasWelcomed, mode: state.mode }),
     },
   ),
 )

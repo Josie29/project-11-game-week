@@ -233,6 +233,24 @@ try {
   await expectText('WASD to walk', 'leaving the designer')
   await capture('2-strip')
 
+  /*
+   * 1b. The settings panel, opened with the key and closed with Escape.
+   *
+   *     Both halves are covered on purpose. The key is the only way in that
+   *     `?boot=settings` cannot prove — that link sets the panel open before
+   *     the first render, so it would pass with the listener deleted. And
+   *     Escape closing it is the claim that the key keeps its one meaning
+   *     everywhere: leave the thing you are in.
+   */
+  await page.keyboard.press('KeyM')
+  await page.waitForTimeout(400)
+  await expectText('Start over', 'opening settings with M')
+  await capture('2b-settings')
+
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(400)
+  await expectText('WASD to walk', 'closing settings with Escape')
+
   // 2. Head diagonally for the shop's side of the street. The player clamps at
   //    the kerb, so the D component stops mattering once they reach it and the
   //    W component carries them down the row of doors.

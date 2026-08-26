@@ -255,6 +255,7 @@ export function applyBootShortcut(): void {
 
   const known = [
     'welcome',
+    'settings',
     'casino',
     'table',
     'settled',
@@ -310,6 +311,19 @@ export function applyBootShortcut(): void {
   useSessionStore
     .getState()
     .completeWelcome(params.get('mp') === '1' ? PlayMode.Multiplayer : PlayMode.Single)
+
+  if (boot === 'settings') {
+    /*
+     * The settings panel, open on the strip.
+     *
+     * Multiplayer rather than Single so the capture shows the toggle in the
+     * state that has something to say — and because the mode a `?boot=` link
+     * sets is otherwise never visible in any shot.
+     */
+    useAppearanceStore.getState().completeDesign()
+    useSessionStore.getState().openSettings()
+    return
+  }
 
   if (boot === 'designer') {
     useGameStore.getState().openDesigner()
