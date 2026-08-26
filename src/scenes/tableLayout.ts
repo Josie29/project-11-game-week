@@ -193,3 +193,80 @@ export function handAnchorX(handIndex: number, handCount: number): number {
   const step = (SPLIT_OFFSET * 2) / (handCount - 1)
   return -SPLIT_OFFSET + handIndex * step
 }
+
+/**
+ * The row five seats share, a little forward of where one player sits alone.
+ *
+ * The felt is an ellipse, so its usable width falls away as it goes back: 2.54
+ * at the solo card row and only 1.86 at the solo chip row. Five seats do not
+ * fit across the back of it — the cards go on and the chips fall off the table.
+ * Moving the whole row forward by 0.16 and closing the gap between a seat's
+ * cards and its chips is what buys the width, and it is the smallest change
+ * that does: everything else tried either put the cards out by the dealer or
+ * left a stack overhanging the rail.
+ */
+export const SHARED_ROW_Z = 0.99
+
+/**
+ * Where each seat's cards sit, first base to third base.
+ *
+ * Same order as `PLAYER_SEATS`, so the stool and the betting spot in front of
+ * it belong to the same seat index — asserted, because a player sitting behind
+ * somebody else's cards is the kind of thing that looks fine until two people
+ * are actually at the table.
+ *
+ * Narrower than the stools they belong to: the seats span ±1.73 and the stools
+ * ±2.6, so the outer players reach inward for their cards. That is what a real
+ * table looks like, and it is also the only way five sets of chips stay on an
+ * oval this size.
+ */
+export const SEAT_SPOTS: readonly { readonly x: number; readonly z: number }[] = [
+  { x: -1.73, z: SHARED_ROW_Z },
+  { x: -0.86, z: SHARED_ROW_Z },
+  { x: 0, z: SHARED_ROW_Z },
+  { x: 0.86, z: SHARED_ROW_Z },
+  { x: 1.73, z: SHARED_ROW_Z },
+]
+
+/**
+ * How far a shared seat's split hands sit from its own spot.
+ *
+ * A quarter of the solo value, because a lone player owns the whole felt and a
+ * seat at a full table owns about a fifth of it. Wide enough to read as two
+ * hands, narrow enough that a resplit at the outer seats stays on the table.
+ */
+export const SEAT_SPLIT_OFFSET = 0.26
+
+/** How far behind a seat's cards its chips sit, on a shared table. */
+export const SEAT_CHIP_GAP = 0.25
+
+/**
+ * Where one hand belongs: which seat, and which of that seat's hands.
+ *
+ * A one-seat table returns exactly what it always did — `handAnchorX` about the
+ * centre line at `PLAYER_ROW_Z` — so solo blackjack is unchanged down to the
+ * pixel and every capture of it still holds. The arc only exists once somebody
+ * else sits down.
+ */
+export function handAnchor(
+  seatIndex: number,
+  seatCount: number,
+  handIndex: number,
+  handCount: number,
+): { x: number; z: number; chipZ: number } {
+  if (seatCount <= 1) {
+    return {
+      x: handAnchorX(handIndex, handCount),
+      z: PLAYER_ROW_Z,
+      chipZ: CHIP_ROW_Z,
+    }
+  }
+
+  const spot = SEAT_SPOTS[seatIndex] ?? SEAT_SPOTS[0]!
+  const spread =
+    handCount <= 1
+      ? 0
+      : -SEAT_SPLIT_OFFSET + handIndex * ((SEAT_SPLIT_OFFSET * 2) / (handCount - 1))
+
+  return { x: spot.x + spread, z: spot.z, chipZ: spot.z + SEAT_CHIP_GAP }
+}

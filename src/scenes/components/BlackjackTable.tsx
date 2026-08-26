@@ -1,22 +1,19 @@
 import { useMemo } from 'react'
-import { handsOf, seatAt } from '../../games/blackjack/engine'
 import { RoundPhase } from '../../games/blackjack/types'
 import { CatmullRomCurve3, ExtrudeGeometry, Shape, TubeGeometry, Vector3 } from 'three'
 import { ChipPhase, useBlackjackStore } from '../../store/useBlackjackStore'
 import { useGameStore } from '../../store/useGameStore'
 import { chipBreakdown, stackHeight } from '../chipLayout'
 import {
-  CHIP_ROW_Z,
   DEALER_DEPTH,
   DEALER_RACK,
   DEALER_ROW_Z,
   DISCARD_POSITION,
   HALF_WIDTH,
-  handAnchorX,
+  handAnchor,
   PAYOUT_NUDGE_X,
   PAYOUT_NUDGE_Z,
   PLAYER_DEPTH,
-  PLAYER_ROW_Z,
   SLAB_THICKNESS,
   STASH_ORIGIN,
   SURFACE_Y,
@@ -120,12 +117,13 @@ export function BlackjackTable() {
   const isClearing = chipPhase === ChipPhase.Settling
 
   /*
-   * One betting spot's worth of felt, which is the first seat. `handAnchorX`
-   * spreads a split across the space in front of a single player, so a second
-   * seat needs its own row rather than another entry in this one.
+   * Every seat at the table, not just the first.
+   *
+   * `handAnchor` decides where each one's cards and chips go, and returns the
+   * old single-player positions unchanged when there is only one seat — so a
+   * solo table draws exactly what it always drew.
    */
-  const hands = handsOf(game)
-  const activeHandIndex = seatAt(game, 0)?.activeHandIndex ?? 0
+  const seatCount = game.seats.length
 
   // Empties the shoe and fills the discard tray as the shoe is played down,
   // and resets itself when `startNextRound` reshuffles at penetration.
@@ -217,9 +215,19 @@ export function BlackjackTable() {
         />
       ))}
 
-      {hands.map((hand, handIndex) => {
-        const anchorX = handAnchorX(handIndex, hands.length)
-        const isActive = handIndex === activeHandIndex && game.phase === RoundPhase.PlayerTurn
+      {game.seats.flatMap((seat, seatIndex) => seat.hands.map((hand, handIndex) => {
+        const at = handAnchor(seatIndex, seatCount, handIndex, seat.hands.length)
+        const anchorX = at.x
+        /*
+         * Marks the hand being played, and at a shared table that means the
+         * seat as well: only one person acts at a time, first base round to
+         * third base, so the ring is the whole answer to "who are we waiting
+         * for" rather than half of it.
+         */
+        const isActive =
+          seatIndex === game.activeSeatIndex &&
+          handIndex === seat.activeHandIndex &&
+          game.phase === RoundPhase.PlayerTurn
 
         // Winnings above the returned stake. A push returns the stake and pays
         // nothing extra, so it correctly shows no payout pile.
@@ -232,7 +240,7 @@ export function BlackjackTable() {
          * pushes right for free, since a push returns the stake.
          */
         const chipsGoHome = hand.payout > 0
-        const restingSpot: readonly [number, number, number] = [anchorX, SURFACE_Y, CHIP_ROW_Z]
+        const restingSpot: readonly [number, number, number] = [anchorX, SURFACE_Y, at.chipZ]
         const chipTarget = isClearing
           ? chipsGoHome
             ? STASH_ORIGIN
@@ -240,7 +248,7 @@ export function BlackjackTable() {
           : restingSpot
 
         return (
-          <group key={`hand-${handIndex}`}>
+          <group key={`seat-${seatIndex}-hand-${handIndex}`}>
             {hand.cards.map((card, index) => (
               <PlayingCard
                 key={`player-${handIndex}-${index}-${card.rank}${card.suit}`}
@@ -250,7 +258,7 @@ export function BlackjackTable() {
                 position={
                   isClearing
                     ? DISCARD_POSITION
-                    : [anchorX + cardX(index, hand.cards.length), CARD_Y, PLAYER_ROW_Z]
+                    : [anchorX + cardX(index, hand.cards.length), CARD_Y, at.z]
                 }
                 delay={dealDelay(index, false)}
                 seatIndex={index + 1}
@@ -267,7 +275,7 @@ export function BlackjackTable() {
                 position={
                   isClearing
                     ? chipTarget
-                    : [anchorX + PAYOUT_NUDGE_X, SURFACE_Y, CHIP_ROW_Z + PAYOUT_NUDGE_Z]
+                    : [anchorX + PAYOUT_NUDGE_X, SURFACE_Y, at.chipZ + PAYOUT_NUDGE_Z]
                 }
                 origin={DEALER_RACK}
                 baseHeight={isClearing ? 0 : stackHeight(chipBreakdown(hand.bet).length)}
@@ -275,9 +283,9 @@ export function BlackjackTable() {
             )}
 
             {/* Marks which hand the player is acting on once there is a choice. */}
-            {isActive && hands.length > 1 && (
+            {isActive && (seat.hands.length > 1 || seatCount > 1) && (
               <mesh
-                position={[anchorX, TABLE_TOP_Y + 0.014, CHIP_ROW_Z]}
+                position={[anchorX, TABLE_TOP_Y + 0.014, at.chipZ]}
                 rotation={[-Math.PI / 2, 0, 0]}
               >
                 <ringGeometry args={[0.34, 0.4, 32]} />
@@ -286,7 +294,7 @@ export function BlackjackTable() {
             )}
           </group>
         )
-      })}
+      }))}
     </group>
   )
 }

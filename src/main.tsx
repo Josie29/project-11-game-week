@@ -4,6 +4,7 @@ import { App } from './App'
 import { applyBootShortcut } from './dev/bootShortcut'
 import { startSaveSync } from './store/saveSync'
 import { useAppearanceStore } from './store/useAppearanceStore'
+import { useBlackjackStore } from './store/useBlackjackStore'
 import { useCrapsStore } from './store/useCrapsStore'
 import { useSessionStore } from './store/useSessionStore'
 import { poseBuffer, usePresenceStore } from './store/usePresenceStore'
@@ -35,6 +36,7 @@ if (import.meta.env.DEV) {
   // sharing: whether they settled the same roll is the whole claim, and it is
   // invisible in a screenshot of dice that have already stopped.
   bridge.crapsStore = useCrapsStore
+  bridge.blackjackStore = useBlackjackStore
   /*
    * The interpolated pose of a peer, which is the one thing a harness cannot
    * read off the store: poses deliberately live outside it, in a buffer read
