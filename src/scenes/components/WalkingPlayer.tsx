@@ -130,6 +130,8 @@ export interface Obstacle {
 interface WalkingPlayerProps {
   bounds: WalkBounds
   spawn: readonly [number, number, number]
+  /** Runs the camera and the movement, but draws no figure. */
+  hidden?: boolean | undefined
   /** Which way the character faces on arrival, in radians. */
   facing?: number | undefined
   /** Checked every frame; the nearest match is reported to `onNearest`. */
@@ -199,6 +201,7 @@ function pushOut(obstacle: Obstacle, x: number, z: number): [number, number] {
 export function WalkingPlayer({
   bounds,
   spawn,
+  hidden = false,
   facing = Math.PI,
   targets,
   onNearest,
@@ -399,7 +402,17 @@ export function WalkingPlayer({
       position={[spawn[0], spawn[1], spawn[2]]}
       rotation={[0, facing, 0]}
     >
-      <CasinoCharacter appearance={appearance} equipped={equipped} speedRef={speedRef} />
+      {/*
+        The rig still runs when hidden — only the figure goes.
+
+        The welcome screen wants the play camera's framing of the street and no
+        character stood in the middle of it, and those are the same object. The
+        group keeps its name either way, so `npm run locate` can still answer
+        where the player is.
+      */}
+      {!hidden && (
+        <CasinoCharacter appearance={appearance} equipped={equipped} speedRef={speedRef} />
+      )}
     </group>
   )
 }

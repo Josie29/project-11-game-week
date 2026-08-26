@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useGameStore } from '../../store/useGameStore'
+import { useSessionStore } from '../../store/useSessionStore'
 import { INTERACT_KEY } from '../../world/controls'
 import { DOOR_TRIGGER_RADIUS, VENUES, type VenueId } from '../../world/venues'
 import { STREET_BOUNDS } from '../stripLayout'
@@ -15,6 +16,7 @@ import { WalkingPlayer, type ProximityTarget } from './WalkingPlayer'
  */
 export function Player() {
   const spawnPosition = useGameStore((state) => state.spawnPosition)
+  const isWelcoming = useSessionStore((state) => !state.hasWelcomed)
 
   const doors = useMemo<readonly ProximityTarget[]>(
     () =>
@@ -54,6 +56,16 @@ export function Player() {
     <WalkingPlayer
       bounds={STREET_BOUNDS}
       spawn={spawnPosition}
+      /*
+       * No figure while the welcome screen is up.
+       *
+       * The panel is centred and so is the player, so the character stood
+       * exactly behind it with its shins showing below the bottom edge — a pair
+       * of disembodied legs under the title card. The rig itself has to stay:
+       * it owns the follow camera, and dropping it framed the street on the
+       * default Canvas camera instead.
+       */
+      hidden={isWelcoming}
       // Start facing down the street (-Z) rather than back at the camera.
       facing={Math.PI}
       targets={doors}
