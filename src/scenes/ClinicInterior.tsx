@@ -20,7 +20,8 @@ import {
   chairCameraTarget,
   chairIndex,
   chairSitSpot,
-  ClinicWall,
+  COUNTER_DEPTH,
+  COUNTER_RISE,
   DESK,
   DESK_DEPTH,
   DESK_HEIGHT,
@@ -40,6 +41,7 @@ import {
   SIT_RADIUS,
   SKIRTING_DEPTH,
   SKIRTING_HEIGHT,
+  TERMINAL_OFFSET_X,
   TRAY_LOCAL,
   TROFFER_LENGTH,
   TROFFER_WIDTH,
@@ -53,6 +55,7 @@ import {
   WALK_BOUNDS,
   WALL_HEIGHT,
   WALL_PROPS,
+  wallPropFacing,
   wallPropPosition,
 } from './clinicLayout'
 import {
@@ -60,6 +63,7 @@ import {
   getCeilingTexture,
   getFloorNormalTexture,
   getFloorTexture,
+  getLaminateTexture,
   getVendingFrontTexture,
   getVinylNormalTexture,
   getWallNoticeTexture,
@@ -440,40 +444,78 @@ function Recliner({ z, drawing = false }: ReclinerProps) {
   )
 }
 
-/** The check-in desk, with a monitor, a phone and some paperwork on it. */
+/**
+ * The check-in desk.
+ *
+ * Two heights, as a reception desk is: a working surface at `DESK_HEIGHT` for
+ * whoever is behind it, and a raised transaction counter on the visitor's side
+ * to lean on and sign at. That step is most of what makes it read as joinery
+ * rather than as a crate — a single slab of laminate at one height is what it
+ * was.
+ */
 function CheckInDesk() {
+  const front = getLaminateTexture([3, 1])
+  const top = getLaminateTexture([3, 1])
+
+  const carcassHeight = DESK_HEIGHT - 0.12
+  const counterY = DESK_HEIGHT + COUNTER_RISE
+
   return (
     <group position={[DESK[0], 0, DESK[2]]}>
-      {/* Carcass, standing on a recessed kick so it does not meet the floor
-          as one slab. */}
-      <mesh position={[0, (DESK_HEIGHT - 0.12) / 2 + 0.12, 0]} castShadow receiveShadow>
-        <boxGeometry args={[DESK_WIDTH, DESK_HEIGHT - 0.12, DESK_DEPTH]} />
-        <meshStandardMaterial color={LAMINATE} roughness={0.68} />
+      {/* Carcass, on a recessed kick so it does not meet the floor as one slab. */}
+      <mesh position={[0, carcassHeight / 2 + 0.12, 0]} castShadow receiveShadow>
+        <boxGeometry args={[DESK_WIDTH, carcassHeight, DESK_DEPTH]} />
+        <meshStandardMaterial map={front} color={LAMINATE} roughness={0.62} />
       </mesh>
       <mesh position={[0, 0.06, 0]}>
         <boxGeometry args={[DESK_WIDTH - 0.12, 0.12, DESK_DEPTH - 0.1]} />
         <meshStandardMaterial color="#2b2723" roughness={0.85} />
       </mesh>
-      {/* A reveal across the front panel, so it reads as joinery. */}
-      <mesh position={[0, DESK_HEIGHT - 0.3, -DESK_DEPTH / 2 - 0.002]} rotation={[0, Math.PI, 0]}>
-        <planeGeometry args={[DESK_WIDTH - 0.1, 0.02]} />
-        <meshStandardMaterial color="#8a6c48" roughness={0.7} />
-      </mesh>
 
-      {/* The top, overhanging on every side. */}
+      {/* The working surface. */}
       <RoundedBox
-        args={[DESK_WIDTH + 0.1, 0.055, DESK_DEPTH + 0.1]}
-        radius={0.018}
+        args={[DESK_WIDTH + 0.06, 0.05, DESK_DEPTH + 0.06]}
+        radius={0.016}
         smoothness={2}
         position={[0, DESK_HEIGHT + 0.02, 0]}
         castShadow
         receiveShadow
       >
-        <meshStandardMaterial color="#8a6c48" roughness={0.5} />
+        <meshStandardMaterial map={top} color="#8f7050" roughness={0.45} />
       </RoundedBox>
 
+      {/*
+        The transaction counter: a pilaster up the visitor's side carrying a
+        ledge, so the clutter behind it is hidden from the door.
+      */}
+      <mesh
+        position={[0, DESK_HEIGHT / 2 + COUNTER_RISE / 2, DESK_DEPTH / 2 + COUNTER_DEPTH / 2]}
+        castShadow
+      >
+        <boxGeometry args={[DESK_WIDTH, DESK_HEIGHT + COUNTER_RISE, COUNTER_DEPTH]} />
+        <meshStandardMaterial map={front} color={LAMINATE} roughness={0.62} />
+      </mesh>
+      <RoundedBox
+        args={[DESK_WIDTH + 0.08, 0.055, COUNTER_DEPTH + 0.14]}
+        radius={0.018}
+        smoothness={2}
+        position={[0, counterY + 0.02, DESK_DEPTH / 2 + COUNTER_DEPTH / 2 + 0.02]}
+        castShadow
+        receiveShadow
+      >
+        <meshStandardMaterial map={top} color="#8f7050" roughness={0.4} />
+      </RoundedBox>
+      {/* A shadow line under the ledge, which is what says it overhangs. */}
+      <mesh
+        position={[0, counterY - 0.02, DESK_DEPTH / 2 + COUNTER_DEPTH + 0.085]}
+        rotation={[0, 0, 0]}
+      >
+        <planeGeometry args={[DESK_WIDTH + 0.08, 0.03]} />
+        <meshStandardMaterial color="#6a5236" roughness={0.8} />
+      </mesh>
+
       {/* Monitor: foot, neck, panel, and a screen inset in its bezel. */}
-      <group position={[-0.52, DESK_HEIGHT + 0.05, 0]} rotation={[0, 0.34, 0]}>
+      <group position={[TERMINAL_OFFSET_X, DESK_HEIGHT + 0.05, -0.06]} rotation={[0, 0.42, 0]}>
         <mesh position={[0, 0.012, 0]}>
           <boxGeometry args={[0.22, 0.018, 0.14]} />
           <meshStandardMaterial color="#1b2026" roughness={0.5} />
@@ -494,9 +536,25 @@ function CheckInDesk() {
         </mesh>
       </group>
 
+      {/* Keyboard and mouse, in front of the terminal where hands would be. */}
+      <group position={[TERMINAL_OFFSET_X + 0.04, DESK_HEIGHT + 0.05, -0.24]} rotation={[0, 0.42, 0]}>
+        <mesh position={[0, 0.012, 0]} castShadow>
+          <boxGeometry args={[0.42, 0.02, 0.15]} />
+          <meshStandardMaterial color="#2e343b" roughness={0.6} />
+        </mesh>
+        <mesh position={[0, 0.023, 0]}>
+          <boxGeometry args={[0.38, 0.004, 0.11]} />
+          <meshStandardMaterial color="#454d56" roughness={0.7} />
+        </mesh>
+        <mesh position={[0.3, 0.016, 0.01]}>
+          <boxGeometry args={[0.06, 0.025, 0.09]} />
+          <meshStandardMaterial color="#2e343b" roughness={0.6} />
+        </mesh>
+      </group>
+
       {/* Phone. */}
-      <group position={[0.72, DESK_HEIGHT + 0.05, 0.06]} rotation={[0, -0.5, 0]}>
-        <mesh position={[0, 0.02, 0]}>
+      <group position={[0.78, DESK_HEIGHT + 0.05, -0.14]} rotation={[0, -0.5, 0]}>
+        <mesh position={[0, 0.02, 0]} castShadow>
           <boxGeometry args={[0.2, 0.04, 0.16]} />
           <meshStandardMaterial color="#22282e" roughness={0.6} />
         </mesh>
@@ -504,20 +562,70 @@ function CheckInDesk() {
           <boxGeometry args={[0.21, 0.05, 0.05]} />
           <meshStandardMaterial color="#2a3138" roughness={0.55} />
         </mesh>
+        <mesh position={[-0.055, 0.045, 0.03]}>
+          <boxGeometry args={[0.07, 0.012, 0.07]} />
+          <meshStandardMaterial color="#3a424a" roughness={0.7} />
+        </mesh>
       </group>
 
-      {/* Paperwork, fanned. Three sheets at slightly different angles, because
-          one perfectly square stack reads as a block of plastic. */}
-      {[0.1, -0.16, 0.03].map((turn, index) => (
-        <mesh
-          key={turn}
-          position={[0.18 + index * 0.012, DESK_HEIGHT + 0.052 + index * 0.004, -0.1]}
-          rotation={[0, turn, 0]}
-        >
-          <boxGeometry args={[0.21, 0.003, 0.28]} />
-          <meshStandardMaterial color="#e7e9e3" roughness={0.85} />
+      {/* A stacking tray of forms, which is what a clinic desk is mostly for. */}
+      <group position={[0.34, DESK_HEIGHT + 0.05, -0.12]} rotation={[0, -0.12, 0]}>
+        <mesh position={[0, 0.008, 0]}>
+          <boxGeometry args={[0.3, 0.016, 0.24]} />
+          <meshStandardMaterial color="#2f3841" roughness={0.6} />
         </mesh>
-      ))}
+        {[0, 1, 2].map((sheet) => (
+          <mesh
+            key={sheet}
+            position={[sheet * 0.004, 0.021 + sheet * 0.004, sheet * 0.005]}
+            rotation={[0, (sheet - 1) * 0.05, 0]}
+          >
+            <boxGeometry args={[0.26, 0.003, 0.2]} />
+            <meshStandardMaterial color="#e7e9e3" roughness={0.85} />
+          </mesh>
+        ))}
+      </group>
+
+      {/* Pen cup. */}
+      <group position={[0.08, DESK_HEIGHT + 0.05, -0.2]}>
+        <mesh position={[0, 0.045, 0]}>
+          <cylinderGeometry args={[0.038, 0.034, 0.09, 10]} />
+          <meshStandardMaterial color="#3a424a" roughness={0.6} />
+        </mesh>
+        {[
+          [0.012, 0.01, 0.14],
+          [-0.014, -0.008, -0.1],
+          [0.004, 0.016, 0.05],
+        ].map(([px, pz, lean], index) => (
+          <mesh
+            key={index}
+            position={[px ?? 0, 0.115, pz ?? 0]}
+            rotation={[lean ?? 0, 0, (index - 1) * 0.09]}
+          >
+            <cylinderGeometry args={[0.005, 0.005, 0.13, 6]} />
+            <meshStandardMaterial
+              color={['#2b6cb0', '#c0392b', '#2f3841'][index] ?? '#2f3841'}
+              roughness={0.5}
+            />
+          </mesh>
+        ))}
+      </group>
+
+      {/* A hand-sanitiser pump on the counter, where a clinic puts one. */}
+      <group position={[-0.95, counterY + 0.05, DESK_DEPTH / 2 + COUNTER_DEPTH / 2]}>
+        <mesh position={[0, 0.065, 0]} castShadow>
+          <boxGeometry args={[0.075, 0.13, 0.055]} />
+          <meshStandardMaterial color="#dfe8ee" roughness={0.3} transparent opacity={0.85} />
+        </mesh>
+        <mesh position={[0, 0.145, 0]}>
+          <cylinderGeometry args={[0.017, 0.017, 0.04, 8]} />
+          <meshStandardMaterial color="#7f8a93" roughness={0.5} />
+        </mesh>
+        <mesh position={[0, 0.16, 0.035]}>
+          <boxGeometry args={[0.02, 0.014, 0.055]} />
+          <meshStandardMaterial color="#7f8a93" roughness={0.5} />
+        </mesh>
+      </group>
     </group>
   )
 }
@@ -538,47 +646,66 @@ function WaitingBench() {
         <Steel tint="#98a1a9" />
       </mesh>
 
-      {/* Two feet, at the ends. */}
+      {/* Two feet, at the ends: a raked leg on a spreader, as beam seating has. */}
       {[first - BENCH_OVERHANG * 0.5, last + BENCH_OVERHANG * 0.5].map((z) => (
         <group key={z} position={[0, 0, z]}>
-          <mesh position={[0.06, 0.17, 0]}>
-            <boxGeometry args={[0.05, 0.34, 0.05]} />
+          <mesh position={[0.09, 0.17, 0]} rotation={[0, 0, 0.16]}>
+            <boxGeometry args={[0.07, 0.35, 0.07]} />
             <Steel tint="#98a1a9" />
           </mesh>
-          <mesh position={[0, 0.015, 0]}>
-            <boxGeometry args={[BENCH_DEPTH * 0.8, 0.03, 0.07]} />
+          <mesh position={[-0.02, 0.025, 0]}>
+            <boxGeometry args={[BENCH_DEPTH * 0.9, 0.05, 0.09]} />
             <Steel tint="#8a939b" />
           </mesh>
+          {/* Floor glides, so the spreader does not sink into the tile. */}
+          {[-1, 1].map((end) => (
+            <mesh key={end} position={[end * BENCH_DEPTH * 0.38 - 0.02, 0.006, 0]}>
+              <boxGeometry args={[0.06, 0.012, 0.09]} />
+              <meshStandardMaterial color="#2c3238" roughness={0.8} />
+            </mesh>
+          ))}
         </group>
       ))}
 
       {WAITING_Z.map((z) => (
         <group key={z} position={[0, 0, z]}>
-          {/* Seat pan, dished by tilting it back a few degrees. */}
+          {/*
+            Seat pan, dished by tilting it back a few degrees.
+
+            Thicker than a sheet, because it was one: at 5 cm on a 62 cm frame
+            the seats read as loose slabs floating over a rail rather than as
+            part of a bench.
+          */}
           <RoundedBox
-            args={[BENCH_DEPTH * 0.82, 0.05, 0.46]}
-            radius={0.02}
+            args={[BENCH_DEPTH * 0.86, 0.075, 0.46]}
+            radius={0.03}
             smoothness={2}
-            position={[-0.02, 0.42, 0]}
+            position={[-0.03, 0.43, 0]}
             rotation={[0, 0, 0.05]}
             castShadow
           >
             <Steel tint="#b6bfc7" metalness={SHEET_METALNESS} />
           </RoundedBox>
-          {/* Back, raked toward the wall. */}
+          {/* Back, raked toward the wall, and tall enough to read as one. */}
           <RoundedBox
-            args={[0.05, 0.4, 0.44]}
-            radius={0.018}
+            args={[0.075, 0.46, 0.44]}
+            radius={0.03}
             smoothness={2}
-            position={[0.22, 0.63, 0]}
-            rotation={[0, 0, 0.16]}
+            position={[0.2, 0.7, 0]}
+            rotation={[0, 0, 0.18]}
             castShadow
           >
             <Steel tint="#b6bfc7" metalness={SHEET_METALNESS} />
           </RoundedBox>
+          {/* The gap between pan and back, which is what says these are two
+              pressed panels and not one folded sheet. */}
+          <mesh position={[0.11, 0.48, 0]} rotation={[0, 0, 0.5]}>
+            <boxGeometry args={[0.07, 0.05, 0.42]} />
+            <Steel tint="#98a1a9" metalness={SHEET_METALNESS} />
+          </mesh>
           {/* The bracket down to the rail. */}
-          <mesh position={[0.04, 0.38, 0]}>
-            <boxGeometry args={[0.16, 0.06, 0.06]} />
+          <mesh position={[0.04, 0.375, 0]}>
+            <boxGeometry args={[0.2, 0.075, 0.08]} />
             <Steel tint="#8a939b" />
           </mesh>
         </group>
@@ -635,8 +762,106 @@ function WallProps() {
   return (
     <>
       {WALL_PROPS.map((prop) => {
-        const facing: [number, number, number] =
-          prop.wall === ClinicWall.Left ? [0, Math.PI / 2, 0] : [0, Math.PI, 0]
+        const facing: [number, number, number] = [0, wallPropFacing(prop.wall), 0]
+
+        if (prop.id === 'noticeboard') {
+          const [x, y, z] = wallPropPosition(prop, 0.05)
+
+          // A cork board with paper on it. The desk side had nothing above waist
+          // height at all, which is what reads as an unfinished room.
+          return (
+            <group key={prop.id} position={[x, y, z]} rotation={facing}>
+              <mesh castShadow>
+                <boxGeometry args={[prop.width, prop.height, 0.05]} />
+                <meshStandardMaterial color="#4a3c2c" roughness={0.9} />
+              </mesh>
+              <mesh position={[0, 0, 0.027]}>
+                <planeGeometry args={[prop.width - 0.07, prop.height - 0.07]} />
+                <meshStandardMaterial color="#a8794a" roughness={0.95} />
+              </mesh>
+              {[
+                { at: [-0.32, 0.14] as const, size: [0.24, 0.3] as const, tint: '#eceee8' },
+                { at: [0.02, 0.16] as const, size: [0.2, 0.26] as const, tint: '#dfe7ea' },
+                { at: [0.31, 0.1] as const, size: [0.22, 0.16] as const, tint: '#e8e3cf' },
+                { at: [-0.18, -0.19] as const, size: [0.3, 0.18] as const, tint: '#e2e6e0' },
+                { at: [0.24, -0.2] as const, size: [0.18, 0.2] as const, tint: '#dbe2e6' },
+              ].map(({ at, size, tint }, index) => (
+                <mesh
+                  key={index}
+                  position={[at[0], at[1], 0.03 + index * 0.001]}
+                  rotation={[0, 0, (index % 2 === 0 ? 1 : -1) * 0.03]}
+                >
+                  <planeGeometry args={[...size]} />
+                  <meshStandardMaterial color={tint} roughness={0.9} />
+                </mesh>
+              ))}
+            </group>
+          )
+        }
+
+        if (prop.id === 'clock') {
+          const [x, y, z] = wallPropPosition(prop, 0.04)
+          const radius = prop.width / 2
+
+          /*
+           * A wall clock, and deliberately not a working one.
+           *
+           * The HUD already shows the hour and this room freezes with `?freeze`;
+           * hands driven off `timeOfDay` would be one more thing to keep in step
+           * with a capture for no gain. It reads as a clock at four metres,
+           * which is its whole job.
+           */
+          return (
+            <group key={prop.id} position={[x, y, z]} rotation={facing}>
+              {/*
+                The case, turned to face the room.
+
+                A `cylinderGeometry` stands on its own +Y axis, so drawn without
+                this it is a coin lying flat on an invisible table — seen from
+                the floor it was a thin dark line, and the whole clock read as a
+                plus sign floating on the wall.
+              */}
+              <mesh rotation={[Math.PI / 2, 0, 0]} castShadow>
+                <cylinderGeometry args={[radius, radius, 0.045, 20]} />
+                <meshStandardMaterial color="#2f3841" roughness={0.6} />
+              </mesh>
+              <mesh position={[0, 0, 0.024]}>
+                <circleGeometry args={[radius - 0.022, 20]} />
+                <meshStandardMaterial color="#eef2f4" roughness={0.7} />
+              </mesh>
+
+              {/* Hour marks: short strokes at the rim, not lines across it. */}
+              {[0, 1, 2, 3].map((tick) => (
+                <group key={tick} rotation={[0, 0, (tick / 4) * Math.PI * 2]}>
+                  <mesh position={[0, radius * 0.72, 0.026]}>
+                    <planeGeometry args={[0.016, radius * 0.26]} />
+                    <meshStandardMaterial color="#5a646d" roughness={0.8} />
+                  </mesh>
+                </group>
+              ))}
+
+              {/*
+                Hands, and deliberately not running ones. The HUD already shows
+                the hour and `?freeze` holds the room still for captures; hands
+                driven off the clock would be one more thing to keep in step for
+                no gain. It reads as a clock from across the room, which is the
+                entire job.
+              */}
+              <mesh position={[0, radius * 0.24, 0.028]}>
+                <planeGeometry args={[0.014, radius * 0.62]} />
+                <meshStandardMaterial color="#20262c" roughness={0.7} />
+              </mesh>
+              <mesh position={[radius * 0.19, 0, 0.028]} rotation={[0, 0, Math.PI / 2]}>
+                <planeGeometry args={[0.011, radius * 0.46]} />
+                <meshStandardMaterial color="#20262c" roughness={0.7} />
+              </mesh>
+              <mesh position={[0, 0, 0.03]}>
+                <circleGeometry args={[0.014, 10]} />
+                <meshStandardMaterial color="#20262c" roughness={0.6} />
+              </mesh>
+            </group>
+          )
+        }
 
         if (prop.id === 'cross') {
           const [x, y, z] = wallPropPosition(prop, 0.04)
@@ -953,6 +1178,7 @@ export function ClinicInterior() {
          * front of the door, exactly as it did on the shop's polished boards.
          */
         floorPool={false}
+        leaf
       />
 
       {atChair === null ? (

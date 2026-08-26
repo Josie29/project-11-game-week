@@ -181,6 +181,19 @@ export function seatedAnklePosition(
 }
 
 /**
+ * Top of the head when seated.
+ *
+ * Needed because a seated figure has to clear the furniture in front of them to
+ * be a person you can talk to rather than a hairstyle behind a counter. The
+ * clinic's reception desk stands at counter height, and the difference between a
+ * seat that works there and one that does not is about eight centimetres.
+ */
+export function seatedCrownY(silhouette: Silhouette): number {
+  const body = PROPORTIONS[silhouette]
+  return body.seatedHipY + body.torsoHeight + body.neckHeight + body.headHeight
+}
+
+/**
  * Heights and joint positions derived from a body, all measured from the floor.
  *
  * Everything the rig and the accessory anchors need that is a sum of the raw

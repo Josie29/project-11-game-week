@@ -1,3 +1,4 @@
+import { DoubleSide } from 'three'
 import { getExitSignTexture } from '../signTexture'
 
 /*
@@ -40,6 +41,17 @@ interface ExitDoorProps {
    */
   spillIntensity?: number | undefined
   spillDistance?: number | undefined
+  /**
+   * Draws a closed door in the opening instead of a lit threshold.
+   *
+   * Off by default: the casino's exits are holes in a dark wall, and what sells
+   * them is the light falling out. In a *bright* room that treatment has nothing
+   * to work with — three ten-percent warm panes over a near-black plane come out
+   * as a flat brown board, which is what the clinic's exit looked like against
+   * its own pale wall. A door with a vision panel and a handle reads as a door
+   * at any light level, and it is what `clinic_interior.png` has.
+   */
+  leaf?: boolean | undefined
 }
 
 /** Warm, against both interiors' cold or purple light: this is the street. */
@@ -53,6 +65,7 @@ export function ExitDoor({
   floorPool = true,
   spillIntensity = 16,
   spillDistance = 8,
+  leaf = false,
 }: ExitDoorProps) {
   const sign = getExitSignTexture()
 
@@ -83,22 +96,65 @@ export function ExitDoor({
 
       {/*
         Street glow inside the opening, as panes stacked from the floor up.
-        
+
         All three share a bottom edge and differ only in how far up they reach,
         so the opacity accumulates toward the ground and reads as a gradient.
         Three bands of *equal* height laid end to end — the obvious way to do it
         — reads as three painted stripes, because each edge is a hard one.
       */}
-      {[0.92, 0.55, 0.26].map((top, index) => (
-        <mesh
-          key={top}
-          position={[0, (height * top) / 2, -0.04 - index * 0.004]}
-          rotation={facingRoom}
-        >
-          <planeGeometry args={[width - 0.12, height * top]} />
-          <meshBasicMaterial color={STREET_SPILL} toneMapped={false} transparent opacity={0.1} />
-        </mesh>
-      ))}
+      {!leaf &&
+        [0.92, 0.55, 0.26].map((top, index) => (
+          <mesh
+            key={top}
+            position={[0, (height * top) / 2, -0.04 - index * 0.004]}
+            rotation={facingRoom}
+          >
+            <planeGeometry args={[width - 0.12, height * top]} />
+            <meshBasicMaterial color={STREET_SPILL} toneMapped={false} transparent opacity={0.1} />
+          </mesh>
+        ))}
+
+      {/* The door itself: a leaf hung in the opening, lit by the room. */}
+      {leaf && (
+        <group position={[0, 0, -0.05]}>
+          <mesh position={[0, height / 2, 0]} castShadow receiveShadow>
+            <boxGeometry args={[width - 0.1, height - 0.04, 0.055]} />
+            <meshStandardMaterial color="#7d5734" roughness={0.62} />
+          </mesh>
+
+          {/* Vision panel, high, where a fire door's is. */}
+          <mesh position={[0.12, height * 0.72, -0.032]} rotation={facingRoom}>
+            <planeGeometry args={[width * 0.3, height * 0.24]} />
+            <meshStandardMaterial color="#2c3a45" roughness={0.18} metalness={0.1} />
+          </mesh>
+          <mesh position={[0.12, height * 0.72, -0.028]} rotation={facingRoom}>
+            <planeGeometry args={[width * 0.34, height * 0.28]} />
+            <meshStandardMaterial color="#5f4426" roughness={0.7} side={DoubleSide} />
+          </mesh>
+
+          {/* Lever handle and rose, on the opening side. */}
+          <mesh position={[-width * 0.32, height * 0.42, -0.04]}>
+            <cylinderGeometry args={[0.045, 0.045, 0.02, 12]} />
+            <meshStandardMaterial color="#9aa3ab" roughness={0.35} metalness={0.6} />
+          </mesh>
+          <mesh position={[-width * 0.28, height * 0.42, -0.055]} rotation={[0, 0, Math.PI / 2]}>
+            <cylinderGeometry args={[0.016, 0.016, 0.17, 8]} />
+            <meshStandardMaterial color="#9aa3ab" roughness={0.35} metalness={0.6} />
+          </mesh>
+
+          {/* Kick plate, which is the detail that says this door gets shoved. */}
+          <mesh position={[0, 0.16, -0.032]} rotation={facingRoom}>
+            <planeGeometry args={[width - 0.16, 0.26]} />
+            <meshStandardMaterial color="#8d969d" roughness={0.42} metalness={0.45} />
+          </mesh>
+
+          {/* A thread of street light under it, so it still reads as a way out. */}
+          <mesh position={[0, 0.015, -0.06]} rotation={facingRoom}>
+            <planeGeometry args={[width - 0.14, 0.03]} />
+            <meshBasicMaterial color={STREET_SPILL} toneMapped={false} />
+          </mesh>
+        </group>
+      )}
 
       {/* Frame: two jambs and a head, in the room's colour so it reads as a door. */}
       {[-1, 1].map((side) => (

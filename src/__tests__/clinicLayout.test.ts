@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { RECEPTIONIST_APPEARANCE, resolveAppearance } from '../character/appearance'
 import {
+  PROPORTIONS,
   seatedAnklePosition,
   SeatedLegs,
   Silhouette,
@@ -18,6 +20,9 @@ import {
   chairPosition,
   chairSitSpot,
   ClinicWall,
+  COUNTER_TOP_Y,
+  DESK,
+  DESK_DEPTH,
   ENTRANCE,
   EXIT_DOOR,
   EXIT_DOOR_CLEARANCE,
@@ -26,9 +31,13 @@ import {
   isOnClinicFloor,
   isOnFootrest,
   obstacles,
+  RECEPTION_CHAIR,
+  receptionCrownY,
+  receptionFootringY,
   ROOM,
   SEATED_DONOR_Z,
   SIT_RADIUS,
+  TERMINAL_OFFSET_X,
   TROFFER_LENGTH,
   TROFFER_WIDTH,
   troffers,
@@ -38,6 +47,8 @@ import {
   WALK_BOUNDS,
   WALL_HEIGHT,
   WALL_PROPS,
+  wallExtent,
+  wallPropFacing,
   wallPropPosition,
 } from '../scenes/clinicLayout'
 
@@ -327,14 +338,35 @@ describe('clinic layout', () => {
       expect(y - prop.height / 2, `${prop.id} is through the floor`).toBeGreaterThan(0)
       expect(y + prop.height / 2, `${prop.id} is through the ceiling`).toBeLessThan(WALL_HEIGHT)
 
-      // Both ends of it on the wall it claims to be on.
-      const [low, high] =
-        prop.wall === ClinicWall.Left
-          ? [ROOM.minZ, ROOM.maxZ]
-          : [ROOM.minX, ROOM.maxX]
+      // Both ends of it on the wall it claims to be on. The extent comes from
+      // the layout rather than being restated here, so adding a wall cannot
+      // leave this test quietly measuring the wrong one.
+      const [low, high] = wallExtent(prop.wall)
 
       expect(prop.along - prop.width / 2, `${prop.id} runs off its wall`).toBeGreaterThan(low)
       expect(prop.along + prop.width / 2, `${prop.id} runs off its wall`).toBeLessThan(high)
+
+      /*
+       * ...and facing into the room rather than into the wall behind it.
+       *
+       * A prop turned the wrong way is a single-sided plane showing its back
+       * face, which is culled: it renders as nothing at all. That is exactly how
+       * every interior's exit door was invisible from inside for months, and
+       * these props exist precisely so the walls are not empty.
+       *
+       * Checked by stepping along the facing direction: a step forward has to
+       * land inside the room and a step back has to land outside it.
+       */
+      const facing = wallPropFacing(prop.wall)
+      const step = 0.5
+      const aheadX = x + Math.sin(facing) * step
+      const aheadZ = z + Math.cos(facing) * step
+
+      expect(isOnClinicFloor(aheadX, aheadZ), `${prop.id} faces into its wall`).toBe(true)
+      expect(
+        isOnClinicFloor(x - Math.sin(facing) * step, z - Math.cos(facing) * step),
+        `${prop.id} is not against a wall at all`,
+      ).toBe(false)
     }
   })
 
@@ -377,6 +409,63 @@ describe('clinic layout', () => {
     // ...and it rejects a point well past the end of the footrest, so "on the
     // footrest" cannot be satisfied by hanging in the air beyond it.
     expect(isOnFootrest(3, footrestSurfaceY(3))).toBe(false)
+  })
+
+  /*
+   * The receptionist has to be visible over her own counter.
+   *
+   * This one nearly went the other way. She dangled 18 cm over the floor, and
+   * the obvious fix — sit her lower, on a chair whose occupant's feet reach the
+   * tile — clears the transaction counter by *two centimetres* on the feminine
+   * silhouette. The whole desk-side interaction is walking up and being looked
+   * at, and it would have been conducted with the top of her head.
+   *
+   * The desk's height and the seat's height live in different files, so nothing
+   * about either one looks wrong on its own.
+   */
+  it('sits the receptionist high enough to be seen over the counter', () => {
+    const clearance = receptionCrownY() - COUNTER_TOP_Y
+
+    expect(
+      clearance,
+      `only ${clearance.toFixed(3)} of her clears the counter`,
+    ).toBeGreaterThan(0.12)
+  })
+
+  /*
+   * ...and her feet have somewhere to be, which is the other half of the same
+   * problem. A counter-height chair puts the shins in mid-air by design; the
+   * footring is what makes that a chair rather than a hovering figure.
+   */
+  it('puts the footring where her feet actually finish', () => {
+    const ring = receptionFootringY()
+
+    // Off the floor — otherwise it is not a footring, it is a trip hazard, and
+    // she would not need one.
+    expect(ring, 'her feet reach the floor, so the ring is spurious').toBeGreaterThan(0.05)
+    // ...and below the seat, or it is not under her feet at all.
+    expect(ring).toBeLessThan(
+      PROPORTIONS[resolveAppearance(RECEPTIONIST_APPEARANCE).silhouette].seatedHipY,
+    )
+  })
+
+  // She has to be at the desk to be working at it. Typed, this was half a metre
+  // clear of it — near enough in the layout, and on screen a woman on a stool in
+  // the middle of the floor.
+  it('tucks the receptionist in behind the desk', () => {
+    const [x, z] = RECEPTION_CHAIR
+    const deskBack = DESK[2] - DESK_DEPTH / 2
+
+    expect(deskBack - z, 'she is too far back to reach her own desk').toBeLessThan(0.4)
+    expect(z, 'she is on the visitor side of the desk').toBeLessThan(deskBack)
+
+    // ...and along the desk, behind her own terminal rather than at the far end.
+    expect(Math.abs(x - (DESK[0] + TERMINAL_OFFSET_X))).toBeLessThan(0.4)
+
+    // Sitting inside the desk is its own kind of wrong.
+    for (const solid of obstacles()) {
+      expect(isInside(solid, x, z), 'her chair is inside a solid').toBe(false)
+    }
   })
 
   // Two things on the same wall at the same height overlap into one smear.

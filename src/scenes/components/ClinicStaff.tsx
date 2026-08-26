@@ -1,10 +1,16 @@
 import { useFrame } from '@react-three/fiber'
 import { useMemo, useRef } from 'react'
 import { CatmullRomCurve3, Group, MathUtils, Mesh, TubeGeometry, Vector3 } from 'three'
-import { NURSE_APPEARANCE, RECEPTIONIST_APPEARANCE } from '../../character/appearance'
+import { NURSE_APPEARANCE, RECEPTIONIST_APPEARANCE, resolveAppearance } from '../../character/appearance'
+import { PROPORTIONS } from '../../character/proportions'
 import { useGameStore } from '../../store/useGameStore'
 import { useTimeStore } from '../../store/useTimeStore'
-import { DESK, DRAW_LINE_PATH, ivBagAt } from '../clinicLayout'
+import {
+  DRAW_LINE_PATH,
+  ivBagAt,
+  RECEPTION_CHAIR,
+  receptionFootringY,
+} from '../clinicLayout'
 import {
   donationTimeline,
   drawProgress,
@@ -54,6 +60,17 @@ function Receptionist() {
   const groupRef = useRef<Group>(null)
   const nearDesk = useGameStore((state) => state.nearDesk)
 
+  /*
+   * Her chair, sized from her.
+   *
+   * `seatHeight` is her hip height, which the rig sets from `seatedHipY`, and
+   * `footringY` is where her feet actually finish. Both are derived rather than
+   * typed, because a ring drawn at a guessed height is a ring her shoes hang
+   * above — which is the bug this chair replaced.
+   */
+  const seatHeight = PROPORTIONS[resolveAppearance(RECEPTIONIST_APPEARANCE).silhouette].seatedHipY
+  const footringY = receptionFootringY()
+
   /** Facing the terminal, which sits across the desk from the door. */
   const atWork = Math.PI * 0.72
   /** Turned out toward whoever has just walked in. */
@@ -70,20 +87,84 @@ function Receptionist() {
   })
 
   return (
-    <group name="clinic:receptionist" position={[DESK[0] + 0.1, 0, DESK[2] - 0.85]}>
+    <group name="clinic:receptionist" position={[RECEPTION_CHAIR[0], 0, RECEPTION_CHAIR[1]]}>
       <group ref={groupRef} rotation={[0, atWork, 0]}>
+        {/*
+          A draughtsman's chair, because this desk is counter height.
+
+          She used to sit on a box on a cone with her feet dangling in mid-air.
+          Dropping her to a task chair fixes the dangle and breaks something
+          worse — at that height her head clears the transaction counter by two
+          centimetres, so the person you have come to talk to is a hairstyle
+          behind a worktop. The seat height was never the problem. The footring
+          under her feet was missing.
+        */}
         <CasinoCharacter appearance={RECEPTIONIST_APPEARANCE} seated staff />
+
+        {/*
+          The half of the chair that swivels with her: seat, back and arms.
+
+          The base below does not, because a task chair's castors stay put while
+          its occupant turns — and she turns every time the player walks up.
+        */}
+        <mesh position={[0, seatHeight - 0.075, 0.01]} castShadow>
+          <boxGeometry args={[0.46, 0.09, 0.46]} />
+          <meshStandardMaterial color="#39404a" roughness={0.75} />
+        </mesh>
+        <mesh position={[0, seatHeight + 0.02, -0.24]}>
+          <boxGeometry args={[0.08, 0.16, 0.1]} />
+          <meshStandardMaterial color="#2a3038" roughness={0.6} />
+        </mesh>
+        <mesh position={[0, seatHeight + 0.28, -0.28]} rotation={[-0.16, 0, 0]} castShadow>
+          <boxGeometry args={[0.44, 0.5, 0.08]} />
+          <meshStandardMaterial color="#39404a" roughness={0.75} />
+        </mesh>
+        {[-1, 1].map((side) => (
+          <mesh key={side} position={[side * 0.27, seatHeight + 0.11, -0.02]}>
+            <boxGeometry args={[0.06, 0.05, 0.3]} />
+            <meshStandardMaterial color="#2a3038" roughness={0.7} />
+          </mesh>
+        ))}
       </group>
 
-      {/* Her chair, which the seated pose needs something to sit on. */}
-      <mesh position={[0, 0.42, 0]} castShadow>
-        <boxGeometry args={[0.46, 0.06, 0.44]} />
-        <meshStandardMaterial color="#3a4048" roughness={0.6} />
+      {/* Five-star base on castors, and the gas lift. Both stay where they are. */}
+      {[0, 1, 2, 3, 4].map((spoke) => (
+        <group key={spoke} rotation={[0, (spoke / 5) * Math.PI * 2, 0]}>
+          <mesh position={[0, 0.055, 0.13]}>
+            <boxGeometry args={[0.045, 0.03, 0.26]} />
+            <meshStandardMaterial color="#23282e" roughness={0.6} metalness={0.3} />
+          </mesh>
+          <mesh position={[0, 0.028, 0.26]} rotation={[0, 0, Math.PI / 2]}>
+            <cylinderGeometry args={[0.028, 0.028, 0.022, 10]} />
+            <meshStandardMaterial color="#15181c" roughness={0.8} />
+          </mesh>
+        </group>
+      ))}
+      <mesh position={[0, seatHeight * 0.42, 0]}>
+        <cylinderGeometry args={[0.032, 0.045, seatHeight * 0.84, 10]} />
+        <meshStandardMaterial color="#3c434b" roughness={0.45} metalness={0.5} />
       </mesh>
-      <mesh position={[0, 0.2, 0]}>
-        <cylinderGeometry args={[0.05, 0.16, 0.4, 8]} />
-        <meshStandardMaterial color="#2a3038" roughness={0.7} metalness={0.3} />
+
+      {/*
+        The footring, at exactly the height her shoes finish.
+
+        `receptionFootringY` derives it from her own leg rather than from a
+        number typed here, which is the entire point: a ring at a guessed height
+        is a ring her feet hang above, and that is indistinguishable from having
+        no ring at all.
+      */}
+      <mesh position={[0, footringY, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[0.26, 0.014, 6, 20]} />
+        <meshStandardMaterial color="#9aa3ab" roughness={0.35} metalness={0.55} />
       </mesh>
+      {[0, 1, 2, 3].map((strut) => (
+        <group key={strut} rotation={[0, (strut / 4) * Math.PI * 2 + Math.PI / 4, 0]}>
+          <mesh position={[0, footringY, 0.13]}>
+            <boxGeometry args={[0.02, 0.016, 0.26]} />
+            <meshStandardMaterial color="#9aa3ab" roughness={0.4} metalness={0.5} />
+          </mesh>
+        </group>
+      ))}
     </group>
   )
 }

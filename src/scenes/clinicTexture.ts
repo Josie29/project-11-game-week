@@ -561,6 +561,53 @@ function drawWall(): Texture {
   return finish(ctx)
 }
 
+/**
+ * Desk laminate: a light wood, grained along its length.
+ *
+ * The reference's desk is a woodgrain laminate, and a single flat tan was most
+ * of why the one here read as a crate rather than as joinery. The grain does not
+ * have to be legible — at this distance it only has to stop the surface being
+ * one value.
+ */
+function drawLaminate(): Texture {
+  const ctx = context(512, 256)
+  const random = seeded(0xd35c)
+
+  const base = ctx.createLinearGradient(0, 0, 0, 256)
+  base.addColorStop(0, '#b08a5c')
+  base.addColorStop(0.5, '#a67f52')
+  base.addColorStop(1, '#9a7449')
+  ctx.fillStyle = base
+  ctx.fillRect(0, 0, 512, 256)
+
+  // Grain, as long wandering strokes along the board rather than noise.
+  ctx.lineCap = 'round'
+  for (let i = 0; i < 150; i++) {
+    const y = random() * 256
+    const dark = random() > 0.45
+
+    ctx.strokeStyle = dark
+      ? `rgba(112, 82, 48, ${0.08 + random() * 0.16})`
+      : `rgba(206, 174, 130, ${0.06 + random() * 0.14})`
+    ctx.lineWidth = 0.8 + random() * 2.6
+
+    ctx.beginPath()
+    ctx.moveTo(-10, y)
+    // Three gentle waves across the board; a straight line reads as a scratch.
+    ctx.bezierCurveTo(
+      170,
+      y + (random() - 0.5) * 14,
+      340,
+      y + (random() - 0.5) * 14,
+      522,
+      y + (random() - 0.5) * 8,
+    )
+    ctx.stroke()
+  }
+
+  return finish(ctx)
+}
+
 /** The clipboard hanging by the desk, as in the reference. */
 function drawWallNotice(): Texture {
   const ctx = context(256, 344)
@@ -599,6 +646,7 @@ let vinylNormal: Texture | null = null
 let vendingFront: Texture | null = null
 let wallNotice: Texture | null = null
 let wall: Texture | null = null
+let laminate: Texture | null = null
 
 /**
  * Acoustic ceiling tile.
@@ -656,6 +704,21 @@ export function getVendingFrontTexture(): Texture {
 export function getWallNoticeTexture(): Texture {
   wallNotice ??= drawWallNotice()
   return wallNotice
+}
+
+/**
+ * Desk laminate.
+ *
+ * @param repeat How many times the board tiles across the surface, so a 2.6 m
+ *   desk front and a 0.26 m counter edge get grain at the same scale rather
+ *   than the same number of stripes.
+ */
+export function getLaminateTexture(repeat: readonly [number, number] = [1, 1]): Texture {
+  laminate ??= drawLaminate()
+  laminate.wrapS = RepeatWrapping
+  laminate.wrapT = RepeatWrapping
+  laminate.repeat.set(repeat[0], repeat[1])
+  return laminate
 }
 
 /**

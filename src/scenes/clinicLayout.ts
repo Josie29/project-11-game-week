@@ -13,6 +13,12 @@
  * All coordinates are world space.
  */
 
+import { RECEPTIONIST_APPEARANCE, resolveAppearance } from '../character/appearance'
+import {
+  seatedAnklePosition,
+  seatedCrownY,
+  SeatedLegs,
+} from '../character/proportions'
 import type { Footprint } from './casinoFloorLayout'
 
 /** The room is smaller and meaner than the casino floor. That is the point. */
@@ -230,6 +236,68 @@ export const DESK_DEPTH = 0.7
 export const DESK_HEIGHT = 1.05
 
 /**
+ * The transaction counter, standing proud on the visitor's side.
+ *
+ * A reception desk is two heights: a working surface for whoever is behind it
+ * and a raised ledge for whoever is in front, which is what hides the clutter
+ * and gives you somewhere to sign. Without it the desk is a single slab of
+ * laminate at one height, which is what it was and why it read as a crate.
+ */
+export const COUNTER_RISE = 0.22
+export const COUNTER_DEPTH = 0.26
+/** The ledge's working face, which is what anybody behind it has to clear. */
+export const COUNTER_TOP_Y = DESK_HEIGHT + COUNTER_RISE + 0.045
+
+/**
+ * Where the receptionist's footring goes, and how high she sits.
+ *
+ * This desk is counter height, not desk height, so she is on a draughtsman's
+ * chair rather than a task chair — and the thing that makes one of those work is
+ * the ring her feet rest on. Without it she dangled 18 cm over her own floor,
+ * which is what the box-and-cone under her looked like.
+ *
+ * Lowering her instead was tried and is worse: at a chair that puts her feet on
+ * the floor, her head clears this counter by two centimetres and the person you
+ * have come to talk to is a hairstyle behind a worktop. `seatedHipY` was right
+ * all along; nothing was under her feet.
+ */
+export function receptionFootringY(): number {
+  const { silhouette } = resolveAppearance(RECEPTIONIST_APPEARANCE)
+  const [, ankleY] = seatedAnklePosition(silhouette, SeatedLegs.Hanging)
+  return ankleY
+}
+
+/** How high the top of her head sits when she is in that chair. */
+export function receptionCrownY(): number {
+  return seatedCrownY(resolveAppearance(RECEPTIONIST_APPEARANCE).silhouette)
+}
+
+/** Which side of the desk a visitor stands on: toward the door, so +z. */
+export const DESK_FRONT_Z = DESK[2] + DESK_DEPTH / 2
+
+/**
+ * Where the receptionist sits, tucked in behind the desk.
+ *
+ * Derived from the desk's own back edge rather than typed. It was typed, at
+ * `DESK[2] - 0.85`, which left her sitting half a metre clear of a desk she is
+ * supposed to be working at — close enough to read as "near the desk" in the
+ * layout and, on screen, as a woman on a stool in the middle of the floor.
+ */
+export const RECEPTION_CHAIR_GAP = 0.16
+/**
+ * Along the desk, she sits behind her own terminal.
+ *
+ * `TERMINAL_OFFSET_X` is where the monitor and keyboard go; putting her at the
+ * desk's centre instead left her turned toward a screen most of a metre away,
+ * reaching for a keyboard she was not sitting at.
+ */
+export const TERMINAL_OFFSET_X = -0.6
+export const RECEPTION_CHAIR: readonly [number, number] = [
+  DESK[0] + TERMINAL_OFFSET_X + 0.15,
+  DESK[2] - DESK_DEPTH / 2 - RECEPTION_CHAIR_GAP,
+]
+
+/**
  * Waiting chairs against the right-hand wall, as one beam bench.
  *
  * Moved back against the wall from 4.9. Standing free in the middle of the
@@ -329,6 +397,8 @@ export enum ClinicWall {
   Left = 'left',
   /** The one with the door in it, at `ROOM.maxZ`. */
   Back = 'back',
+  /** Behind the desk and the waiting bench, at `ROOM.minZ`. */
+  Front = 'front',
 }
 
 export interface WallProp {
@@ -356,6 +426,14 @@ export const WALL_PROPS: readonly WallProp[] = [
   { id: 'cross', wall: ClinicWall.Left, along: 0, y: 2.2, width: 0.78, height: 0.78 },
   { id: 'clipboard', wall: ClinicWall.Back, along: 1.9, y: 1.55, width: 0.28, height: 0.38 },
   { id: 'switch', wall: ClinicWall.Back, along: -1.55, y: 1.25, width: 0.12, height: 0.16 },
+  /*
+   * The desk side had nothing on it at all above waist height, and a wall with
+   * nothing on it is what reads as an untextured box however well it is shaded.
+   * Both of these sit over the waiting bench and the desk, on the far wall the
+   * player faces on the way in.
+   */
+  { id: 'noticeboard', wall: ClinicWall.Front, along: 3.1, y: 1.75, width: 1.15, height: 0.82 },
+  { id: 'clock', wall: ClinicWall.Front, along: 0.6, y: 2.15, width: 0.34, height: 0.34 },
 ]
 
 /** Where a wall prop hangs, in world space, standing off its wall by `standoff`. */
@@ -363,9 +441,31 @@ export function wallPropPosition(
   prop: WallProp,
   standoff = 0.02,
 ): readonly [number, number, number] {
-  return prop.wall === ClinicWall.Left
-    ? [ROOM.minX + standoff, prop.y, prop.along]
-    : [prop.along, prop.y, ROOM.maxZ - standoff]
+  switch (prop.wall) {
+    case ClinicWall.Left:
+      return [ROOM.minX + standoff, prop.y, prop.along]
+    case ClinicWall.Back:
+      return [prop.along, prop.y, ROOM.maxZ - standoff]
+    case ClinicWall.Front:
+      return [prop.along, prop.y, ROOM.minZ + standoff]
+  }
+}
+
+/** Which way a prop on a given wall faces, as a y rotation into the room. */
+export function wallPropFacing(wall: ClinicWall): number {
+  switch (wall) {
+    case ClinicWall.Left:
+      return Math.PI / 2
+    case ClinicWall.Back:
+      return Math.PI
+    case ClinicWall.Front:
+      return 0
+  }
+}
+
+/** The span a wall runs along, as `[low, high]` in that wall's own axis. */
+export function wallExtent(wall: ClinicWall): readonly [number, number] {
+  return wall === ClinicWall.Left ? [ROOM.minZ, ROOM.maxZ] : [ROOM.minX, ROOM.maxX]
 }
 
 export const EXIT_DOOR: readonly [number, number, number] = [0, 0, 6.7]
@@ -483,7 +583,10 @@ export function obstacles(): readonly Footprint[] {
       minX: DESK[0] - DESK_WIDTH / 2,
       maxX: DESK[0] + DESK_WIDTH / 2,
       minZ: DESK[2] - DESK_DEPTH / 2,
-      maxZ: DESK[2] + DESK_DEPTH / 2,
+      // The transaction counter stands proud on the visitor's side, so the desk
+      // is deeper than its carcass. Walking through a ledge you are supposed to
+      // be signing at is worse than walking through a plain desk.
+      maxZ: DESK_FRONT_Z + COUNTER_DEPTH,
     },
     vendingFootprint(),
     benchFootprint(),
