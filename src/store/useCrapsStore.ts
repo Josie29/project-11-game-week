@@ -1,10 +1,12 @@
 import { create } from 'zustand'
 import {
   canPlaceCrapsBet,
+  canTakeDownCrapsBet,
   createCrapsGame,
   placeCrapsBet,
   rollCraps,
   stakeReturnedByRoll,
+  takeDownCrapsBet,
   totalCrapsPayout,
   totalCrapsStake,
 } from '../games/craps/engine'
@@ -31,6 +33,8 @@ interface CrapsStore {
   isRolling: boolean
 
   wager: (bet: CrapsBet, amount: number) => void
+  /** Calls a bet down and hands the stake back. */
+  takeDown: (bet: CrapsBet) => void
   throwDice: () => void
   /** Clears the table when the player walks out. */
   reset: () => void
@@ -71,6 +75,24 @@ export const useCrapsStore = create<CrapsStore>()((set, get) => {
 
       useGameStore.getState().adjustBankroll(-amount)
       set({ game: placeCrapsBet(game, bet, amount) })
+    },
+
+    takeDown: (bet) => {
+      const { game, isRolling } = get()
+
+      // Nothing comes off the felt while the dice are in the air, exactly as at
+      // a real table.
+      if (isRolling) return
+      if (!canTakeDownCrapsBet(game, bet)) return
+
+      /*
+       * `adjustBankroll`, not `creditWinnings`: this is the player's own stake
+       * coming home, already debited when the bet went out. Running it through
+       * the winnings path would hand the marker a share of money nobody won.
+       */
+      const stake = game.bets[bet]
+      useGameStore.getState().adjustBankroll(stake)
+      set({ game: takeDownCrapsBet(game, bet) })
     },
 
     throwDice: () => {

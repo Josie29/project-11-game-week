@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   canPlaceCrapsBet,
+  canTakeDownCrapsBet,
+  chipStake,
   createCrapsGame,
   MAX_ODDS_MULTIPLE,
   oddsPayout,
@@ -10,7 +12,7 @@ import {
   placeRatio,
   placeWinnings,
   stakeReturnedByRoll,
-  placeStakes,
+  takeDownCrapsBet,
   PLACE_UNITS,
   rollCraps,
   totalCrapsPayout,
@@ -18,6 +20,7 @@ import {
 } from '../games/craps/engine'
 import { type CrapsState, CrapsPhase, RollOutcome } from '../games/craps/types'
 import { CrapsBet, PLACE_BETS, POINT_NUMBERS } from '../scenes/crapsFeltLayout'
+import { CHIP_DENOMINATIONS } from '../scenes/chipLayout'
 
 /**
  * Rolls until the dice show `total`, so a test can exercise one outcome without
@@ -324,9 +327,14 @@ describe('place bets', () => {
    * not a multiple of six, and $10 is not. These are the stakes the panel
    * offers, so every one has to pay exactly.
    */
-  it('pays whole dollars on every stake the table offers', () => {
+  it('pays whole dollars on every stake a chip can buy', () => {
+    const state = rollUntil(createCrapsGame(5), 4)
+
     for (const point of POINT_NUMBERS) {
-      for (const stake of placeStakes(point)) {
+      for (const denomination of CHIP_DENOMINATIONS) {
+        const stake = chipStake(state, PLACE_BETS[point], denomination.value)
+        if (stake === 0) continue
+
         const winnings = placeWinnings(stake, point)
         expect(Number.isInteger(winnings)).toBe(true)
 
@@ -458,5 +466,149 @@ describe('place bets', () => {
     const afterSeven = rollUntil(state, 7)
     expect(afterSeven.bets[CrapsBet.Place6]).toBe(6)
     expect(afterSeven.lastPayouts[CrapsBet.Place6]).toBe(0)
+  })
+})
+
+/**
+ * Every bet the bar draws, and every chip the rack offers, in the two states
+ * the table is ever in. `chipStake` is the only thing standing between a chip
+ * and a wager, so it is checked exhaustively rather than by example.
+ */
+const ALL_BETS = Object.values(CrapsBet)
+const ALL_CHIPS = CHIP_DENOMINATIONS.map((chip) => chip.value)
+
+function bothPhases(): CrapsState[] {
+  const comeOut = createCrapsGame(5)
+  // A point, a line bet behind it, and something already on a number, so the
+  // odds cap and the stacking case are both exercised.
+  let point = placeCrapsBet(comeOut, CrapsBet.PassLine, 10)
+  point = rollUntil(point, 4)
+  point = placeCrapsBet(point, CrapsBet.Place6, 6)
+  return [comeOut, point]
+}
+
+describe('what a chip buys', () => {
+  /*
+   * The interface must never offer a press the engine throws on. `placeCrapsBet`
+   * refuses anything `canPlaceCrapsBet` rejects, so a disagreement here is a
+   * crash on click rather than a wrong number somewhere.
+   */
+  it('never returns an amount the engine would refuse', () => {
+    for (const state of bothPhases()) {
+      for (const bet of ALL_BETS) {
+        for (const chip of ALL_CHIPS) {
+          const stake = chipStake(state, bet, chip)
+          if (stake === 0) continue
+
+          expect(canPlaceCrapsBet(state, bet, stake), `${bet} @ $${chip}`).toBe(true)
+          expect(() => placeCrapsBet(state, bet, stake)).not.toThrow()
+        }
+      }
+    }
+  })
+
+  /* You never spend more than the chip you picked up. */
+  it('never spends more than the chip', () => {
+    for (const state of bothPhases()) {
+      for (const bet of ALL_BETS) {
+        for (const chip of ALL_CHIPS) {
+          expect(chipStake(state, bet, chip), `${bet} @ $${chip}`).toBeLessThanOrEqual(chip)
+        }
+      }
+    }
+  })
+
+  /*
+   * This is what lets the rack own the bankroll check and every cell ignore it:
+   * a chip you can afford can always be afforded wherever it lands. It holds
+   * because nothing here ever rounds a stake *up*. Break that and the cells
+   * start offering bets that overdraw.
+   */
+  it('never turns an affordable chip into an unaffordable bet', () => {
+    for (const state of bothPhases()) {
+      for (const bet of ALL_BETS) {
+        for (const chip of ALL_CHIPS) {
+          expect(chipStake(state, bet, chip)).toBeLessThanOrEqual(chip)
+        }
+      }
+    }
+  })
+
+  /*
+   * The whole point of the rack. The old grid could only offer the amounts it
+   * had drawn, so a $25 chip on the six — $24, four sixes — was unreachable.
+   */
+  it('rounds a place bet down to whole units of that number', () => {
+    const [, point] = bothPhases()
+
+    expect(chipStake(point!, CrapsBet.Place6, 25)).toBe(24)
+    expect(chipStake(point!, CrapsBet.Place8, 100)).toBe(96)
+    expect(chipStake(point!, CrapsBet.Place5, 25)).toBe(25)
+
+    // A chip smaller than one unit buys nothing rather than quietly spending
+    // more than the player picked up.
+    expect(chipStake(point!, CrapsBet.Place6, 5)).toBe(0)
+  })
+
+  it('trims free odds to the headroom behind the line', () => {
+    let state = placeCrapsBet(createCrapsGame(5), CrapsBet.PassLine, 10)
+    state = rollUntil(state, 4)
+
+    // 3x on a ten-dollar line is thirty, so a hundred-dollar chip lays thirty.
+    expect(chipStake(state, CrapsBet.Odds, 100)).toBe(10 * MAX_ODDS_MULTIPLE)
+    expect(chipStake(state, CrapsBet.Odds, 10)).toBe(10)
+
+    // And nothing at all once the cap is reached.
+    const maxed = placeCrapsBet(state, CrapsBet.Odds, 10 * MAX_ODDS_MULTIPLE)
+    expect(chipStake(maxed, CrapsBet.Odds, 5)).toBe(0)
+  })
+
+  it('buys nothing on a closed bet', () => {
+    const [comeOut, point] = bothPhases()
+
+    // The numbers are shut until there is a point.
+    expect(chipStake(comeOut!, CrapsBet.Place6, 100)).toBe(0)
+    // And the line is shut once there is one.
+    expect(chipStake(point!, CrapsBet.PassLine, 100)).toBe(0)
+  })
+})
+
+describe('taking a bet down', () => {
+  /*
+   * Place bets ride until a seven now, so without this the only way out of a
+   * number is to leave the table — which hands back every other bet with it.
+   */
+  it('hands back exactly that bet and leaves the rest alone', () => {
+    let state = rollUntil(createCrapsGame(5), 4)
+    state = placeCrapsBet(state, CrapsBet.Place6, 12)
+    state = placeCrapsBet(state, CrapsBet.Place8, 6)
+
+    expect(canTakeDownCrapsBet(state, CrapsBet.Place6)).toBe(true)
+
+    const after = takeDownCrapsBet(state, CrapsBet.Place6)
+    expect(after.bets[CrapsBet.Place6]).toBe(0)
+    expect(after.bets[CrapsBet.Place8]).toBe(6)
+    expect(totalCrapsStake(after)).toBe(totalCrapsStake(state) - 12)
+  })
+
+  /*
+   * The pass line is the one true contract bet: once it is out it rides to a
+   * decision, which is what makes free odds behind it a fair bet at all.
+   */
+  it('refuses the pass line, and allows everything else', () => {
+    let state = placeCrapsBet(createCrapsGame(5), CrapsBet.PassLine, 10)
+    state = placeCrapsBet(state, CrapsBet.DontPass, 10)
+
+    expect(canTakeDownCrapsBet(state, CrapsBet.PassLine)).toBe(false)
+    expect(() => takeDownCrapsBet(state, CrapsBet.PassLine)).toThrow(/Cannot take down/)
+
+    expect(canTakeDownCrapsBet(state, CrapsBet.DontPass)).toBe(true)
+  })
+
+  it('refuses a bet with nothing on it', () => {
+    const state = rollUntil(createCrapsGame(5), 4)
+
+    expect(canTakeDownCrapsBet(state, CrapsBet.Place6)).toBe(false)
+    expect(() => takeDownCrapsBet(state, CrapsBet.Place6)).toThrow(/Cannot take down/)
   })
 })

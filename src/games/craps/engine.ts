@@ -91,25 +91,6 @@ export const PLACE_UNITS: Readonly<Record<PointNumber, number>> = {
 }
 
 /**
- * Stake tiers the table offers on a place bet, smallest first.
- *
- * Multiples of the number's own unit rather than one shared set of round
- * figures, so the six and eight are taken in sixes the way a real table takes
- * them. Derived rather than listed, because a hand-written list is exactly
- * where a stake that pays $11.66 gets in.
- *
- * Two tiers, not a long ladder: place bets stack, so a player who wants more on
- * a number presses the same button again. The panel offers exactly these, which
- * is what lets the whole-dollar test cover everything reachable.
- */
-const PLACE_TIERS: readonly number[] = [1, 5]
-
-/** The stakes offered on a number, every one of which pays whole dollars. */
-export function placeStakes(point: PointNumber): number[] {
-  return PLACE_TIERS.map((tier) => PLACE_UNITS[point] * tier)
-}
-
-/**
  * What a winning place bet pays, not counting the stake.
  *
  * Winnings alone, because a place bet is paid and *left up* — it is the bet you
@@ -228,6 +209,95 @@ export function canPlaceCrapsBet(state: CrapsState, bet: CrapsBet, amount: numbe
       return amount % PLACE_UNITS[number] === 0
     }
   }
+}
+
+/**
+ * What one chip of `chipValue` actually commits on a bet right now.
+ *
+ * The whole betting interface hangs off this. The bar used to be a grid of
+ * stake against bet, which drew every bet once per amount it was willing to
+ * offer — so the pass line was three separate buttons, none of which *was* the
+ * pass line, and no amount outside that grid could be wagered at all. Picking a
+ * chip and putting it somewhere is both how a table works and how the amount
+ * stops being a property of the button.
+ *
+ * A chip does not commit its face value everywhere:
+ *
+ * - **Free odds** are capped behind the line bet, so the chip is trimmed to
+ *   whatever headroom is left rather than refused outright.
+ * - **Place bets** are taken in the number's own unit — sixes on the six and
+ *   eight, fives elsewhere — so a chip is rounded *down* to a whole number of
+ *   units. A twenty-five on the six buys twenty-four, which the old grid had no
+ *   way to express, and a five on the six buys nothing at all rather than
+ *   quietly spending six.
+ *
+ * Never returns more than `chipValue`: you never spend more than you picked up.
+ * Never returns an amount `canPlaceCrapsBet` would refuse, so the interface
+ * cannot offer a press the engine throws on. Both are asserted.
+ *
+ * @returns The amount to wager, or 0 if this chip buys nothing on this bet.
+ */
+export function chipStake(state: CrapsState, bet: CrapsBet, chipValue: number): number {
+  if (!Number.isFinite(chipValue) || chipValue <= 0) return 0
+
+  const amount = intendedStake(state, bet, chipValue)
+  if (amount <= 0) return 0
+
+  // The single gate. Everything above only chooses an amount to ask about;
+  // whether it is allowed at all is the engine's existing answer.
+  return canPlaceCrapsBet(state, bet, amount) ? amount : 0
+}
+
+/** The amount a chip is worth on a bet, before asking whether it is allowed. */
+function intendedStake(state: CrapsState, bet: CrapsBet, chipValue: number): number {
+  if (bet === CrapsBet.Odds) {
+    const headroom =
+      state.bets[CrapsBet.PassLine] * MAX_ODDS_MULTIPLE - state.bets[CrapsBet.Odds]
+    return Math.min(chipValue, Math.max(0, headroom))
+  }
+
+  const number = placeBetNumber(bet)
+  if (number !== null) {
+    const unit = PLACE_UNITS[number]
+    return Math.floor(chipValue / unit) * unit
+  }
+
+  return chipValue
+}
+
+/**
+ * Whether a bet can be taken back off the felt.
+ *
+ * Everything except the pass line. That is the one true contract bet: once it
+ * is out it rides to a decision, which is what makes free odds behind it a fair
+ * bet in the first place. Don't pass, free odds, the field and the place
+ * numbers can all be called down at a real table whenever the player likes.
+ *
+ * Worth having at all because place bets ride until a seven now, so a player
+ * who backs a number can otherwise only get out by leaving the table — which
+ * hands back everything, including the bets they meant to keep.
+ */
+export function canTakeDownCrapsBet(state: CrapsState, bet: CrapsBet): boolean {
+  if (state.bets[bet] <= 0) return false
+  return bet !== CrapsBet.PassLine
+}
+
+/**
+ * Takes a bet off the felt, leaving every other bet where it is.
+ *
+ * @returns The state without that bet. The caller is responsible for handing
+ *   the stake back — it is the player's own money returning, not a payout, so
+ *   it goes through the bankroll directly and the marker has no claim on it.
+ * @throws {Error} If the bet cannot be taken down. Callers should check
+ *   `canTakeDownCrapsBet` first; this throws rather than silently no-op so a UI
+ *   bug surfaces instead of quietly pocketing the stake.
+ */
+export function takeDownCrapsBet(state: CrapsState, bet: CrapsBet): CrapsState {
+  if (!canTakeDownCrapsBet(state, bet)) {
+    throw new Error(`Cannot take down "${bet}" holding ${state.bets[bet]}`)
+  }
+
+  return { ...state, bets: { ...state.bets, [bet]: 0 } }
 }
 
 /**

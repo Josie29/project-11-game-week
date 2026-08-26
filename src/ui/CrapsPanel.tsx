@@ -1,37 +1,66 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import {
-  canPlaceCrapsBet,
+  canTakeDownCrapsBet,
+  chipStake,
+  MAX_ODDS_MULTIPLE,
   oddsRatio,
   placeRatio,
-  placeStakes,
+  PLACE_UNITS,
   totalCrapsPayout,
 } from '../games/craps/engine'
-import { CrapsPhase, RollOutcome } from '../games/craps/types'
+import { CHIP_DENOMINATIONS } from '../scenes/chipLayout'
+import { type CrapsState, CrapsPhase, RollOutcome } from '../games/craps/types'
 import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
 import { MARKER_AMOUNT } from '../world/money'
 import {
-  CRAPS_BET_LABELS,
   CrapsBet,
   PLACE_BETS,
+  placeBetNumber,
   POINT_NUMBERS,
 } from '../scenes/crapsFeltLayout'
 import { getVenue, type VenueId } from '../world/venues'
 
-/** Same stakes the blackjack table offers; all pay whole dollars at true odds. */
-const STAKES = [10, 50, 100] as const
+/**
+ * The rack, smallest first, so the number keys read left to right.
+ *
+ * `CHIP_DENOMINATIONS` is declared largest first because that is the order a
+ * payout is broken into chips. A rack is read the other way.
+ */
+const RACK = [...CHIP_DENOMINATIONS].reverse()
+
+/** The chip in hand when the player walks up, if they can afford it. */
+const DEFAULT_CHIP = 25
 
 /**
- * The place bets get their own controls, laid out by number rather than by
- * stake.
+ * The bar's two groups, split the way the felt splits them: the line bets run
+ * along the shooter's edge, the six numbers across the boxman's.
  *
- * The line bets share one set of round figures, and the place bets cannot: the
- * six and eight pay in sevenths and are taken in sixes, everything else pays in
- * fifths and is taken in fives, so a shared "$50" row would offer stakes that
- * pay a fraction of a chip on half the numbers. Each button carries its own
- * amount instead, which is also how the table would say it out loud.
+ * One flat run of ten wraps to nine and a widow at most window widths, and the
+ * orphan reads as a mistake rather than a row.
  */
-const PLACE_TIER_LABELS: readonly string[] = ['Place', '\u00d75']
+const LINE_BETS: readonly CrapsBet[] = [
+  CrapsBet.PassLine,
+  CrapsBet.DontPass,
+  CrapsBet.Odds,
+  CrapsBet.Field,
+]
+
+const NUMBER_BETS: readonly CrapsBet[] = POINT_NUMBERS.map((point) => PLACE_BETS[point])
+
+/** What each bet is called on its own cell. Shorter than the felt's print. */
+const CELL_LABELS: Readonly<Record<CrapsBet, string>> = {
+  [CrapsBet.PassLine]: 'Pass line',
+  [CrapsBet.DontPass]: "Don't pass",
+  [CrapsBet.Odds]: 'Free odds',
+  [CrapsBet.Field]: 'Field',
+  [CrapsBet.Place4]: '4',
+  [CrapsBet.Place5]: '5',
+  [CrapsBet.Place6]: '6',
+  [CrapsBet.Place8]: '8',
+  [CrapsBet.Place9]: '9',
+  [CrapsBet.Place10]: '10',
+}
 
 const OUTCOME_LABEL: Readonly<Record<RollOutcome, string>> = {
   [RollOutcome.Natural]: 'Natural — pass line wins',
@@ -44,6 +73,65 @@ const OUTCOME_LABEL: Readonly<Record<RollOutcome, string>> = {
 
 const WINNING_OUTCOMES = new Set([RollOutcome.Natural, RollOutcome.PointMade])
 const LOSING_OUTCOMES = new Set([RollOutcome.Craps, RollOutcome.SevenOut])
+
+/** What a bet pays, for the cell's tooltip. */
+function betTerms(game: CrapsState, bet: CrapsBet): string {
+  const number = placeBetNumber(bet)
+  if (number !== null) {
+    const { numerator, denominator } = placeRatio(number)
+    return `Place the ${number} — pays ${numerator} to ${denominator}, in $${PLACE_UNITS[number]}, and stays up until a seven`
+  }
+
+  switch (bet) {
+    case CrapsBet.Odds: {
+      if (!game.point) return 'Free odds — backs a pass line once there is a point'
+      const { numerator, denominator } = oddsRatio(game.point)
+      return `Free odds on the ${game.point} — pays ${numerator} to ${denominator}, the only bet here with no house edge`
+    }
+    case CrapsBet.Field:
+      return 'Field — one roll. Even money on 3, 4, 9, 10 and 11; the 2 pays 2 to 1 and the 12 pays 3 to 1'
+    case CrapsBet.DontPass:
+      return "Don't pass — even money, betting against the shooter. A twelve on the come out is barred"
+    default:
+      return 'Pass line — even money, and it rides to a decision once it is out'
+  }
+}
+
+/**
+ * Why a bet cannot be backed with the chip in hand.
+ *
+ * A dead control with no reason given reads as broken. Every one of these is a
+ * real rule rather than a limit of the interface, so saying it out loud teaches
+ * the table instead of apologising for it.
+ */
+function shutReason(
+  game: CrapsState,
+  bet: CrapsBet,
+  chip: number,
+  comeOut: boolean,
+): string {
+  const number = placeBetNumber(bet)
+  if (number !== null) {
+    if (comeOut) return 'needs a point'
+    // The chip is smaller than one unit of this number, so it buys no whole
+    // units at all — the six and eight are taken in sixes, the rest in fives.
+    return `takes $${PLACE_UNITS[number]}`
+  }
+
+  switch (bet) {
+    case CrapsBet.Odds: {
+      if (comeOut) return 'needs a point'
+      const line = game.bets[CrapsBet.PassLine]
+      if (line === 0) return 'needs a pass line'
+      return `maxed at $${line * MAX_ODDS_MULTIPLE}`
+    }
+    case CrapsBet.Field:
+      return chip > 0 ? 'one roll' : 'no chips'
+    default:
+      // Pass line and don't pass are come-out bets and cannot be added to.
+      return comeOut ? 'already down' : 'point is on'
+  }
+}
 
 interface CrapsPanelProps {
   venueId: VenueId
@@ -59,6 +147,7 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
   const game = useCrapsStore((state) => state.game)
   const isRolling = useCrapsStore((state) => state.isRolling)
   const wager = useCrapsStore((state) => state.wager)
+  const takeDown = useCrapsStore((state) => state.takeDown)
   const throwDice = useCrapsStore((state) => state.throwDice)
   const resetTable = useCrapsStore((state) => state.reset)
 
@@ -76,6 +165,20 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
 
   /** No point yet, so the line bets are live and the numbers are not. */
   const comeOut = game.phase === CrapsPhase.ComeOut
+
+  const [pickedChip, setPickedChip] = useState(DEFAULT_CHIP)
+
+  /*
+   * The chip actually in hand. Derived rather than corrected in an effect: a
+   * bet can spend the bankroll below the chip the player last chose, and an
+   * effect that reached back to fix the selection would render one frame with
+   * a chip they cannot afford still highlighted.
+   */
+  const affordable = RACK.filter((chip) => chip.value <= bankroll)
+  const chip =
+    affordable.some((entry) => entry.value === pickedChip)
+      ? pickedChip
+      : (affordable[affordable.length - 1]?.value ?? 0)
 
   /*
    * Craps has never had a broke state — it just left the player looking at
@@ -95,8 +198,20 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
       if (event.key === ' ') {
         event.preventDefault()
         if (canRoll) throwDice()
-      } else if (event.key.toLowerCase() === 'escape' || event.key === 'Escape') {
+        return
+      }
+
+      if (event.key.toLowerCase() === 'escape' || event.key === 'Escape') {
         handleLeave()
+        return
+      }
+
+      // 1 to 5 pick up a chip, left to right along the rack. The stake is a
+      // mode now, so it wants a key the way the roll and the exit do.
+      const slot = Number(event.key)
+      if (Number.isInteger(slot) && slot >= 1 && slot <= RACK.length) {
+        const picked = RACK[slot - 1]
+        if (picked && picked.value <= bankroll) setPickedChip(picked.value)
       }
     }
 
@@ -167,78 +282,90 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
         </div>
       )}
 
-      <div className="table-ui__bets">
-      <div className="table-ui__actions">
-        {STAKES.map((amount, index) => (
-          <span key={amount} className="table-ui__stake">
-            <span className="table-ui__prompt">${amount}</span>
-            {[CrapsBet.PassLine, CrapsBet.DontPass, CrapsBet.Odds, CrapsBet.Field].map((bet) => (
-              <button
-                key={bet}
-                type="button"
-                className="button button--bet"
-                disabled={isRolling || amount > bankroll || !canPlaceCrapsBet(game, bet, amount)}
-                onClick={() => wager(bet, amount)}
-                title={
-                  bet === CrapsBet.Odds && game.point
-                    ? `Pays ${oddsRatio(game.point).numerator} to ${oddsRatio(game.point).denominator}`
-                    : CRAPS_BET_LABELS[bet]
-                }
-              >
-                {CRAPS_BET_LABELS[bet]}
-              </button>
-            ))}
-            {index < STAKES.length - 1 && <span className="table-ui__divider" />}
-          </span>
+      {/*
+        Pick a chip, then pick a bet. The stake was a property of the button
+        before this — the pass line was drawn three times, once per amount, and
+        no amount outside that grid could be wagered at all.
+      */}
+      <div className="chip-tray">
+        <span className="table-ui__prompt">Chips</span>
+        {RACK.map((denomination, index) => (
+          <button
+            key={denomination.value}
+            type="button"
+            className={`chip${denomination.value === chip ? ' chip--held' : ''}`}
+            style={{ background: denomination.color, borderColor: denomination.edge }}
+            disabled={denomination.value > bankroll}
+            aria-pressed={denomination.value === chip}
+            onClick={() => setPickedChip(denomination.value)}
+            title={`$${denomination.value} chip`}
+          >
+            {denomination.value}
+            <kbd>{index + 1}</kbd>
+          </button>
         ))}
       </div>
 
-      {/*
-        The six numbers, which need a point before they can be laid. Six rows of
-        dead buttons with no reason given reads as broken, so the reason is
-        printed where the stakes would be.
-      */}
-      <div className="table-ui__actions">
-        {comeOut && (
-          <span className="table-ui__prompt">
-            The numbers open once the shooter has a point.
-          </span>
-        )}
-        {!comeOut &&
-          PLACE_TIER_LABELS.map((label, tier) => (
-          <span key={label} className="table-ui__stake">
-            <span className="table-ui__prompt">{label}</span>
-            {POINT_NUMBERS.map((point) => {
-              const bet = PLACE_BETS[point]
-              const amount = placeStakes(point)[tier]!
-              const onNumber = game.bets[bet]
-              const { numerator, denominator } = placeRatio(point)
+      <div className="bet-groups">
+        {[LINE_BETS, NUMBER_BETS].map((group, index) => (
+        <div className={`bet-grid${index === 1 ? ' bet-grid--numbers' : ''}`} key={index}>
+        {group.map((bet) => {
+          const onBet = game.bets[bet]
+          const stake = isRolling ? 0 : chipStake(game, bet, chip)
+          const number = placeBetNumber(bet)
+          const removable = !isRolling && canTakeDownCrapsBet(game, bet)
 
-              return (
-                <button
-                  key={point}
-                  type="button"
-                  className="button button--bet"
-                  disabled={
-                    isRolling || amount > bankroll || !canPlaceCrapsBet(game, bet, amount)
-                  }
-                  onClick={() => wager(bet, amount)}
-                  title={`Place the ${point} for $${amount} — pays ${numerator} to ${denominator}, and stays up until a seven`}
-                >
-                  {point} <kbd>${amount}</kbd>
-                  {/* What is already on the number, shown once rather than on
-                      every tier — two dollar figures on one button read as two
-                      prices for the same press. */}
-                  {tier === 0 && onNumber > 0 && (
-                    <span className="table-ui__payout">on ${onNumber}</span>
-                  )}
-                </button>
-              )
-            })}
-            {tier < PLACE_TIER_LABELS.length - 1 && <span className="table-ui__divider" />}
-          </span>
-          ))}
-      </div>
+          return (
+            <div
+              key={bet}
+              className={`bet-cell${onBet > 0 ? ' bet-cell--backed' : ''}${
+                stake > 0 ? '' : ' bet-cell--shut'
+              }`}
+            >
+              <button
+                type="button"
+                className="bet-cell__add"
+                data-bet={bet}
+                disabled={stake <= 0}
+                onClick={() => wager(bet, stake)}
+                title={betTerms(game, bet)}
+              >
+                <span className="bet-cell__name">{CELL_LABELS[bet]}</span>
+                <span className="bet-cell__terms">
+                  {stake > 0 ? `+$${stake}` : shutReason(game, bet, chip, comeOut)}
+                </span>
+              </button>
+
+              <span className="bet-cell__foot">
+                {onBet > 0 && <span className="bet-cell__on">on ${onBet}</span>}
+                {/*
+                  A sibling of the add button, never nested inside it: a button
+                  within a button is invalid, and the browser picks a winner for
+                  you. Only shown when there is something to call down.
+                */}
+                {removable && (
+                  <button
+                    type="button"
+                    className="bet-cell__down"
+                    onClick={() => takeDown(bet)}
+                    title={`Take $${onBet} down off the ${CELL_LABELS[bet].toLowerCase()}`}
+                    aria-label={`Take down ${CELL_LABELS[bet]}`}
+                  >
+                    &minus;
+                  </button>
+                )}
+              </span>
+
+              {number !== null && (
+                <span className="bet-cell__odds">
+                  {placeRatio(number).numerator}:{placeRatio(number).denominator}
+                </span>
+              )}
+            </div>
+          )
+        })}
+        </div>
+        ))}
       </div>
 
       <div className="table-ui__actions">

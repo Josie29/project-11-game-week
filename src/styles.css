@@ -282,50 +282,215 @@ kbd {
   background: transparent;
 }
 
-/* Craps offers four bets at three stakes, so the bar groups by stake. */
-.table-ui__stake {
+/*
+ * The craps bar: a rack of chips, then one cell per bet.
+ *
+ * It was a grid of stake against bet — every bet drawn once for each amount the
+ * table was willing to offer, so the pass line was three separate buttons and
+ * none of them was the pass line. Nothing had a home to show a running total
+ * on, to grey out when it closed, or to flash when it paid. Picking a chip up
+ * and putting it somewhere is both how a table works and how the amount stops
+ * belonging to the button.
+ */
+.chip-tray {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  width: 100%;
 }
 
-/*
- * The craps bar carries two groups of controls — the line bets and the six
- * place numbers — and stacked they ran to five rows, which covered the near
- * third of the felt including the pass line. The camera cannot answer that:
- * it looks at a point and that point is always screen centre, so anything the
- * bar covers is covered at every distance. Side by side, the bar is as tall as
- * its taller group instead of the sum of both.
- */
-.table-ui__bets {
+.chip {
+  position: relative;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border-radius: 50%;
+  /* Dashed, like the edge spots on a real chip. The inlay colour comes from
+     the same table the felt stacks are drawn from, so rack and felt match. */
+  border: 2px dashed currentColor;
+  font-family: var(--font-numeric);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+  transition: transform 120ms ease;
+}
+
+.chip kbd {
+  position: absolute;
+  bottom: -0.4rem;
+  font-size: 0.5rem;
+  opacity: 0.75;
+}
+
+.chip:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* The chip in hand sits proud of the rack. */
+.chip--held {
+  transform: translateY(-0.2rem);
+  box-shadow: 0 0 0 2px var(--color-neon-gold);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chip {
+    transition: none;
+  }
+}
+
+.bet-groups {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
   gap: var(--space-2);
   width: 100%;
 }
 
-.table-ui__bets > .table-ui__actions {
-  flex: 1 1 0;
-}
-
 @media (min-width: 60rem) {
-  .table-ui__bets {
+  .bet-groups {
     flex-direction: row;
   }
 }
 
-.table-ui__divider {
-  width: 1px;
-  height: 1.25rem;
-  margin: 0 var(--space-2);
-  background: var(--color-border);
+/*
+ * Column counts are fixed rather than auto-fit. Both groups hold a known number
+ * of bets, and auto-fit resolved the six numbers to five across at most window
+ * widths — leaving the ten alone on a second row, which reads as a mistake
+ * rather than a row.
+ */
+.bet-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
 }
 
-.button--bet {
+.bet-grid--numbers {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+@media (min-width: 60rem) {
+  .bet-grid {
+    grid-template-columns: repeat(4, 1fr);
+    flex: 4 1 0;
+  }
+
+  .bet-grid--numbers {
+    grid-template-columns: repeat(6, 1fr);
+    flex: 6 1 0;
+  }
+}
+
+.bet-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: calc(var(--radius) * 0.75);
+  background: rgba(30, 34, 60, 0.5);
+  overflow: hidden;
+}
+
+.bet-cell--backed {
+  border-color: rgba(255, 198, 63, 0.55);
+}
+
+.bet-cell--shut {
+  opacity: 0.45;
+}
+
+.bet-cell__add {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  align-items: flex-start;
   padding: var(--space-1) var(--space-2);
-  font-size: 0.6875rem;
-  letter-spacing: 0.04em;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bet-cell__add:disabled {
+  cursor: default;
+}
+
+.bet-cell__name {
+  font-size: 0.75rem;
+  letter-spacing: 0.03em;
+}
+
+.bet-cell__terms {
+  font-family: var(--font-numeric);
+  font-size: 0.625rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.bet-cell__add:not(:disabled) .bet-cell__terms {
+  color: var(--color-neon-gold);
+}
+
+/* Only takes room when there is money on the bet to report. */
+.bet-cell__foot:not(:empty) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+  padding: 0 var(--space-2) var(--space-1);
+}
+
+.bet-cell__on {
+  font-family: var(--font-numeric);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-neon-gold);
+}
+
+.bet-cell__down {
+  width: 1.15rem;
+  height: 1.15rem;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: none;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.bet-cell__down:hover {
+  color: var(--color-loss);
+  border-color: var(--color-loss);
+}
+
+/* The ratio, printed in the corner the way it is on the felt's own boxes. */
+.bet-cell__odds {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  font-family: var(--font-numeric);
+  font-size: 0.5625rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Establishing a point is neither a win nor a loss. */

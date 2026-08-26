@@ -367,7 +367,9 @@ try {
    *    printed whether or not anything was rolled. It passed without a throw
    *    ever having happened.
    */
-  await page.getByRole('button', { name: 'PASS LINE' }).first().click()
+  //    By data attribute, not by name: a bet is one cell now, and its
+  //    accessible name carries the terms alongside the label.
+  await page.locator('[data-bet="pass-line"]').first().click()
   await page.waitForTimeout(400)
 
   await page.keyboard.press('Space')
