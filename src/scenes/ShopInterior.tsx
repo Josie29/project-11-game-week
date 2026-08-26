@@ -1,7 +1,12 @@
 import { MeshReflectorMaterial, PerspectiveCamera } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
-import { BackSide, PerspectiveCamera as PerspectiveCameraImpl, Vector3 } from 'three'
+import {
+  BackSide,
+  DoubleSide,
+  PerspectiveCamera as PerspectiveCameraImpl,
+  Vector3,
+} from 'three'
 import { findItem, type ShopItem } from '../character/catalog'
 import { isFitting, wornInSlot } from '../character/fitting'
 import { WINDOW_DISPLAY } from '../character/windowDisplay'
@@ -17,10 +22,16 @@ import { ShopClerk, CLERK_GLANCE_RADIUS } from './components/ShopClerk'
 import { WalkingPlayer, type ProximityTarget } from './components/WalkingPlayer'
 import {
   CABINET_HEIGHT,
+  CABINET_SHELVES,
   CAMERA_BOUNDS,
   BACK_SHELF,
   BACK_SHELF_HEIGHT,
+  CASE_DECK_THICKNESS,
+  CASE_DECK_Y,
+  CASE_GLASS_Y,
   CASE_HEIGHT,
+  CASE_PIECE_BASE_Y,
+  CASE_PIECE_HEIGHT,
   CLERK_STAND,
   COUNTER,
   COUNTER_HEIGHT,
@@ -50,6 +61,7 @@ import {
   MIRROR_SILL,
   MIRROR_STAND,
   MIRROR_WIDTH,
+  nicheShelfY,
   obstacles,
   SHOE_CABINET,
   TRY_RADIUS,
@@ -88,6 +100,8 @@ const RUG = '#8e7a66'
 const PLINTH_TOP = '#a08b7a'
 const PANEL = '#2c0e28'
 const CEILING = '#241d28'
+/** The field behind the window dummies, read off the reference's blue panel. */
+const BACKDROP = '#1d2a4d'
 
 /**
  * The body an item on a fixture is drawn against.
@@ -97,6 +111,14 @@ const CEILING = '#241d28'
  * three, which is what a shop dummy is.
  */
 const DUMMY_BODY = PROPORTIONS[Silhouette.Androgynous]
+
+/**
+ * How tall the window's backdrop panel stands above the platform.
+ *
+ * Tall enough to be behind the dummies' heads — a panel that stops at the
+ * shoulder frames the clothes and decapitates the figure.
+ */
+const BACKDROP_HEIGHT = 2.05
 
 /** Where a fixture's own downlight hangs. */
 const LIGHT_HEIGHT = WALL_HEIGHT - 0.35
@@ -151,14 +173,29 @@ function Mannequin({ index }: { index: number }) {
  * reason to walk over is to see which of the two chains is which.
  */
 function CasePiece({ item }: { item: ShopItem }) {
+  /*
+   * Everything here is measured up from the deck the piece stands on.
+   *
+   * It used to be measured down from `CASE_HEIGHT`, which put it inside the
+   * solid box that lit the case — so the bust and the piece were both sealed in
+   * a cream slab, in the one fixture whose entire purpose is being looked into.
+   * `isOnShowInCase` holds the stack between the deck and the glass now.
+   */
+  const bustHeight = CASE_PIECE_HEIGHT * 0.52
+
   return (
-    <group position={[0, CASE_HEIGHT - 0.34, 0]}>
-      {/* The cream bust the piece is displayed on. */}
-      <mesh position={[0, 0.1, 0]} castShadow>
-        <cylinderGeometry args={[0.07, 0.13, 0.26, 12]} />
-        <meshStandardMaterial color={CASE_GLOW} roughness={0.8} />
+    <group position={[0, CASE_PIECE_BASE_Y, 0]}>
+      {/* The cream velvet bust the piece is displayed on. */}
+      <mesh position={[0, bustHeight / 2, 0]} castShadow>
+        <cylinderGeometry args={[0.06, 0.11, bustHeight, 12]} />
+        <meshStandardMaterial color={CASE_GLOW} roughness={0.85} />
       </mesh>
-      <group position={[0, 0.24, 0]} scale={1.35}>
+      {/* A shallow plinth under it, so the bust is stood on something. */}
+      <mesh position={[0, 0.012, 0]}>
+        <cylinderGeometry args={[0.13, 0.14, 0.024, 14]} />
+        <meshStandardMaterial color="#d8c7a8" roughness={0.9} />
+      </mesh>
+      <group position={[0, bustHeight + 0.03, 0]} scale={1.15}>
         <Accessory item={item} body={DUMMY_BODY} compact />
       </group>
     </group>
@@ -264,7 +301,7 @@ function DisplayFixture({ display, index, owned }: {
       {display.fixture === Fixture.Mannequin && <Mannequin index={index} />}
       {display.fixture === Fixture.Pedestal && <CasePiece item={item} />}
       {display.fixture === Fixture.Niche && (
-        <ShoeNiche item={item} height={display.itemId === 'gold-heels' ? 0.72 : 1.36} />
+        <ShoeNiche item={item} height={nicheShelfY(display.itemId)} />
       )}
       {display.fixture === Fixture.Stand && <HatStand item={item} />}
       {display.fixture === Fixture.Rack && <CaneRack item={item} />}
@@ -690,19 +727,60 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
         <meshStandardMaterial color={FLOOR} roughness={0.48} metalness={0.22} />
       </mesh>
 
-      {/* Neon coving where the walls meet the ceiling, doubled as on the sheet. */}
-      {[-1, 1].map((side) => (
-        <group key={side}>
-          <mesh position={[side * (HALF_WIDTH - 0.05), WALL_HEIGHT - 0.3, 0]}>
-            <boxGeometry args={[0.06, 0.08, ROOM_DEPTH - 0.5]} />
-            <meshBasicMaterial color={venue.neonColor} toneMapped={false} />
-          </mesh>
-          <mesh position={[side * (HALF_WIDTH - 0.05), WALL_HEIGHT - 0.46, 0]}>
-            <boxGeometry args={[0.05, 0.05, ROOM_DEPTH - 0.5]} />
-            <meshBasicMaterial color={BRASS_LIT} toneMapped={false} />
-          </mesh>
-        </group>
-      ))}
+      {/*
+        Neon coving where the walls meet the ceiling, doubled as on the sheet.
+
+        Two runs, down the long walls, each tucked under a shelf.
+
+        The reference's cove goes round all four and it was built that way, then
+        cut back: this room renders at about one frame a second headless, and
+        four runs plus their shelves was six more draw calls than it could carry.
+        The shelf is what earns its place — a bare stripe near the ceiling reads
+        as paint, and the same stripe with a reveal above it reads as a recess.
+      */}
+      {[
+        { key: 'left', at: [-(HALF_WIDTH - 0.05), 0] as const, span: ROOM_DEPTH - 0.5, along: 'z' as const },
+        { key: 'right', at: [HALF_WIDTH - 0.05, 0] as const, span: ROOM_DEPTH - 0.5, along: 'z' as const },
+      ].map(({ key, at, span, along }) => {
+        const tube: [number, number, number] = along === 'z' ? [0.06, 0.08, span] : [span, 0.08, 0.06]
+        const trim: [number, number, number] = along === 'z' ? [0.05, 0.05, span] : [span, 0.05, 0.05]
+        const shelf: [number, number, number] =
+          along === 'z' ? [0.2, 0.04, span] : [span, 0.04, 0.2]
+
+        return (
+          <group key={key} position={[at[0], 0, at[1]]}>
+            {/* The shelf the tube is tucked under. */}
+            <mesh position={[0, WALL_HEIGHT - 0.2, 0]}>
+              <boxGeometry args={shelf} />
+              <meshStandardMaterial color={PANEL} roughness={0.8} />
+            </mesh>
+            <mesh position={[0, WALL_HEIGHT - 0.3, 0]}>
+              <boxGeometry args={tube} />
+              <meshBasicMaterial color={venue.neonColor} toneMapped={false} />
+            </mesh>
+            <mesh position={[0, WALL_HEIGHT - 0.46, 0]}>
+              <boxGeometry args={trim} />
+              <meshBasicMaterial color={BRASS_LIT} toneMapped={false} />
+            </mesh>
+            {/*
+              What the tube actually throws. Kept dim and short-range: this is a
+              wash on the wall it is fixed to, and four of them at any strength
+              would light the room the plum walls exist to keep dark.
+            */}
+            {/*
+              No lamp on the cove, deliberately.
+
+              A pointLight here washed the wall beautifully and cost two of this
+              room's light slots, and the shop cannot afford them: three.js
+              forward-renders every light into every shader, and adding lights
+              here slowed the headless render enough that the walkthrough's
+              scripted walk stopped reaching the mirror — the failure
+              `MIRROR_RADIUS` already carries a note about. The tube is emissive
+              and the shelf above it casts the reveal; that is the whole look.
+            */}
+          </group>
+        )
+      })}
 
       {/* Brass dado rail along both side walls, above the cases. */}
       {[-1, 1].map((side) => (
@@ -740,6 +818,47 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
           />
           <meshStandardMaterial color={BRASS} roughness={0.3} metalness={0.85} />
         </mesh>
+
+        {/*
+          The backdrop the dummies stand against.
+
+          Three dark figures in front of a dark plum wall is three silhouettes
+          with nothing behind them to be silhouettes against — the reference puts
+          a lit blue field in a wood surround behind its window, and that panel
+          is most of why the clothes read at all. Faces into the room, so it
+          catches the platform's own downlights.
+        */}
+        {/*
+          Behind the dummies means the *far* side of the platform.
+
+          The player stands out in the room at a lower z and looks toward the
+          front wall, so "behind" is +z. Put on the near side it is not a
+          backdrop, it is a hoarding: the first version stood a two-metre wood
+          panel between the camera and all three outfits and hid the entire
+          window.
+        */}
+        <group position={[0, 0, (WINDOW_PLATFORM.maxZ - WINDOW_PLATFORM.minZ) / 2 + 0.04]}>
+          <mesh position={[0, BACKDROP_HEIGHT / 2 + 0.05, 0.03]}>
+            <boxGeometry
+              args={[WINDOW_PLATFORM.maxX - WINDOW_PLATFORM.minX + 0.24, BACKDROP_HEIGHT + 0.2, 0.07]}
+            />
+            <meshStandardMaterial color={WOOD} roughness={0.65} />
+          </mesh>
+          {/* The blue field, turned to face back into the room. */}
+          <mesh position={[0, BACKDROP_HEIGHT / 2 + 0.05, -0.012]} rotation={[0, Math.PI, 0]}>
+            <planeGeometry
+              args={[WINDOW_PLATFORM.maxX - WINDOW_PLATFORM.minX + 0.02, BACKDROP_HEIGHT]}
+            />
+            <meshStandardMaterial color={BACKDROP} roughness={0.85} />
+          </mesh>
+          {/* A brass reveal where the panel meets its surround. */}
+          <mesh position={[0, BACKDROP_HEIGHT + 0.16, -0.02]}>
+            <boxGeometry
+              args={[WINDOW_PLATFORM.maxX - WINDOW_PLATFORM.minX + 0.26, 0.035, 0.05]}
+            />
+            <meshStandardMaterial color={BRASS} roughness={0.35} metalness={0.8} />
+          </mesh>
+        </group>
       </group>
 
       {/* The two glass cases down the left wall. */}
@@ -752,35 +871,96 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
             <boxGeometry args={[box.maxX - box.minX, CASE_HEIGHT - 0.36, box.maxZ - box.minZ]} />
             <meshStandardMaterial color={WOOD} roughness={0.6} />
           </mesh>
-          {/*
-            Lit from inside, which is what makes a case read as a case.
 
-            Tone-mapped and emissive rather than `meshBasicMaterial`, for the
-            reason the clinic's ceiling panels are: an unmapped cream box this
-            size sails past the bloom threshold and comes back as one white slab
-            with the jewellery invisible inside it.
+          {/*
+            The deck the pieces stand on — and the whole of what used to be
+            wrong.
+
+            This was a *solid* emissive box filling the glazed volume, on the
+            reasoning that a case is lit from inside. It is, but a lit solid is
+            not a lit space: `CasePiece` puts its bust and the piece itself in
+            here, so every one of the four items sold from these cases was
+            sealed inside a featureless cream slab. A case with nothing in it and
+            a case with a necklace hidden in it are the same picture, which is
+            why it survived.
+
+            A thin lit deck. Emissive rather than a lamp inside the case, and
+            that is a performance decision rather than an aesthetic one: this
+            room forward-renders about thirteen downlights already, and adding
+            real lamps to the cases took the headless frame rate from seven
+            frames in eighteen seconds to zero. The emissive was never what was
+            wrong — a solid emissive *volume* containing the goods was.
           */}
-          <mesh position={[0, CASE_HEIGHT - 0.19, 0]}>
+          <mesh position={[0, CASE_DECK_Y, 0]} receiveShadow>
             <boxGeometry
-              args={[box.maxX - box.minX - 0.06, 0.38, box.maxZ - box.minZ - 0.06]}
+              args={[
+                box.maxX - box.minX - 0.06,
+                CASE_DECK_THICKNESS,
+                box.maxZ - box.minZ - 0.06,
+              ]}
             />
             <meshStandardMaterial
               color={CASE_GLOW}
-              roughness={0.9}
+              roughness={0.85}
               emissive={CASE_GLOW}
-              emissiveIntensity={0.18}
+              emissiveIntensity={0.55}
             />
           </mesh>
-          <mesh position={[0, CASE_HEIGHT + 0.02, 0]}>
-            <boxGeometry args={[box.maxX - box.minX, 0.04, box.maxZ - box.minZ]} />
+
+          {/*
+            Glass: a top and two long sides, so a case seen from the floor is a
+            box you look into rather than a lid on a plinth.
+
+            `depthWrite={false}` on every pane. A transparent surface that writes
+            depth occludes whatever is drawn after it — which, for the panes
+            nearest the camera, is the jewellery directly behind them.
+          */}
+          <mesh position={[0, CASE_GLASS_Y, 0]}>
+            <boxGeometry args={[box.maxX - box.minX, 0.03, box.maxZ - box.minZ]} />
             <meshStandardMaterial
               color={CASE_GLASS}
               roughness={0.06}
               metalness={0.2}
               transparent
-              opacity={0.35}
+              opacity={0.24}
+              depthWrite={false}
             />
           </mesh>
+          {[-1, 1].map((side) => (
+            <mesh
+              key={`pane-${side}`}
+              position={[(side * (box.maxX - box.minX)) / 2, (CASE_DECK_Y + CASE_GLASS_Y) / 2, 0]}
+              rotation={[0, Math.PI / 2, 0]}
+            >
+              <planeGeometry args={[box.maxZ - box.minZ, CASE_GLASS_Y - CASE_DECK_Y]} />
+              <meshStandardMaterial
+                color={CASE_GLASS}
+                roughness={0.06}
+                metalness={0.2}
+                transparent
+                opacity={0.18}
+                depthWrite={false}
+                side={DoubleSide}
+              />
+            </mesh>
+          ))}
+
+          {/* Brass corner posts, joining the edge rails into a frame. */}
+          {[-1, 1].map((sx) =>
+            [-1, 1].map((sz) => (
+              <mesh
+                key={`post-${sx}:${sz}`}
+                position={[
+                  (sx * (box.maxX - box.minX)) / 2,
+                  (CASE_DECK_Y + CASE_GLASS_Y) / 2,
+                  (sz * (box.maxZ - box.minZ)) / 2,
+                ]}
+              >
+                <boxGeometry args={[0.04, CASE_GLASS_Y - CASE_DECK_Y, 0.04]} />
+                <meshStandardMaterial color={BRASS} roughness={0.4} metalness={0.7} />
+              </mesh>
+            )),
+          )}
           {/*
             A brass frame around the glass, not a lid over it.
 
@@ -844,22 +1024,49 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
           <boxGeometry args={[CABINET_DEPTH, 0.08, CABINET_WIDTH]} />
           <meshStandardMaterial color={BRASS} roughness={0.3} metalness={0.85} />
         </mesh>
-        {/* The lit back of each shelf, seen through the open front. */}
-        {[0.72, 1.36].map((height) => (
-          <mesh
-            key={height}
-            position={[CABINET_DEPTH / 2 - 0.09, height + 0.26, 0]}
-            rotation={[0, -Math.PI / 2, 0]}
-          >
-            <planeGeometry args={[CABINET_WIDTH - 0.16, 0.52]} />
-            <meshStandardMaterial
-              color={CASE_GLOW}
-              roughness={0.9}
-              emissive={CASE_GLOW}
-              emissiveIntensity={0.5}
-            />
-          </mesh>
+        {/*
+          Four shelves, each with its own lit back and a visible front edge.
+
+          It was two backs at `emissiveIntensity` 0.5, which in the darkest room
+          in the game blew to one flat gold sheet with no shelves in it at all —
+          a wall of shoes reading as a lamp. Four backs at a lower value gives
+          the same total light spread over four readable shelves instead of one
+          blown slab, and costs no extra lights: this room cannot afford any.
+        */}
+        {CABINET_SHELVES.map((height) => (
+          <group key={height}>
+            <mesh
+              position={[CABINET_DEPTH / 2 - 0.09, height + 0.24, 0]}
+              rotation={[0, -Math.PI / 2, 0]}
+            >
+              <planeGeometry args={[CABINET_WIDTH - 0.16, 0.48]} />
+              <meshStandardMaterial
+                color={CASE_GLOW}
+                roughness={0.92}
+                emissive={CASE_GLOW}
+                emissiveIntensity={0.34}
+              />
+            </mesh>
+            {/* The shelf itself, and its brass nosing. */}
+            <mesh position={[0, height - 0.02, 0]} receiveShadow>
+              <boxGeometry args={[CABINET_DEPTH - 0.12, 0.04, CABINET_WIDTH - 0.14]} />
+              <meshStandardMaterial color={WOOD} roughness={0.7} />
+            </mesh>
+            <mesh position={[-CABINET_DEPTH / 2 + 0.07, height - 0.01, 0]}>
+              <boxGeometry args={[0.03, 0.025, CABINET_WIDTH - 0.14]} />
+              <meshStandardMaterial color={BRASS} roughness={0.4} metalness={0.7} />
+            </mesh>
+          </group>
         ))}
+
+        {/*
+          No decorative stock on the spare shelves.
+
+          Sixteen extra boxes for two shelves of scenery, in the room that was
+          already the slowest in the game — the headless renderer could not
+          complete a screenshot of the shop inside thirty seconds with them in.
+          The shelves read as shelves from their own lit backs and brass nosings.
+        */}
       </group>
 
       {DISPLAYS.map((display, index) => (

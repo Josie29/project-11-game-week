@@ -43,6 +43,16 @@ const FITTING_BANKROLL = 600
  */
 const WINDOW_LOOK = (170 * Math.PI) / 180
 
+/**
+ * Camera yaw that looks into the jewellery case, for `?boot=case`.
+ *
+ * The case runs down the left wall, so the camera has to swing west. Without it
+ * the trailing camera stays pointed the way the player came in and the case is
+ * a bright sliver at the edge of frame — which is how the case's contents went
+ * missing for as long as they did.
+ */
+const CASE_LOOK = (80 * Math.PI) / 180
+
 /** Bankroll handed to `?boot=shop`, enough to afford anything on the rails. */
 const SHOPPING_SPREE = 5000
 
@@ -273,6 +283,7 @@ export function applyBootShortcut(): void {
     'floor',
     'shop',
     'display',
+    'case',
     'mirror',
     'checkout',
     'short',
@@ -384,6 +395,32 @@ export function applyBootShortcut(): void {
     useAppearanceStore.getState().completeDesign()
     useGameStore.getState().adjustBankroll(SHOPPING_SPREE - useGameStore.getState().bankroll)
     useGameStore.getState().enterVenue(VenueId.GildedHanger)
+    return
+  }
+
+  if (boot === 'case') {
+    /*
+     * At the jewellery case, prompt up, turned to look into it.
+     *
+     * The capture that would have caught the case bug. Every fixture in this
+     * room had a link except the two glass cases, and the play camera trails the
+     * player down the length of the shop — so the only shots anyone ever took of
+     * the cases were of the far wall with a case edge-on in the corner, and four
+     * items sealed inside a solid cream box went unnoticed.
+     */
+    useAppearanceStore.getState().completeDesign()
+    useGameStore.getState().enterVenue(VenueId.GildedHanger)
+    const chain = displayFor('gold-rope-chain')
+    useGameStore.setState({
+      shopPosition: chain?.standAt ?? SHOP_ENTRANCE,
+      shopFacing: chain?.facing === undefined ? 0 : chain.facing + Math.PI,
+      nearbyDisplay: 'gold-rope-chain',
+    })
+
+    // ...and the camera behind them, looking into the case rather than past it.
+    if (!new URLSearchParams(window.location.search).has('look')) {
+      useGameStore.setState({ initialCameraYaw: CASE_LOOK })
+    }
     return
   }
 

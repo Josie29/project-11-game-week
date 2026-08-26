@@ -4,6 +4,12 @@ import { WINDOW_OUTERWEAR } from '../character/windowDisplay'
 import { footprintsOverlap, isInside } from '../scenes/casinoFloorLayout'
 import {
   BACK_SHELF,
+  CABINET_HEIGHT,
+  CABINET_SHELVES,
+  CASE_DECK_Y,
+  CASE_GLASS_Y,
+  CASE_PIECE_BASE_Y,
+  CASE_PIECE_HEIGHT,
   CATALOG_IDS,
   CLERK_STAND,
   COUNTER,
@@ -28,6 +34,7 @@ import {
   HALF_WIDTH,
   isInFittingShot,
   isOnShopFloor,
+  isOnShowInCase,
   MIRROR,
   MIRROR_CAMERA_AT,
   MIRROR_HEIGHT,
@@ -469,5 +476,64 @@ describe('shop layout', () => {
     expect(isOnShopFloor(0, -HALF_DEPTH - 0.5)).toBe(false)
     expect(isOnShopFloor(0, 0, HALF_DEPTH + 1)).toBe(false)
     expect(FITTING_RADIUS).toBeGreaterThan(0)
+  })
+
+  /*
+   * Everything in a glass case has to be visible through the glass.
+   *
+   * This shipped broken. The case's interior light was a *solid* emissive box
+   * filling the glazed volume, and the bust and the piece were placed inside it,
+   * so all four items sold from these cases — both necklaces, the watch and the
+   * shades — were sealed in a featureless cream slab.
+   *
+   * Nothing on screen could say so. A case with nothing in it and a case with a
+   * necklace hidden inside it are the same picture, and every existing capture
+   * of this room in `shots/` points at the back wall, because the play camera
+   * trails the player down the length of it.
+   */
+  it('keeps every case piece between the deck and the glass', () => {
+    const cased = DISPLAYS.filter((display) => display.fixture === Fixture.Pedestal)
+    expect(cased.length, 'no pedestal displays to check').toBeGreaterThan(0)
+
+    expect(
+      isOnShowInCase(CASE_PIECE_BASE_Y, CASE_PIECE_HEIGHT),
+      `a piece ${CASE_PIECE_HEIGHT} tall standing at ${CASE_PIECE_BASE_Y} is not on show`,
+    ).toBe(true)
+  })
+
+  /*
+   * ...and the guard, which is the arrangement that shipped.
+   *
+   * A predicate that accepted a piece sunk into the cabinet, or one growing
+   * through the lid, would have passed on the bug it exists to catch.
+   */
+  it('rejects a piece sunk below the deck or poking through the glass', () => {
+    // Sunk into the case body, where the old solid glow box put it.
+    expect(isOnShowInCase(CASE_DECK_Y - 0.2, CASE_PIECE_HEIGHT)).toBe(false)
+    // Tall enough to grow through the lid.
+    expect(isOnShowInCase(CASE_PIECE_BASE_Y, CASE_GLASS_Y)).toBe(false)
+  })
+
+  /*
+   * Each pair of shoes has to sit on a shelf that exists.
+   *
+   * The niche heights were written in the scene and the cabinet drew its lit
+   * shelf backs at the same numbers written again — one copy away from a pair of
+   * shoes floating in front of a shelf it is not standing on.
+   */
+  it('stands every pair of shoes on a cabinet shelf', () => {
+    const niches = DISPLAYS.filter((display) => display.fixture === Fixture.Niche)
+    expect(niches.length).toBeGreaterThan(0)
+    expect(CABINET_SHELVES.length).toBeGreaterThanOrEqual(niches.length)
+
+    for (const shelf of CABINET_SHELVES) {
+      expect(shelf, 'a shelf is through the floor').toBeGreaterThan(0)
+      expect(shelf, 'a shelf is through the top of the cabinet').toBeLessThan(CABINET_HEIGHT)
+    }
+
+    // ...and they are in order and distinct, or two pairs share a shelf.
+    for (let i = 1; i < CABINET_SHELVES.length; i++) {
+      expect(CABINET_SHELVES[i] ?? 0).toBeGreaterThan(CABINET_SHELVES[i - 1] ?? 0)
+    }
   })
 })

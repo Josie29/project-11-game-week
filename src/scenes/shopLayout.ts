@@ -478,6 +478,80 @@ export const JEWELLERY_CASE: Footprint = {
 }
 export const CASE_HEIGHT = 1.02
 
+/**
+ * The inside of a glass case, as heights above the floor.
+ *
+ * Here rather than in the component because a case and the things it displays
+ * are exactly the pair that cannot be allowed to disagree — and they did. The
+ * case's interior light used to be a *solid* emissive box filling the whole
+ * glazed volume, and `CasePiece` put its bust and the piece itself inside that
+ * box, so all four items sold from these cases were sealed in a featureless
+ * cream slab. Nothing on screen said so: a case with nothing visible in it and a
+ * case with a necklace hidden in it are the same picture.
+ *
+ * That failure had already happened once, to the brass lid — the comment in
+ * `ShopInterior` records a solid sheet laid over the top hiding everything
+ * underneath. Fixing it twice by hand and not a third time is what the predicate
+ * below is for.
+ */
+export const CASE_DECK_Y = CASE_HEIGHT - 0.34
+export const CASE_DECK_THICKNESS = 0.03
+/** The underside of the glass top. Everything on show has to fit below this. */
+export const CASE_GLASS_Y = CASE_HEIGHT + 0.02
+
+/**
+ * Whether something at height `y` standing `height` tall is on show in the case.
+ *
+ * On show means both: standing on the deck rather than sunk through it, and
+ * clearing the glass rather than poking out of the top.
+ *
+ * The seventh of the project's predicates, and paired with the same guard the
+ * other six have — a test feeds it the arrangement that shipped, which it must
+ * reject.
+ *
+ * @param y Height of the base of the piece, above the floor.
+ * @param height How tall the piece stands.
+ */
+export function isOnShowInCase(y: number, height: number): boolean {
+  const deckTop = CASE_DECK_Y + CASE_DECK_THICKNESS / 2
+  // A hair of tolerance, so a piece resting exactly on the deck counts.
+  return y >= deckTop - 0.001 && y + height <= CASE_GLASS_Y
+}
+
+/** Where a piece stands in the case, and how tall the whole display stack is. */
+export const CASE_PIECE_BASE_Y = CASE_DECK_Y + CASE_DECK_THICKNESS / 2
+export const CASE_PIECE_HEIGHT = 0.3
+
+/**
+ * Shelf heights in the shoe cabinet, from the floor up.
+ *
+ * Derived rather than typed into the scene: the niches were pinned at two
+ * hand-written heights in `ShopInterior` while the cabinet drew its lit backs at
+ * the same two numbers written again, which is one copy away from a shoe
+ * floating in front of a shelf it is not on.
+ */
+export const CABINET_SHELVES: readonly number[] = [0.42, 0.94, 1.46, 1.98]
+
+/** Where a given pair of shoes sits, or the lowest shelf if the index is off. */
+export function cabinetShelfY(index: number): number {
+  return CABINET_SHELVES[index] ?? CABINET_SHELVES[0] ?? 0
+}
+
+/**
+ * Which shelf a catalogue pair stands on.
+ *
+ * The buyable pairs take the two middle shelves, because those are the ones at
+ * standing eye level — the top and bottom carry stock, as the reference's wall
+ * of shoes does. Derived from the display order so the two never collide.
+ */
+export function nicheShelfY(itemId: string): number {
+  const order = DISPLAYS.filter((display) => display.fixture === Fixture.Niche).findIndex(
+    (display) => display.itemId === itemId,
+  )
+
+  return cabinetShelfY(order < 0 ? 1 : order + 1)
+}
+
 /** A second, shorter case behind it for the eyewear. */
 export const EYEWEAR_CASE: Footprint = {
   minX: LEFT_CASE_X - 0.375,
