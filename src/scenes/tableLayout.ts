@@ -62,6 +62,28 @@ export const SHOE_MOUTH: readonly [number, number, number] = [-1.36, TABLE_TOP_Y
  * the dealer's left and spent hands go down on their right.
  */
 export const DISCARD_TRAY: readonly [number, number, number] = [2.05, TABLE_TOP_Y, -0.2]
+
+/**
+ * The five seats, **in the order they play**.
+ *
+ * Index 0 is first base and index 4 is third base, because casino blackjack
+ * runs one player at a time from the dealer's left round to the dealer's right.
+ * The engine takes the seats in ascending index order, so this array is the
+ * only thing that makes its turn order and the room's furniture agree.
+ *
+ * Which side is the dealer's left is not a matter of opinion here: `SHOE_POSITION`
+ * sits at their left at x = -1.62 and `DISCARD_TRAY` at their right at x = 2.05.
+ * First base is therefore the most negative x, and this array must stay sorted
+ * that way — `blackjackSeats.test.ts` holds it, because reversing it would deal
+ * the table backwards in a way no screenshot would show.
+ */
+export const PLAYER_SEATS: readonly { readonly x: number; readonly z: number }[] = [
+  { x: -2.6, z: 2.5 },
+  { x: -1.35, z: 2.85 },
+  { x: 0, z: 2.95 },
+  { x: 1.35, z: 2.85 },
+  { x: 2.6, z: 2.5 },
+]
 export const DISCARD_ROTATION_Y = -0.34
 
 /** Where spent cards are pushed as a round is cleared. */

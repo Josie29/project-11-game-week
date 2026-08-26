@@ -27,6 +27,7 @@ import { CasinoCharacter } from './components/CasinoCharacter'
 import { CasinoRoom } from './components/CasinoRoom'
 import { CrapsTable } from './components/CrapsTable'
 import { Stool } from './components/Stool'
+import { PLAYER_SEATS } from './tableLayout'
 import { WalkingPlayer, type ProximityTarget } from './components/WalkingPlayer'
 import { useActionKey } from './useActionKey'
 import { useOrbitInput } from './useOrbitInput'
@@ -35,19 +36,6 @@ interface CasinoInteriorProps {
   venueId: VenueId
 }
 
-/**
- * Stools around the blackjack table's arc, in the table's own local frame.
- *
- * Positioned to sit just outside the rail, roughly behind each betting spot
- * printed on the felt, so the seats line up with the places you can bet.
- */
-const STOOLS: readonly { x: number; z: number }[] = [
-  { x: -2.6, z: 2.5 },
-  { x: -1.35, z: 2.85 },
-  { x: 0, z: 2.95 },
-  { x: 1.35, z: 2.85 },
-  { x: 2.6, z: 2.5 },
-]
 
 /**
  * Where each table's camera looks, in that table's own local frame.
@@ -180,7 +168,7 @@ function BlackjackPit() {
 
   return (
     <group position={[x, 0, z]}>
-      {STOOLS.map((stool) => (
+      {PLAYER_SEATS.map((stool) => (
         <Stool
           key={`${stool.x}-${stool.z}`}
           position={[stool.x, 0, stool.z]}

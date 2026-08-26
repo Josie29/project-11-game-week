@@ -561,6 +561,13 @@ function splitActiveHand(state: GameState): GameState {
  * decide, not the caller's: a seat that could act out of turn would take a card
  * off the shoe that belongs to somebody else.
  *
+ * **Shared tables call `actAs` instead.** `act` cannot be played out of turn
+ * because it does not take a seat — but it also cannot *detect* being called by
+ * the wrong player, and it would cheerfully play the active seat's hand for
+ * somebody sitting three places away. `actAs` is the same call with the
+ * caller's seat named, so that mistake becomes an error rather than a stolen
+ * turn.
+ *
  * Doubling and splitting both raise the amount staked. Callers should debit the
  * difference in `totalStaked` across the call rather than tracking either case
  * individually.
@@ -568,6 +575,32 @@ function splitActiveHand(state: GameState): GameState {
  * @throws {Error} If the round is not in a player's turn, if doubling is
  *   attempted after the opening two cards, or if splitting is not permitted.
  */
+/**
+ * Acts on behalf of one named seat, and refuses if it is not that seat's turn.
+ *
+ * Casino blackjack runs one player at a time, starting at first base — the
+ * dealer's left — and moving clockwise to third base. `advanceOrResolve`
+ * already enforces the order; this enforces *who is asking*, which is the half
+ * that only matters once more than one person is at the table.
+ *
+ * @param seatIndex The seat the caller is sitting in, not the seat they want
+ *   to play.
+ * @throws {Error} If it is another seat's turn.
+ */
+export function actAs(
+  state: GameState,
+  seatIndex: number,
+  action: PlayerAction,
+): GameState {
+  if (seatIndex !== state.activeSeatIndex) {
+    throw new Error(
+      `Seat ${seatIndex} cannot act: it is seat ${state.activeSeatIndex}'s turn`,
+    )
+  }
+
+  return act(state, action)
+}
+
 export function act(state: GameState, action: PlayerAction): GameState {
   if (state.phase !== RoundPhase.PlayerTurn) {
     throw new Error(`Cannot act during phase "${state.phase}"`)

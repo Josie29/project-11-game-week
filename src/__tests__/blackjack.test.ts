@@ -9,6 +9,7 @@ import {
   handValue,
   handsOf,
   placeBet,
+  actAs,
   placeBets,
   startNextRound,
   totalPaid,
@@ -683,5 +684,34 @@ describe('seats', () => {
 
     expect(() => placeBet(table, 10)).toThrow(/one-seat table/)
     expect(() => placeBets(table, [10])).toThrow(/Expected 2 wagers/)
+  })
+})
+
+describe('turn order', () => {
+  // Casino blackjack is one player at a time, first base to third base. A
+  // client whose turn it is not could otherwise call `act` and play the
+  // active seat's hand from three places away — the hand is not theirs, and
+  // the card it draws comes off a shoe everybody shares.
+  it('refuses a seat that is not the one acting', () => {
+    const state = placeBets(createGame(7, 3), [25, 25, 25])
+    expect(state.activeSeatIndex).toBe(0)
+
+    expect(() => actAs(state, 1, PlayerAction.Hit)).toThrow(/seat 0/)
+    expect(() => actAs(state, 2, PlayerAction.Stand)).toThrow(/seat 0/)
+    expect(() => actAs(state, 0, PlayerAction.Stand)).not.toThrow()
+  })
+
+  // The turn moves on only when a seat has no hand left awaiting a decision,
+  // which is what makes a split whole: you finish both halves before the next
+  // player is dealt to, exactly as at a real table.
+  it('passes to the next seat in order, once the seat before it is done', () => {
+    let state = placeBets(createGame(7, 3), [25, 25, 25])
+
+    state = actAs(state, 0, PlayerAction.Stand)
+    expect(state.activeSeatIndex).toBe(1)
+    expect(() => actAs(state, 0, PlayerAction.Hit)).toThrow()
+
+    state = actAs(state, 1, PlayerAction.Stand)
+    expect(state.activeSeatIndex).toBe(2)
   })
 })
