@@ -105,6 +105,56 @@ export const SEATS: Record<TableId, readonly [number, number, number]> = {
   [TableId.Craps]: [-1.75, 0, 1.58],
 }
 
+/**
+ * Places along the craps rail, in the order they are filled.
+ *
+ * **Index 0 is the shooter's end**, and is exactly `SEATS[TableId.Craps]` — the
+ * spot every player has stood at since craps was single-player, so a lone
+ * player still stands precisely where they always did and no capture moves.
+ *
+ * Everyone else spreads along the same rail. Before this, every player who took
+ * the rail was put on the shooter's spot, so two people stood inside each other
+ * and neither looked like the one holding the dice.
+ */
+export const CRAPS_RAIL_SPOTS: readonly (readonly [number, number, number])[] = [
+  [-1.75, 0, 1.58],
+  [-0.75, 0, 1.58],
+  [0.25, 0, 1.58],
+  [1.25, 0, 1.58],
+  [2.25, 0, 1.58],
+]
+
+/**
+ * Which rail spot a player stands at.
+ *
+ * The shooter takes the shooter's end whoever they are, because that is where
+ * the dice leave the hand — the throw has to read as theirs. Everybody else
+ * fills the remaining places in the order they arrived, which is also the order
+ * the dice will reach them.
+ *
+ * Pure, and tested: who is standing where is the sort of thing that looks
+ * plausible in any single screenshot and is only wrong when you count.
+ *
+ * @param playerId The player being placed.
+ * @param shooterId Who currently holds the dice, or null if nobody does.
+ * @param lineup Everyone at the table, in arrival order.
+ */
+export function crapsRailSpot(
+  playerId: string,
+  shooterId: string | null,
+  lineup: readonly string[],
+): readonly [number, number, number] {
+  if (playerId === shooterId) return CRAPS_RAIL_SPOTS[0]!
+
+  const others = lineup.filter((id) => id !== shooterId)
+  const place = others.indexOf(playerId)
+
+  // Somebody the lineup has not caught up with yet stands at the far end rather
+  // than on top of the shooter.
+  const index = place === -1 ? CRAPS_RAIL_SPOTS.length - 1 : Math.min(place + 1, CRAPS_RAIL_SPOTS.length - 1)
+  return CRAPS_RAIL_SPOTS[index]!
+}
+
 /** Which tables the player stands at rather than sits down at. */
 export const STANDING_TABLES: ReadonlySet<TableId> = new Set([TableId.Craps])
 
