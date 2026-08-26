@@ -68,9 +68,9 @@ export const CAMERA_BOUNDS = {
 /**
  * The fitting mirror, centred on the back wall.
  *
- * Wider and taller than the panel it replaces because it is now the point of
- * the room rather than dressing: you walk to it to see what you have on and to
- * pay for it.
+ * Wider and taller than the panel it replaces because it is the point of the
+ * room rather than dressing: you walk to it to see what you have on. Paying for
+ * it happens at the counter — see `COUNTER` below.
  */
 export const MIRROR: Anchor2D = [0, -HALF_DEPTH + WALL_MARGIN]
 /*
@@ -99,13 +99,17 @@ export const FITTING_HEIGHT = 0.18
  */
 export const MIRROR_STAND: readonly [number, number, number] = [0, 0, -2.4]
 /**
- * Generous, because the mirror is the only till in the room.
+ * Generous, because the mirror is at the far end of a room you walk down.
  *
  * It was 1.4, which is the width of the plinth and reads as reasonable, and a
  * scripted walk down the room passed within 1.75 of it and was offered nothing.
  * That is the craps rail's lesson in a smaller room: a target you can only be
  * offered inside a narrow window is one a single stride steps over, and here
  * stepping over it means never finding out that anything costs money.
+ *
+ * It kept the width it was given while it was the till, because the reason for
+ * it never was the till: it is the far end of the room, reached at the end of a
+ * long stride, and the counter now sits between the door and it.
  *
  * It went 1.4 -> 2.2 -> 2.6. The last step was the walkthrough failing against
  * the deployed build after passing locally: the headless browser renders far
@@ -135,6 +139,126 @@ export const MIRROR_RADIUS = 2.6
  */
 export const MIRROR_CAMERA_AT: readonly [number, number, number] = [2.1, 1.95, 1.0]
 export const MIRROR_CAMERA_TARGET: readonly [number, number, number] = [0, 1.35, MIRROR[1]]
+
+/* ----------------------------------------------------------------- counter */
+
+/**
+ * The checkout counter, and the one place in the building money changes hands.
+ *
+ * It stands between the door and the rest of the room, on the shoe cabinet's
+ * side, so anything carried out has to be carried past it. Its position was not
+ * a free choice: the window platform, both glass cases, the cabinet, the hat
+ * stand, the cane rack and the plinth take every wall, and the fitting camera
+ * sits out on the open floor at `MIRROR_CAMERA_AT` — putting the counter in the
+ * obvious middle of the room stands the clerk directly on the line from that
+ * camera to the player on the plinth. `isInFittingShot` is that constraint,
+ * written down.
+ */
+export const COUNTER: Footprint = { minX: 3.0, maxX: 3.75, minZ: 0.6, maxZ: 2.8 }
+export const COUNTER_HEIGHT = 1.05
+
+/**
+ * The face of the shoe cabinet, which the counter block runs up to.
+ *
+ * A literal rather than `SHOE_CABINET.minX`, which is declared further down
+ * this file and would be read before it exists. `shopLayout.test.ts` asserts
+ * the two are the same number, so the copy cannot drift.
+ */
+const CABINET_FACE = 5.225
+
+/**
+ * What the walk is pushed out of: the counter, the staff side, and the shelf.
+ *
+ * One box rather than three, running from the counter's front all the way to
+ * the shoe cabinet. Every other figure in the game stands somewhere the player
+ * cannot reach — the dealers behind their tables, the receptionist in her
+ * corner — and nothing stops a player walking into a character, because nothing
+ * has ever needed to. The clerk stands in an open lane, so the lane is not
+ * floor.
+ *
+ * It is one box because two flush boxes are not a wall. `pushOut` moves a point
+ * to the *edge* of whatever it is inside, so a player pushed east out of the
+ * counter landed exactly on the shelf's western edge — outside both boxes, on a
+ * seam of zero width — and walked down it, through the staff side, out of the
+ * back of the shop, past a till they had just been sent to. Twice.
+ */
+export const COUNTER_FOOTPRINT: Footprint = {
+  minX: COUNTER.minX,
+  maxX: CABINET_FACE,
+  minZ: COUNTER.minZ,
+  maxZ: COUNTER.maxZ,
+}
+
+/**
+ * The back shelf, between the counter's staff side and the east wall.
+ *
+ * Furniture with a job. Without it the counter is an island, and an island has
+ * two ways past: a player walking in from the door is pushed round it, and
+ * which side they come out on is a matter of centimetres. A scripted walk in
+ * went down the staff side, past the clerk, and reached the back wall having
+ * been offered the till at no point — the same walk the clerk had just sent it
+ * on. The shelf closes that side, so the only way into the room from the door
+ * is across the front of the counter.
+ *
+ * Geometry only: what blocks the walk here is `COUNTER_FOOTPRINT`, which spans
+ * the counter and this together. Two footprints that meet leave a seam the
+ * player can walk down — see the note there.
+ */
+export const BACK_SHELF: Footprint = {
+  minX: 4.55,
+  maxX: CABINET_FACE,
+  minZ: COUNTER.minZ,
+  maxZ: COUNTER.maxZ,
+}
+export const BACK_SHELF_HEIGHT = 1.5
+
+/**
+ * Where the clerk stands, behind the counter, facing back across it.
+ *
+ * Not square opposite the customer. From the checkout camera the two of them
+ * were within four degrees of each other and the customer's head sat under the
+ * clerk's chin; offset down the counter, they read as two people either side of
+ * it. The camera and this are a pair, which is why both are in this file.
+ */
+export const CLERK_STAND: readonly [number, number, number] = [4.1, 0, 1.15]
+export const CLERK_FACING = -Math.PI / 2
+
+/** Where the player stands to be offered the till, on the customer side. */
+export const DESK_STAND: readonly [number, number, number] = [2.4, 0, 1.3]
+export const DESK_FACING = Math.PI / 2
+
+/**
+ * How close you have to be for the till to offer itself.
+ *
+ * Smaller than the mirror's 2.6, because the room will not hold another 2.6 —
+ * the counter has the shoe cabinet on one side and the door on the other, and
+ * every centimetre added here comes off the margin against a fixture that
+ * offers something else.
+ *
+ * It was 1.4, and 1.4 was wrong for the reason the mirror's 1.4 was wrong. A
+ * player sent back from the door walks straight up the room, which passes the
+ * counter 1.45 out: five centimetres outside the prompt, so the clerk called
+ * them back to a till they could then walk past. That is not something any
+ * capture would show — the walkthrough found it against the deployed build.
+ *
+ * 1.6, with the stand spot moved onto the line from the door rather than
+ * squared up on the counter. What paid for it was the front shoe niche giving
+ * up being square on to its own cabinet.
+ */
+export const DESK_RADIUS = 1.6
+
+/**
+ * The fixed camera used while the player is at the counter.
+ *
+ * Over the customer's shoulder, so the shot holds the player, the counter and
+ * the clerk in that order — the same job the fitting camera does for the
+ * mirror, and here for the same reason: a camera and a piece of geometry that
+ * have to agree belong in one file. `counterSubtendedAngle` is what keeps it
+ * honest. Looking *along* the counter rather than across it foreshortens two
+ * metres of it into nine degrees, which is the blood-line bug in a shop.
+ */
+export const DESK_CAMERA_AT: readonly [number, number, number] = [-1.35, 2.4, -0.6]
+export const DESK_CAMERA_TARGET: readonly [number, number, number] = [3.05, 1.15, 1.55]
 
 /* ------------------------------------------------------------------- doors */
 
@@ -286,7 +410,16 @@ export const DISPLAYS: readonly Display[] = [
     fixture: Fixture.Niche,
     at: [RIGHT_CASE_X, 0.4],
     facing: FACES_IN_FROM_RIGHT,
-    standAt: [RIGHT_STAND_X, 0, 0.4],
+    /*
+     * The one stand spot in the room that is not square on to its own fixture.
+     *
+     * The counter went in across the aisle from it, and the till has to be
+     * offered across the whole width of floor between the door and the room —
+     * the two prompts do different things, so they cannot share a metre of
+     * carpet. Half a stride down the cabinet and 300mm nearer it puts the
+     * shopper at the same shoes and out of the till's reach.
+     */
+    standAt: [4.8, 0, -0.2],
   },
   {
     itemId: 'gold-heels',
@@ -383,6 +516,7 @@ export function obstacles(): readonly Footprint[] {
     HAT_STAND,
     CANE_RACK,
     FITTING_FOOTPRINT,
+    COUNTER_FOOTPRINT,
   ]
 }
 
@@ -433,6 +567,69 @@ export function mirrorSubtendedAngle(): number {
   const lengths = Math.hypot(...left) * Math.hypot(...right)
 
   return Math.acos(Math.min(1, Math.max(-1, dot / lengths)))
+}
+
+/**
+ * How wide the counter sits across the checkout camera's view, in radians.
+ *
+ * `mirrorSubtendedAngle` for the till. A counter is long and thin, which is the
+ * shape that has already been invisible twice on this project, and the failure
+ * mode is specific: a camera that looks *down* its length rather than across it
+ * turns 2.2 metres of counter into a nine-degree stub and the shot reads as two
+ * people standing next to a post.
+ */
+export function counterSubtendedAngle(): number {
+  const [cx, cy, cz] = DESK_CAMERA_AT
+
+  // The customer-facing edge, which is the one the shot has to hold.
+  const toEnd = (endZ: number): readonly [number, number, number] => [
+    COUNTER.minX - cx,
+    COUNTER_HEIGHT - cy,
+    endZ - cz,
+  ]
+
+  const near = toEnd(COUNTER.minZ)
+  const far = toEnd(COUNTER.maxZ)
+
+  const dot = near[0] * far[0] + near[1] * far[1] + near[2] * far[2]
+  const lengths = Math.hypot(...near) * Math.hypot(...far)
+
+  return Math.acos(Math.min(1, Math.max(-1, dot / lengths)))
+}
+
+/**
+ * Whether a point falls inside what the fitting camera can see.
+ *
+ * The fitting camera does not sit in a wall — it stands out on the open floor
+ * at `MIRROR_CAMERA_AT`, looking back down the room — so the floor in front of
+ * it is not free floor, it is a shot. The counter went in on the other side of
+ * the room because of this function, and it is asserted rather than eyeballed
+ * because the failure is only visible in a mirror capture: a clerk on that line
+ * stands between the player and their own reflection.
+ *
+ * A cone rather than a frustum, and a wide one: the real horizontal field is
+ * about 34 degrees either side of the axis at 16:9, and the half-angle here is
+ * deliberately larger so a taller window cannot creep something into shot.
+ *
+ * @param x World x of the point.
+ * @param z World z of the point.
+ * @param halfAngle How far off the camera's axis still counts as in shot.
+ */
+export function isInFittingShot(x: number, z: number, halfAngle = 0.75): boolean {
+  const axis: Anchor2D = [
+    MIRROR_CAMERA_TARGET[0] - MIRROR_CAMERA_AT[0],
+    MIRROR_CAMERA_TARGET[2] - MIRROR_CAMERA_AT[2],
+  ]
+  const toPoint: Anchor2D = [x - MIRROR_CAMERA_AT[0], z - MIRROR_CAMERA_AT[2]]
+
+  const dot = axis[0] * toPoint[0] + axis[1] * toPoint[1]
+  // Behind the camera, or standing on it. Neither is in shot.
+  if (dot <= 0) return false
+
+  const lengths = Math.hypot(...axis) * Math.hypot(...toPoint)
+  if (lengths === 0) return false
+
+  return Math.acos(Math.min(1, Math.max(-1, dot / lengths))) <= halfAngle
 }
 
 /** Every catalogue item id, as the display table has to cover them. */

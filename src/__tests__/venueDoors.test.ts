@@ -16,6 +16,8 @@ import {
   WALK_BOUNDS as CLINIC_BOUNDS,
 } from '../scenes/clinicLayout'
 import {
+  DESK_RADIUS,
+  DESK_STAND,
   DISPLAYS,
   EXIT_DOOR as SHOP_EXIT,
   EXIT_RADIUS as SHOP_EXIT_RADIUS,
@@ -94,16 +96,22 @@ describe('the way out of a room', () => {
       radius: SHOP_EXIT_RADIUS,
       bounds: SHOP_BOUNDS,
       /*
-       * Twelve fixtures and the mirror.
+       * Twelve fixtures, the mirror and the till.
        *
        * The fixtures are allowed to overlap each other — F says "try this on"
        * at every one of them, so the nearest winning is the right answer. The
-       * mirror is in this list because its F does something else entirely: it
-       * puts you on the plinth and opens the till.
+       * other two are in this list because their F does something else: the
+       * mirror puts you on the plinth, the counter opens the bill.
+       *
+       * The counter is the one that has to be watched here. It stands between
+       * the door and the rest of the room on purpose — everything carried out
+       * is carried past it — which is exactly the arrangement that puts two
+       * different prompts on the same patch of floor if the radii are careless.
        */
       seats: [
         ...DISPLAYS.map((display) => ({ at: display.standAt, radius: TRY_RADIUS })),
         { at: MIRROR_STAND, radius: MIRROR_RADIUS },
+        { at: DESK_STAND, radius: DESK_RADIUS },
       ],
     },
   ]

@@ -23,6 +23,16 @@ import {
   type Slot,
 } from './catalog'
 
+/** The wardrobe after a bill is settled, and what it came to. */
+export interface Settlement {
+  /** Item ids paid for, in catalogue order. Never contains a duplicate. */
+  readonly owned: readonly string[]
+  /** What is worn and paid for afterwards — the approval layer folded in. */
+  readonly equipped: EquippedItems
+  /** What was charged, in whole dollars. */
+  readonly total: number
+}
+
 /**
  * Items on the body that have not been paid for, one per slot.
  *
@@ -102,4 +112,55 @@ export function withoutSlot(fitting: Fitting, slot: Slot): Fitting {
 /** The fitting with an item added, replacing whatever was borrowed in its slot. */
 export function withItem(fitting: Fitting, item: ShopItem): Fitting {
   return { ...fitting, [item.slot]: item.id }
+}
+
+/**
+ * The whole bill, settled in one move: everything on approval becomes owned.
+ *
+ * Pure, and returned rather than applied, because this is the one place in the
+ * shop where money and geometry meet and both have to be right. The store's job
+ * afterwards is two lines — debit `total`, take this wardrobe — and neither of
+ * them can half-happen.
+ *
+ * The old per-item `buy` could not express the thing the counter is for. Paying
+ * for four things one at a time is four chances to end up owning two of them
+ * with the bankroll spent, which is only a shop if you squint; a bill is either
+ * settled or it is not.
+ *
+ * Whole dollars throughout: prices are integers and this only ever sums them,
+ * so no ratio can get in. Unknown ids are dropped by `onApproval` rather than
+ * charged for.
+ *
+ * @param equipped What is already owned and worn.
+ * @param owned Every item id already paid for.
+ * @param fitting What is on the body on approval.
+ * @returns The wardrobe as it stands once the bill is paid, and the amount.
+ */
+export function payFor(
+  equipped: EquippedItems,
+  owned: readonly string[],
+  fitting: Fitting,
+): Settlement {
+  const bought = onApproval(fitting)
+
+  // A slot's borrowed item wins over what was under it, which is what the
+  // player is looking at in the mirror — paying for something must not swap it
+  // for the thing it was covering.
+  const nextEquipped: EquippedItems = { ...equipped }
+  for (const item of bought) {
+    nextEquipped[item.slot] = item.id
+  }
+
+  // `includes` rather than a Set: the catalogue is twelve items, and a
+  // duplicate id in `owned` would show as a duplicate row in the wardrobe.
+  const nextOwned = [...owned]
+  for (const item of bought) {
+    if (!nextOwned.includes(item.id)) nextOwned.push(item.id)
+  }
+
+  return {
+    owned: nextOwned,
+    equipped: nextEquipped,
+    total: bought.reduce((sum, item) => sum + item.price, 0),
+  }
 }

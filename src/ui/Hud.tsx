@@ -23,6 +23,9 @@ export function Hud() {
   const nearbyDisplay = useGameStore((state) => state.nearbyDisplay)
   const nearbyMirror = useGameStore((state) => state.nearbyMirror)
   const atMirror = useGameStore((state) => state.atMirror)
+  const nearbyDesk = useGameStore((state) => state.nearbyDesk)
+  const atCheckout = useGameStore((state) => state.atCheckout)
+  const heldAtDoor = useGameStore((state) => state.heldAtDoor)
   const equipped = useAppearanceStore((state) => state.equipped)
   const owned = useAppearanceStore((state) => state.owned)
   const fitting = useAppearanceStore((state) => state.fitting)
@@ -32,7 +35,8 @@ export function Hud() {
   const venue = activeVenue !== null ? getVenue(activeVenue) : null
   const atClinic = venue?.kind === VenueKind.Clinic
   const shopping = venue?.kind === VenueKind.Shop
-  const seated = activeTable !== null || atChair !== null || atMirror
+  const seated = activeTable !== null || atChair !== null || atMirror || atCheckout
+  const owing = approvalTotal(fitting)
 
   /*
    * The item F is standing at, and whether it is already on.
@@ -66,7 +70,7 @@ export function Hud() {
         */}
         {isFitting(fitting) && (
           <span className="hud__approval">
-            on approval {onApproval(fitting).length} · ${approvalTotal(fitting).toLocaleString()}
+            on approval {onApproval(fitting).length} · ${owing.toLocaleString()}
           </span>
         )}
       </div>
@@ -93,7 +97,7 @@ export function Hud() {
             : atClinic
               ? 'WASD to walk · F at a chair or the door · drag to look · R to reset'
               : shopping
-                ? 'WASD to walk · F at a rail, the mirror or the door · drag to look · R to reset'
+                ? 'WASD to walk · F at a rail, the mirror, the till or the door · drag to look · R to reset'
                 : 'WASD to walk · F at a table or the door · drag to look · R to reset'}
         </div>
       )}
@@ -132,7 +136,7 @@ export function Hud() {
         With the catalogue list gone this and the card on the fixture itself are
         the only two things that say either.
       */}
-      {display !== null && !atMirror && (
+      {display !== null && !atMirror && !atCheckout && (
         <div className="hud__prompt">
           <strong>{display.name}</strong>
           <span>
@@ -142,7 +146,7 @@ export function Hud() {
         </div>
       )}
 
-      {/* The mirror is where the buying happens, so it has to be findable. */}
+      {/* The mirror: where you look at what you have on, not where you pay. */}
       {nearbyMirror && !atMirror && (
         <div className="hud__prompt">
           <strong>The fitting mirror</strong>
@@ -152,12 +156,42 @@ export function Hud() {
         </div>
       )}
 
-      {/* The way back out to the strip. The only way, so it has to be read. */}
+      {/*
+        The till, which is where the buying happens, so it has to be findable —
+        and it carries the total, because "pay" is a different offer depending
+        on whether you are standing there in $1,420 of unpaid clothes or none.
+      */}
+      {nearbyDesk && !atCheckout && (
+        <div className="hud__prompt">
+          <strong>Checkout</strong>
+          <span>
+            {isFitting(fitting) ? `$${owing.toLocaleString()} to pay · ` : 'Nothing to pay for · '}
+            Press <kbd>{INTERACT_LABEL}</kbd> to step up
+          </span>
+        </div>
+      )}
+
+      {/*
+        The way back out to the strip. The only way, so it has to be read.
+
+        In the shop it doubles as the clerk calling you back: the first press
+        while wearing something unpaid for changes this prompt instead of
+        leaving, and says what walking out would cost you.
+      */}
       {nearbyExit && (
         <div className="hud__prompt">
-          <strong>Out to the strip</strong>
+          <strong>{heldAtDoor ? 'The clerk clears her throat' : 'Out to the strip'}</strong>
           <span>
-            Press <kbd>{INTERACT_LABEL}</kbd> to step out
+            {heldAtDoor ? (
+              <>
+                ${owing.toLocaleString()} of that is not yours · Press <kbd>{INTERACT_LABEL}</kbd>{' '}
+                again to leave it behind
+              </>
+            ) : (
+              <>
+                Press <kbd>{INTERACT_LABEL}</kbd> to step out
+              </>
+            )}
           </span>
         </div>
       )}

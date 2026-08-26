@@ -14,20 +14,24 @@ import {
   type EquippedItems,
 } from '../character/catalog'
 import {
+  approvalTotal,
   fitted,
+  isFitting,
   NO_FITTING,
+  payFor,
   withItem,
   withoutSlot,
   type Fitting,
 } from '../character/fitting'
 import { useGameStore } from './useGameStore'
 
-/** Why a purchase did not go through, or that it did. */
-export enum PurchaseResult {
-  Bought = 'bought',
-  AlreadyOwned = 'already-owned',
+/** Why a bill did not settle, or that it did. */
+export enum CheckoutResult {
+  Paid = 'paid',
+  /** Nothing on approval: there is no bill to pay. */
+  NothingOwing = 'nothing-owing',
+  /** The bankroll will not cover the lot. Nothing is bought and nothing comes off. */
   TooExpensive = 'too-expensive',
-  UnknownItem = 'unknown-item',
 }
 
 interface AppearanceStore {
@@ -49,13 +53,14 @@ interface AppearanceStore {
   setAppearance: (appearance: Appearance) => void
   completeDesign: () => void
   /**
-   * Debits the bankroll, adds the item to the wardrobe and puts it on.
+   * Settles the whole bill at the counter: everything on approval, in one move.
    *
-   * It equips because of where buying now happens: you are standing at the
-   * mirror wearing the thing. A purchase that took it back off would read as
-   * the transaction having failed.
+   * All of it or none of it, which is the difference between a counter and the
+   * per-item Buy button this replaced. It leaves the goods on the body because
+   * that is where they already are — the player is standing at the till wearing
+   * them, and a purchase that undressed them would read as a failure.
    */
-  buy: (itemId: string) => PurchaseResult
+  checkout: () => CheckoutResult
   equip: (itemId: string) => void
   unequip: (slot: Slot) => void
   /**
@@ -93,28 +98,27 @@ export const useAppearanceStore = create<AppearanceStore>()(
 
       completeDesign: () => set({ hasDesigned: true }),
 
-      buy: (itemId) => {
-        const item = findItem(itemId)
-        if (!item) return PurchaseResult.UnknownItem
+      checkout: () => {
+        const { equipped, owned, fitting } = get()
+        if (!isFitting(fitting)) return CheckoutResult.NothingOwing
 
-        const { owned } = get()
-        if (owned.includes(item.id)) return PurchaseResult.AlreadyOwned
-
-        // Read the bankroll at the moment of purchase rather than from a
+        // Read the bankroll at the moment of payment rather than from a
         // subscription, so a hand settling mid-click cannot let an unaffordable
-        // item through on a stale number.
+        // bill through on a stale number.
         const game = useGameStore.getState()
-        if (game.bankroll < item.price) return PurchaseResult.TooExpensive
+        if (game.bankroll < approvalTotal(fitting)) return CheckoutResult.TooExpensive
 
-        game.adjustBankroll(-item.price)
-        // Bought, worn, and off approval, in one move. The item does not change
-        // place on the body — it only stops being borrowed.
+        const settled = payFor(equipped, owned, fitting)
+
+        game.adjustBankroll(-settled.total)
+        // Paid for, worn, and off approval together. Nothing changes place on
+        // the body — it only stops being borrowed.
         set({
-          owned: [...owned, item.id],
-          equipped: { ...get().equipped, [item.slot]: item.id },
-          fitting: withoutSlot(get().fitting, item.slot),
+          owned: [...settled.owned],
+          equipped: settled.equipped,
+          fitting: NO_FITTING,
         })
-        return PurchaseResult.Bought
+        return CheckoutResult.Paid
       },
 
       equip: (itemId) => {

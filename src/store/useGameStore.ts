@@ -2,7 +2,12 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { ENTRANCE, SIT_SPOTS, TableId } from '../scenes/casinoFloorLayout'
 import { ENTRANCE as CLINIC_ENTRANCE, chairSitSpot } from '../scenes/clinicLayout'
-import { ENTRANCE as SHOP_ENTRANCE, MIRROR_STAND } from '../scenes/shopLayout'
+import {
+  DESK_FACING,
+  DESK_STAND,
+  ENTRANCE as SHOP_ENTRANCE,
+  MIRROR_STAND,
+} from '../scenes/shopLayout'
 import { donationTimeline, NurseTask } from '../scenes/clinicRoutine'
 import { runSequence, type RunningSequence } from './sequence'
 import { DONATION_FEE, MARKER_AMOUNT, splitWinnings } from '../world/money'
@@ -91,10 +96,41 @@ interface GameStore {
    * the casino's seats for the same reason those are separate from each other.
    */
   atMirror: boolean
+  /**
+   * Whether the player is standing at the shop's counter.
+   *
+   * The other half of `atMirror`, and separate from it because they are two
+   * different rooms-within-a-room: the mirror is where you look at yourself and
+   * the counter is where you pay, and no state can be both.
+   */
+  atCheckout: boolean
   /** The item F would try on, as a catalogue id, for the display prompt. */
   nearbyDisplay: string | null
   /** Whether F would step onto the fitting plinth. */
   nearbyMirror: boolean
+  /** Whether F would step up to the counter. */
+  nearbyDesk: boolean
+  /**
+   * Whether the player is close enough for the clerk to look up.
+   *
+   * Wider than `nearbyDesk` and fed by a separate proximity channel, because
+   * being noticed and being offered the till are different questions — see the
+   * `glanceTargets` note in `WalkingPlayer`.
+   */
+  nearbyClerk: boolean
+  /**
+   * Whether the clerk has just called the player back from the door.
+   *
+   * The one place in the game where F does not do the thing the prompt said
+   * last frame, so it is a state rather than a branch: the first press at the
+   * door while wearing unpaid goods spends itself on being told, the prompt
+   * changes to say so, and the second press leaves anyway.
+   *
+   * A refusal that could not be overridden would be a trap — the way to clear a
+   * bill you cannot pay is back at the counter, which is where a player who has
+   * given up walking to the door is not.
+   */
+  heldAtDoor: boolean
   /** Where the player should appear when the shop floor mounts. */
   shopPosition: readonly [number, number, number]
   /**
@@ -148,8 +184,14 @@ interface GameStore {
   setNearbyChair: (index: number | null) => void
   standAtMirror: () => void
   leaveMirror: () => void
+  standAtCheckout: () => void
+  leaveCheckout: () => void
   setNearbyDisplay: (itemId: string | null) => void
   setNearbyMirror: (near: boolean) => void
+  setNearbyDesk: (near: boolean) => void
+  setNearbyClerk: (near: boolean) => void
+  /** The clerk's line at the door. Cleared by leaving, paying, or walking off. */
+  setHeldAtDoor: (held: boolean) => void
   /** Calls the nurse over and starts the draw. Pays only when she finishes. */
   beginDonation: () => void
   setNearDesk: (near: boolean) => void
@@ -212,8 +254,12 @@ export const useGameStore = create<GameStore>()(
       nearbyChair: null,
       clinicPosition: CLINIC_ENTRANCE,
       atMirror: false,
+      atCheckout: false,
       nearbyDisplay: null,
       nearbyMirror: false,
+      nearbyDesk: false,
+      nearbyClerk: false,
+      heldAtDoor: false,
       shopPosition: SHOP_ENTRANCE,
       shopFacing: FACING_INTO_SHOP,
       donation: null,
@@ -239,8 +285,12 @@ export const useGameStore = create<GameStore>()(
           nearbyChair: null,
           clinicPosition: CLINIC_ENTRANCE,
           atMirror: false,
+          atCheckout: false,
           nearbyDisplay: null,
           nearbyMirror: false,
+          nearbyDesk: false,
+          nearbyClerk: false,
+          heldAtDoor: false,
           shopPosition: SHOP_ENTRANCE,
           shopFacing: FACING_INTO_SHOP,
           donation: null,
@@ -344,6 +394,13 @@ export const useGameStore = create<GameStore>()(
       leaveMirror: () =>
         set({ atMirror: false, shopPosition: MIRROR_STAND, shopFacing: FACING_MIRROR }),
 
+      standAtCheckout: () =>
+        set({ atCheckout: true, nearbyDesk: false, nearbyDisplay: null, nearbyExit: false }),
+
+      /** Steps back off the counter, onto the customer's side of it. */
+      leaveCheckout: () =>
+        set({ atCheckout: false, shopPosition: DESK_STAND, shopFacing: DESK_FACING }),
+
       setNearbyDisplay: (itemId) => {
         // Called from the render loop, so bail out unless it actually changed.
         if (get().nearbyDisplay === itemId) return
@@ -353,6 +410,21 @@ export const useGameStore = create<GameStore>()(
       setNearbyMirror: (near) => {
         if (get().nearbyMirror === near) return
         set({ nearbyMirror: near })
+      },
+
+      setNearbyDesk: (near) => {
+        if (get().nearbyDesk === near) return
+        set({ nearbyDesk: near })
+      },
+
+      setNearbyClerk: (near) => {
+        if (get().nearbyClerk === near) return
+        set({ nearbyClerk: near })
+      },
+
+      setHeldAtDoor: (held) => {
+        if (get().heldAtDoor === held) return
+        set({ heldAtDoor: held })
       },
 
       setNearDesk: (near) => {
@@ -391,8 +463,12 @@ export const useGameStore = create<GameStore>()(
           atChair: null,
           nearbyChair: null,
           atMirror: false,
+          atCheckout: false,
           nearbyDisplay: null,
           nearbyMirror: false,
+          nearbyDesk: false,
+          nearbyClerk: false,
+          heldAtDoor: false,
           shopPosition: SHOP_ENTRANCE,
           shopFacing: FACING_INTO_SHOP,
           donation: null,

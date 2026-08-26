@@ -117,6 +117,35 @@ async function walkAtMost(keys, text, { burstMs = 700, bursts = 20 } = {}) {
 }
 
 /**
+ * Walks until any one of `texts` appears, and reports which.
+ *
+ * For a leg whose destination is "a fixture" rather than one named fixture.
+ * Strafing is camera-relative and the follow camera swings behind the player's
+ * heading, so holding A means "west" for the first frame and "south-west" by
+ * the third: the leg down the window platform drifts toward the front wall by
+ * an amount that depends entirely on how many frames the burst covered. At
+ * sixty it stops at the tuxedo; at the three a headless renderer manages it has
+ * ended up jammed in the front-left corner, a metre and a half past every
+ * prompt in the row.
+ *
+ * Naming one fixture made that a failure. Naming the row makes it a walk.
+ */
+async function walkUntilAny(keys, texts, { burstMs = 700, bursts = 30 } = {}) {
+  for (let i = 0; i < bursts; i++) {
+    for (const text of texts) {
+      if (await isVisible(text)) return text
+    }
+
+    await walk(keys, burstMs)
+    await page.waitForTimeout(120)
+  }
+
+  throw new Error(
+    `walked ${bursts} bursts of ${keys.join('+')} without seeing any of ${texts.join(', ')}`,
+  )
+}
+
+/**
  * Presses the interact key once, and waits for whatever it opened.
  *
  * A press rather than a hold. `useActionKey` ignores auto-repeat, so a hold
@@ -128,9 +157,13 @@ async function interact() {
   await page.waitForTimeout(900)
 }
 
+/** How many beats have been captured, for the line printed at the end. */
+let captureCount = 0
+
 async function capture(name) {
   await page.waitForTimeout(SETTLE_MS)
   await page.screenshot({ path: resolve(outDir, `${name}.png`) })
+  captureCount += 1
   console.log(`ok   ${name}`)
 }
 
@@ -139,6 +172,21 @@ async function expectText(text, step) {
   const found = await page.getByText(text, { exact: false }).first().isVisible()
   if (!found) throw new Error(`${step}: expected to see "${text}"`)
 }
+
+/**
+ * The HUD's bankroll, as a number.
+ *
+ * Up here rather than beside the clinic beat that first needed it: the shop's
+ * counter checks the same figure now, and these two readings are the only
+ * assertions in this script that money actually moved, rather than that a panel
+ * said it had.
+ */
+const bankroll = () =>
+  page
+    .locator('.hud__amount')
+    .first()
+    .innerText()
+    .then((text) => Number(text.replace(/[^0-9]/g, '')))
 
 try {
   await page.goto(baseUrl, { waitUntil: 'load' })
@@ -176,7 +224,7 @@ try {
 
   //    Asserted on the standing hint, which is the shop's own: it is a room you
   //    walk now, and the hint names what F is for in it.
-  await expectText('F at a rail, the mirror or the door', 'walking into the shop')
+  await expectText('F at a rail, the mirror, the till or the door', 'walking into the shop')
   await capture('4-shop')
 
   /*
@@ -196,33 +244,143 @@ try {
    *    design — the stock is against the walls. It ended up flat against the
    *    back wall having passed nothing. A scan has to hug a run of fixtures.
    *
-   *    Named, rather than scanning for the generic phrase. Where a scan stops
-   *    depends on how far a burst carries, which is a different distance on a
-   *    deployed build than on localhost — and where this leg stops is what the
-   *    walk to the mirror below starts from. Stopping at a known fixture makes
-   *    the rest of the beat the same walk on both.
+   *    Named fixtures rather than the generic phrase, and four of them rather
+   *    than one. Where a scan stops depends on how far a burst carries and on
+   *    how far the camera swung while it did, which are different on a deployed
+   *    build than on localhost — naming the whole left-hand row means the leg
+   *    ends at whichever of them the walk actually reached, rather than failing
+   *    because it was not the one that was named.
+   *
+   *    Which one it was does matter to the leg after this, and that leg reads
+   *    it: the far end of the window platform is three metres wide of the
+   *    mirror, and walking straight down the room from there arrives at the
+   *    back wall having passed nothing.
    */
-  await walkUntil(['KeyA'], 'Ivory Tuxedo', { burstMs: DOOR_BURST_MS, bursts: 30 })
+  const tried = await walkUntilAny(
+    ['KeyA'],
+    ['Ivory Tuxedo', 'Crimson Satin Gown', 'Sequin Jacket', 'Gold Rope Chain'],
+    { burstMs: DOOR_BURST_MS, bursts: 30 },
+  )
   await interact()
   await expectText('on approval', 'trying something on')
+  console.log(`     tried on the ${tried}`)
   await capture('5-trying-on')
 
   /*
-   * 5. Walk to the mirror and buy it.
+   * 5. Walk to the mirror and look at it.
    *
-   *    The mirror is the only till in the room, so this leg is also the check
-   *    that it can be found: the prompt has to paint somewhere between the
-   *    fixtures and the back wall or a player cannot spend anything in here.
+   *    No longer the till — paying happens at the counter — so this leg is now
+   *    only the check that the mirror can be found, which still matters: it is
+   *    the one place the fitting is visible on the body rather than as a line
+   *    of text.
    */
-  await walkUntil(['KeyW'], 'to see yourself', { burstMs: DOOR_BURST_MS, bursts: 30 })
+  /*
+   *    Down the room, and back toward its middle unless the walk stopped at
+   *    the fixture nearest it.
+   *
+   *    The mirror offers from 2.6 of the plinth, which is generous and is still
+   *    not the width of this room: held from the far end of the window platform,
+   *    W alone runs down the left-hand wall and reaches the back of the shop
+   *    three metres wide of it. Which of the four fixtures the leg above
+   *    stopped at is the only thing that decides that, so it is the thing that
+   *    picks the keys.
+   */
+  const toTheMiddle = tried === 'Ivory Tuxedo' ? ['KeyW'] : ['KeyW', 'KeyD']
+  await walkUntil(toTheMiddle, 'to see yourself', { burstMs: DOOR_BURST_MS, bursts: 30 })
   await interact()
-  await page.getByRole('button', { name: 'Buy' }).first().waitFor({ timeout: 5000 })
+  await expectText('Take it to the counter to pay', 'standing at the mirror')
   await capture('6-mirror')
-  await page.getByRole('button', { name: 'Buy' }).first().click()
+  await page.keyboard.press('Escape')
   await page.waitForTimeout(600)
 
   /*
-   * 6. Off the plinth, out of the door, and on down the same kerb to the clinic.
+   * 6. Try to walk out in it, and get called back.
+   *
+   *    The one interaction in the building where F does not do what the prompt
+   *    said a frame earlier, and the only check that it is a nudge rather than
+   *    a lock. Every unit test around it asserts that leaving is free; what
+   *    cannot be asserted anywhere else is that the second press exists at all.
+   */
+  await walkAtMost(['KeyS', 'KeyD'], 'to step out', { burstMs: DOOR_BURST_MS, bursts: 22 })
+  await walkUntil(['KeyA'], 'to step out', { burstMs: DOOR_BURST_MS, bursts: 20 })
+  await interact()
+  await expectText('is not yours', 'trying to walk out in unpaid goods')
+  await capture('7-called-back')
+
+  /*
+   * 7. Back to the counter, and pay for the lot.
+   *
+   *    Straight in, on one key. The leg that proves the till can be found from
+   *    the door, which is the walk the clerk has just sent the player on — and
+   *    the diagonal that seemed the obvious way to do it is what proved it
+   *    could not: W+A crossed the room and ended at the jewellery case, which
+   *    is how the till's radius turned out to be five centimetres too mean.
+   *
+   *    It also proves the bill is one number: the HUD bankroll has to fall, and
+   *    a per-item regression would show up here as a partial charge.
+   */
+  /*
+   *    In past the end of the counter, then back along the front of it.
+   *
+   *    Two legs because one will not do it from here. The counter stands
+   *    between the door and the room, so walking straight in is walking into
+   *    it, and which side the walk comes out on depends on which way it was
+   *    drifting when it hit — the till is offered from the front only, because
+   *    the door owns the floor at the near end and two prompts cannot share it.
+   */
+  await walkAtMost(['KeyW', 'KeyA'], 'to pay', { burstMs: DOOR_BURST_MS, bursts: 12 })
+  await walkUntil(['KeyS', 'KeyD'], 'to pay', { burstMs: DOOR_BURST_MS, bursts: 20 })
+  await interact()
+
+  /*
+   *    Either state of the one button, because which one this run gets is not
+   *    the script's to choose.
+   *
+   *    The bankroll starts at $500 and the left-hand fixtures run from $180 to
+   *    $650, so whether the bill can be settled depends on which of them the
+   *    walk above stopped at — a run that stopped at the $520 gown is $20 short
+   *    and there is no Pay button to click. Both outcomes are the feature
+   *    working; failing on one of them would only be the script insisting on a
+   *    fixture it cannot steer to.
+   */
+  const payable = page.getByRole('button', { name: /^Pay \$/ })
+  const short = page.getByRole('button', { name: /short$/ })
+  await Promise.race([
+    payable.first().waitFor({ timeout: 8000 }),
+    short.first().waitFor({ timeout: 8000 }),
+  ])
+  await capture('8-checkout')
+
+  if ((await payable.count()) > 0) {
+    const beforePaying = await bankroll()
+    await payable.first().click()
+    await page.waitForTimeout(900)
+    const afterPaying = await bankroll()
+
+    if (!(afterPaying < beforePaying)) {
+      throw new Error(
+        `paying at the counter: bankroll went from ${beforePaying} to ${afterPaying}, expected a debit`,
+      )
+    }
+    console.log(`     paid, and the bankroll fell from ${beforePaying} to ${afterPaying}`)
+  } else {
+    // Short. The bill has to stay unpaid and the goods have to go back, which
+    // is the other half of what the counter is for.
+    const beforeGivingUp = await bankroll()
+    await page.getByRole('button', { name: 'Put it all back' }).first().click()
+    await page.waitForTimeout(900)
+
+    if ((await bankroll()) !== beforeGivingUp) {
+      throw new Error('putting the bill back charged the player for it')
+    }
+    console.log('     could not afford it, and put it all back')
+  }
+
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(600)
+
+  /*
+   * 8. Out of the door, and on down the same kerb to the clinic.
    *
    *    The door rather than Escape. The shop used to be a panel with no exit to
    *    stand at; it has one now, and stepping out through it is the only way
@@ -251,7 +409,7 @@ try {
   await expectText('WASD to walk', 'stepping back onto the strip')
   // Out on the street in something that was tried on and then paid for — the
   // proof that a purchase survives the walk out of the room it was made in.
-  await capture('7-out-in-it')
+  await capture('9-out-in-it')
 
   await walkUntil(['KeyW', 'KeyD'], 'Press F to donate', {
     burstMs: DOOR_BURST_MS,
@@ -259,7 +417,7 @@ try {
   })
   await interact()
   await expectText('F at a chair or the door', 'walking into the clinic')
-  await capture('8-clinic')
+  await capture('10-clinic')
 
   // 6. Sell a pint. Ten seconds of nurse, and the bankroll is the proof.
   /*
@@ -275,13 +433,6 @@ try {
   await page.waitForTimeout(700)
   await expectText('Donate', 'sitting in the chair')
 
-  const bankroll = () =>
-    page
-      .locator('.hud__amount')
-      .first()
-      .innerText()
-      .then((text) => Number(text.replace(/[^0-9]/g, '')))
-
   const before = await bankroll()
   await page.getByRole('button', { name: 'Donate' }).click()
 
@@ -293,8 +444,9 @@ try {
    *    has gone with her.
    */
   await page.waitForTimeout(6000)
-  await page.screenshot({ path: resolve(outDir, '9-drawing.png') })
-  console.log('ok   9-drawing')
+  await page.screenshot({ path: resolve(outDir, '11-drawing.png') })
+  captureCount += 1
+  console.log('ok   11-drawing')
 
   await page.waitForFunction(
     (was) => {
@@ -310,7 +462,7 @@ try {
     throw new Error(`donation paid ${after - before}, expected ${DONATION_FEE}`)
   }
   console.log(`     the pint paid $${after - before}`)
-  await capture('10-donated')
+  await capture('12-donated')
 
   /*
    * 7. Out of the clinic by its door, then across the street to the casino.
@@ -367,13 +519,13 @@ try {
    *    having painted.
    */
   await walkUntil(['KeyW', 'KeyA'], 'Blackjack', { burstMs: 350, bursts: 40 })
-  await capture('11-at-the-table')
+  await capture('13-at-the-table')
 
   // 8. Sit down and play a hand. F, not E — E is the camera orbit.
   await page.keyboard.press('KeyF')
   await page.waitForTimeout(600)
   await expectText('Leave table', 'sitting down')
-  await capture('12-seated')
+  await capture('14-seated')
 
   //    The stake keys are the primary control at the table, and the buttons
   //    carry their shortcut in the label ("$10 1"), which makes an exact-name
@@ -381,7 +533,7 @@ try {
   await page.keyboard.press('Digit1')
   await page.waitForTimeout(2000)
   await expectText('DEALER', 'dealing a hand')
-  await capture('13-hand-dealt')
+  await capture('15-hand-dealt')
 
   // 9. Cross the floor to the other table. The casino stopped being a single
   //    table a while ago, and nothing walked from one to the other — which is
@@ -400,14 +552,14 @@ try {
    *    for any prompt at all.
    */
   await walkUntil(['KeyD'], 'Craps', { bursts: 30 })
-  await capture('14-crossing-to-craps')
+  await capture('16-crossing-to-craps')
 
   // 10. Take the rail at craps and throw the dice. Nobody sits at craps, so
   //    this is a stand rather than a seat.
   await page.keyboard.press('KeyF')
   await page.waitForTimeout(600)
   await expectText('Roll the dice', 'stepping up to craps')
-  await capture('15-at-craps')
+  await capture('17-at-craps')
 
   /*
    *    Stake the pass line before throwing. The dice cannot be thrown with
@@ -430,13 +582,13 @@ try {
   //    makes its presence the one thing on screen that cannot be true unless
   //    the dice were actually thrown.
   await page.waitForSelector('.table-ui__outcome', { timeout: 6000 })
-  await capture('16-dice-thrown')
+  await capture('18-dice-thrown')
 
   if (failures.length > 0) {
     throw new Error(`page errors: ${failures.join(' | ')}`)
   }
 
-  console.log(`\n14 beats → ${outDir}`)
+  console.log(`\n${captureCount} beats → ${outDir}`)
 } catch (error) {
   await page.screenshot({ path: resolve(outDir, 'failure.png') })
   console.error(`\nFAILED: ${error.message}`)

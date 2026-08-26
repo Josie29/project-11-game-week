@@ -76,6 +76,20 @@ const SCENES = [
   { name: 'shop', path: '/?boot=shop&look=170&time=21:00&freeze', settleMs: 2600 },
   { name: 'shop-display', path: '/?boot=display&time=21:00&freeze', settleMs: 2600 },
   { name: 'shop-mirror', path: '/?boot=mirror&time=21:00&freeze', settleMs: 3000 },
+  /*
+   * The counter, in both of the states its one button has.
+   *
+   * Two captures rather than one because the bill is settled whole: what a
+   * player can and cannot afford is now a property of the total, and the
+   * disabled case is the one that had to be designed rather than fallen into.
+   */
+  { name: 'shop-checkout', path: '/?boot=checkout&time=21:00&freeze', settleMs: 3000 },
+  { name: 'shop-checkout-short', path: '/?boot=short&time=21:00&freeze', settleMs: 3000 },
+  // ...and the clerk calling the player back, which is the second state of the
+  // exit prompt and is reached by pressing F rather than by standing anywhere.
+  // The longest settle of the three: this one arrives standing at the door with
+  // the camera swung round behind it, and 2600 came back with nothing painted.
+  { name: 'shop-held', path: '/?boot=held&time=21:00&freeze', settleMs: 3400 },
   { name: 'shop-dressed', path: '/?boot=shop&dressed&look=170&time=21:00&freeze', settleMs: 2600 },
   // The two places the wardrobe has to survive a pose rather than just stand
   // in it: a stool folds the legs under a floor-length hem, and the walk cycle

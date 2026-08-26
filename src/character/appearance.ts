@@ -93,6 +93,24 @@ export const NURSE_APPEARANCE: Appearance = {
 }
 
 /**
+ * The Gilded Hanger's clerk, behind the counter.
+ *
+ * Not in a uniform, because the shop does not have one — she is dressed out of
+ * her own stock, in the plum the room is painted. That is also what keeps her
+ * apart from the other three: the two clinic staff are the only figures in
+ * scrubs, the dealer is the only one in charcoal, and nothing else in the game
+ * wears a bob.
+ */
+export const CLERK_APPEARANCE: Appearance = {
+  silhouette: Silhouette.Feminine,
+  hairStyle: HairStyle.Bob,
+  hairColor: 'auburn',
+  skinTone: 'porcelain',
+  garment: Garment.Suit,
+  garmentColor: 'plum',
+}
+
+/**
  * The dealer and the pit staff.
  *
  * Frozen as a preset rather than exposed in the designer: they are house

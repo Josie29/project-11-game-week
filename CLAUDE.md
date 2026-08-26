@@ -198,7 +198,10 @@ Dev-only deep links, stripped from production builds:
 | `?boot=designer` | the dressing-room stage |
 | `?boot=shop` | on The Gilded Hanger's floor, bankroll topped up |
 | `?boot=display` | at the sequin jacket, its prompt and price card up |
-| `?boot=mirror` | on the fitting plinth, a gown and a pendant on approval, only one affordable |
+| `?boot=mirror` | on the fitting plinth, a gown and a pendant on approval |
+| `?boot=checkout` | at the counter, the same bill, enough in hand to settle it |
+| `?boot=short` | the same counter, $820 short of the bill |
+| `?boot=held` | at the door in an unpaid gown, the clerk calling you back |
 | `?boot=shopfront` | at the shop's door, prompt up, to look at the storefront |
 | `?boot=dressed` | the shop, every wardrobe slot filled |
 | `?boot=strip` | the street, with the first-run designer skipped |

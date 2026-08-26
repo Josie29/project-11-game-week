@@ -3,7 +3,16 @@ import { CATALOG, findItem, itemsInSlot, Slot } from '../character/catalog'
 import { WINDOW_OUTERWEAR } from '../character/windowDisplay'
 import { footprintsOverlap, isInside } from '../scenes/casinoFloorLayout'
 import {
+  BACK_SHELF,
   CATALOG_IDS,
+  CLERK_STAND,
+  COUNTER,
+  COUNTER_FOOTPRINT,
+  COUNTER_HEIGHT,
+  counterSubtendedAngle,
+  DESK_CAMERA_AT,
+  DESK_RADIUS,
+  DESK_STAND,
   DISPLAYS,
   displayFor,
   Fixture,
@@ -17,6 +26,7 @@ import {
   footprintCorners,
   HALF_DEPTH,
   HALF_WIDTH,
+  isInFittingShot,
   isOnShopFloor,
   MIRROR,
   MIRROR_CAMERA_AT,
@@ -26,6 +36,7 @@ import {
   MIRROR_STAND,
   mirrorSubtendedAngle,
   obstacles,
+  SHOE_CABINET,
   TRY_RADIUS,
   WALK_BOUNDS,
   WALL_HEIGHT,
@@ -129,7 +140,12 @@ describe('shop layout', () => {
   // the case it belongs to is unreachable, so that item can never be tried on.
   it('puts every stand spot on clear, walkable floor', () => {
     const solids = obstacles()
-    const spots = [...DISPLAYS.map((display) => display.standAt), MIRROR_STAND, ENTRANCE]
+    const spots = [
+      ...DISPLAYS.map((display) => display.standAt),
+      MIRROR_STAND,
+      DESK_STAND,
+      ENTRANCE,
+    ]
 
     for (const spot of spots) {
       const [x, , z] = spot
@@ -220,10 +236,174 @@ describe('shop layout', () => {
     expect(nearest).toBeLessThan(tooWide + TRY_RADIUS)
   })
 
+  /*
+   * The till is a third thing F can mean in this room, so it gets the mirror's
+   * rule: never on offer at the same time as anything that does something else.
+   *
+   * The counter is the tightest of the three, because it went into a room that
+   * was already furnished — the shoe niche in front of it is the one spot on
+   * the floor where two different prompts nearly reach each other.
+   */
+  it('never offers the till and a display at once', () => {
+    for (const display of DISPLAYS) {
+      expect(
+        gap(DESK_STAND, display.standAt),
+        `the till and ${display.itemId} are both on offer somewhere`,
+      ).toBeGreaterThan(DESK_RADIUS + TRY_RADIUS)
+    }
+  })
+
+  /*
+   * The till is offered to somebody walking in from the door.
+   *
+   * The clerk sends a player back from the door to pay, so the walk she sends
+   * them on has to arrive somewhere. It did not: the till's radius was 1.4 and
+   * the straight line in from the door passes 1.45 out, so a scripted walk
+   * went from being called back to standing at the mirror, having been offered
+   * the till at no point in between. Five centimetres, and no capture of this
+   * room would ever have shown it — the walkthrough found it against the
+   * deployed build.
+   *
+   * The line in is a good enough model of that walk: the door and the counter
+   * are both on the same side of the room, so a player who holds forward from
+   * one passes the other.
+   */
+  it('offers the till to a player walking in from the door', () => {
+    const acrossTheAisle = Math.abs(DESK_STAND[0] - EXIT_DOOR[0])
+
+    expect(acrossTheAisle, 'the walk in from the door misses the till').toBeLessThan(DESK_RADIUS)
+    // ...on the way in, rather than behind them once they have passed it.
+    expect(DESK_STAND[2]).toBeLessThan(EXIT_DOOR[2])
+    expect(DESK_STAND[2]).toBeGreaterThan(WALK_BOUNDS.minZ)
+  })
+
+  // ...and the same for the mirror, which is the one that would hurt most: F at
+  // the till while standing at the mirror would put you on the plinth holding a
+  // bill you cannot pay.
+  it('never offers the till and the mirror at once', () => {
+    expect(gap(DESK_STAND, MIRROR_STAND)).toBeGreaterThan(DESK_RADIUS + MIRROR_RADIUS)
+  })
+
+  /*
+   * ...and that check has teeth too.
+   *
+   * The till wants a radius as generous as the mirror's, and cannot have one:
+   * this is the number that says so, and it is the assertion that stopped 2.6
+   * being copied across.
+   */
+  it('would reject a till radius as wide as the mirror', () => {
+    const nearest = Math.min(...DISPLAYS.map((display) => gap(DESK_STAND, display.standAt)))
+
+    expect(MIRROR_RADIUS).toBeGreaterThan(DESK_RADIUS)
+    expect(nearest).toBeLessThan(MIRROR_RADIUS + TRY_RADIUS)
+  })
+
+  /*
+   * The clerk stands behind their own counter, where the player cannot.
+   *
+   * Every other figure in the game is unreachable by accident — a dealer behind
+   * a table, a receptionist in a corner. This one stands in an open lane, so
+   * the lane is inside `COUNTER_FOOTPRINT` and the customer's spot is not.
+   * Without this, walking round the end of the counter puts the player inside
+   * the clerk.
+   */
+  /*
+   * The counter runs right up to the shoe cabinet, with no seam in between.
+   *
+   * `pushOut` moves the player to the *edge* of the box they are inside, so two
+   * boxes that meet leave a line of floor that is inside neither. A scripted
+   * walk in from the door found it twice: pushed east off the counter, it stood
+   * exactly on the shelf's western edge and walked down it, through the staff
+   * side and out of the back of the shop, past the till it had been sent to.
+   *
+   * The fix was one box rather than two, and this is the assertion that keeps
+   * it one — the numbers live in two places because the cabinet is declared
+   * further down the file than the counter is.
+   */
+  it('runs the counter block flush into the shoe cabinet', () => {
+    expect(COUNTER_FOOTPRINT.maxX).toBe(SHOE_CABINET.minX)
+    expect(BACK_SHELF.maxX).toBe(SHOE_CABINET.minX)
+
+    // ...and the drawn shelf is inside what blocks the walk, so nothing here is
+    // an invisible wall and nothing is furniture you can stand in.
+    expect(BACK_SHELF.minX).toBeGreaterThanOrEqual(COUNTER_FOOTPRINT.minX)
+    expect(BACK_SHELF.minX).toBeGreaterThan(COUNTER.maxX)
+    expect(obstacles()).not.toContain(BACK_SHELF)
+  })
+
+  it('keeps the clerk behind the counter and the customer in front of it', () => {
+    const [clerkX, , clerkZ] = CLERK_STAND
+    expect(isInside(COUNTER_FOOTPRINT, clerkX, clerkZ)).toBe(true)
+    expect(isOnShopFloor(clerkX, clerkZ, WALL_MARGIN)).toBe(true)
+
+    const [deskX, , deskZ] = DESK_STAND
+    expect(isInside(COUNTER_FOOTPRINT, deskX, deskZ)).toBe(false)
+
+    // Facing each other across it: the customer on the low-x side, the clerk on
+    // the high-x side, with the counter's own box between them.
+    expect(deskX).toBeLessThan(COUNTER.minX)
+    expect(clerkX).toBeGreaterThan(COUNTER.maxX)
+    expect(COUNTER_HEIGHT).toBeLessThan(1.2)
+  })
+
+  /*
+   * The checkout camera has to see the counter across the view, not along it.
+   *
+   * `mirrorSubtendedAngle`'s lesson on the one other piece of long, thin
+   * geometry in this room. The first camera tried looked straight down the
+   * counter's length and put 2.2 metres of it into nine degrees.
+   */
+  it('frames the counter wide enough to read as a counter', () => {
+    expect(counterSubtendedAngle()).toBeGreaterThan(0.35)
+
+    // On the customer's side of it, and above it, or the shot is of a wall.
+    expect(DESK_CAMERA_AT[0]).toBeLessThan(COUNTER.minX)
+    expect(DESK_CAMERA_AT[1]).toBeGreaterThan(COUNTER_HEIGHT)
+    expect(DESK_CAMERA_AT[1]).toBeLessThan(WALL_HEIGHT)
+
+    const [cameraX, , cameraZ] = DESK_CAMERA_AT
+    for (const solid of obstacles()) {
+      expect(isInside(solid, cameraX, cameraZ), 'the checkout camera is inside furniture').toBe(
+        false,
+      )
+    }
+  })
+
+  /*
+   * The counter and the clerk stay out of the fitting shot.
+   *
+   * The fitting camera stands out on the open floor rather than in a wall, so
+   * the floor in front of it is a shot, not free space. The obvious home for a
+   * till — the middle of the room — puts the clerk exactly on the line from
+   * that camera to the player on the plinth, and the only symptom is a mirror
+   * capture with a stranger standing in front of the reflection.
+   */
+  it('keeps the counter out of the fitting shot', () => {
+    for (const [x, z] of footprintCorners(COUNTER_FOOTPRINT)) {
+      expect(isInFittingShot(x, z), `a counter corner at (${x}, ${z}) is in the fitting shot`).toBe(
+        false,
+      )
+    }
+
+    const [clerkX, , clerkZ] = CLERK_STAND
+    expect(isInFittingShot(clerkX, clerkZ), 'the clerk stands in the fitting shot').toBe(false)
+  })
+
+  // ...and that predicate has teeth: the thing the fitting camera exists to
+  // look at had better be in front of it.
+  it('still counts the plinth and the mirror as in the fitting shot', () => {
+    expect(isInFittingShot(FITTING[0], FITTING[1])).toBe(true)
+    expect(isInFittingShot(MIRROR[0], MIRROR[1])).toBe(true)
+    // Behind the camera is not in shot, whatever the angle.
+    expect(isInFittingShot(MIRROR_CAMERA_AT[0], MIRROR_CAMERA_AT[2] + 2)).toBe(false)
+  })
+
   // Arriving inside the exit's own trigger bounces the player back onto the
   // street: walk in, get thrown out, repeat.
   it('spawns the player clear of the door and of the furniture', () => {
     expect(gap(ENTRANCE, EXIT_DOOR)).toBeGreaterThan(EXIT_RADIUS)
+    // ...and clear of the till, or walking in opens with a bill for nothing.
+    expect(gap(ENTRANCE, DESK_STAND)).toBeGreaterThan(DESK_RADIUS)
 
     const [x, , z] = ENTRANCE
     for (const solid of obstacles()) {

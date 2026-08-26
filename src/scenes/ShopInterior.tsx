@@ -3,7 +3,7 @@ import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
 import { BackSide, PerspectiveCamera as PerspectiveCameraImpl, Vector3 } from 'three'
 import { findItem, type ShopItem } from '../character/catalog'
-import { wornInSlot } from '../character/fitting'
+import { isFitting, wornInSlot } from '../character/fitting'
 import { WINDOW_DISPLAY } from '../character/windowDisplay'
 import { useAppearanceStore, useFittedEquipped } from '../store/useAppearanceStore'
 import { useGameStore } from '../store/useGameStore'
@@ -13,11 +13,22 @@ import { PROPORTIONS, Silhouette } from '../character/proportions'
 import { Accessory } from './components/character/Accessory'
 import { CasinoCharacter } from './components/CasinoCharacter'
 import { ExitDoor } from './components/ExitDoor'
+import { ShopClerk, CLERK_GLANCE_RADIUS } from './components/ShopClerk'
 import { WalkingPlayer, type ProximityTarget } from './components/WalkingPlayer'
 import {
   CABINET_HEIGHT,
   CAMERA_BOUNDS,
+  BACK_SHELF,
+  BACK_SHELF_HEIGHT,
   CASE_HEIGHT,
+  CLERK_STAND,
+  COUNTER,
+  COUNTER_HEIGHT,
+  DESK_CAMERA_AT,
+  DESK_CAMERA_TARGET,
+  DESK_FACING,
+  DESK_RADIUS,
+  DESK_STAND,
   DISPLAYS,
   displayId,
   displayItemId,
@@ -286,6 +297,140 @@ function MirrorCamera() {
   )
 }
 
+/**
+ * The fixed camera used at the counter.
+ *
+ * Over the customer's shoulder rather than square on to the counter: the shot
+ * has to hold the player, what they are wearing, and the person about to charge
+ * them for it. `counterSubtendedAngle` is what keeps it from looking down the
+ * counter's length, which frames two people either side of a post.
+ */
+function DeskCamera() {
+  const cameraRef = useRef<PerspectiveCameraImpl>(null)
+  const target = useMemo(() => new Vector3(...DESK_CAMERA_TARGET), [])
+
+  useFrame(() => {
+    cameraRef.current?.lookAt(target)
+  })
+
+  return <PerspectiveCamera ref={cameraRef} makeDefault fov={42} position={[...DESK_CAMERA_AT]} />
+}
+
+/**
+ * The checkout counter: a case, a brass-edged top, and a till on it.
+ *
+ * Boxes, in the clinic desk's idiom — the overhang on the top is what makes a
+ * box read as a counter. The one thing worth noting is that its footprint in
+ * `shopLayout.ts` is wider than this geometry: the staff side behind it is not
+ * walkable, so the player cannot end up standing inside the clerk.
+ */
+function Counter() {
+  const width = COUNTER.maxX - COUNTER.minX
+  const depth = COUNTER.maxZ - COUNTER.minZ
+  const centerX = (COUNTER.minX + COUNTER.maxX) / 2
+  const centerZ = (COUNTER.minZ + COUNTER.maxZ) / 2
+
+  return (
+    <group name="shop:counter" position={[centerX, 0, centerZ]}>
+      {/* The case, panelled to match the dado rather than the fixtures. */}
+      <mesh position={[0, COUNTER_HEIGHT / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[width, COUNTER_HEIGHT, depth]} />
+        <meshStandardMaterial color={PANEL} roughness={0.55} />
+      </mesh>
+
+      {/* A band of wood at knee height, so the case is not one flat slab. */}
+      <mesh position={[-width / 2 - 0.01, 0.34, 0]}>
+        <boxGeometry args={[0.03, 0.5, depth - 0.16]} />
+        <meshStandardMaterial color={WOOD} roughness={0.7} />
+      </mesh>
+
+      {/* The top, overhanging on every side. This is the part that reads. */}
+      <mesh position={[0, COUNTER_HEIGHT + 0.03, 0]} castShadow receiveShadow>
+        <boxGeometry args={[width + 0.12, 0.07, depth + 0.12]} />
+        <meshStandardMaterial color={BRASS} roughness={0.32} metalness={0.85} />
+      </mesh>
+
+      {/*
+        The till, on the clerk's half, angled back toward her — and up at the
+        far end of the counter, out of the line the checkout camera takes to the
+        two people using it. The first capture had it on the customer's head and
+        the second had it in front of the clerk.
+      */}
+      <group position={[0.16, COUNTER_HEIGHT + 0.07, 0.78]} rotation={[0, -0.22, 0]}>
+        <mesh position={[0, 0.11, 0]} castShadow>
+          <boxGeometry args={[0.34, 0.22, 0.4]} />
+          <meshStandardMaterial color="#241a20" roughness={0.5} />
+        </mesh>
+        <mesh position={[0, 0.24, -0.06]} rotation={[-0.5, 0, 0]}>
+          <boxGeometry args={[0.3, 0.18, 0.03]} />
+          <meshStandardMaterial
+            color="#2b2230"
+            emissive={CASE_GLOW}
+            emissiveIntensity={0.35}
+            roughness={0.4}
+          />
+        </mesh>
+      </group>
+
+      {/* A tray of tissue paper, because a counter with nothing on it is a wall. */}
+      <mesh position={[-0.1, COUNTER_HEIGHT + 0.1, -0.68]} castShadow>
+        <boxGeometry args={[0.42, 0.07, 0.32]} />
+        <meshStandardMaterial color={RUG} roughness={0.85} />
+      </mesh>
+    </group>
+  )
+}
+
+/**
+ * The back shelf behind the counter: stock boxes on open shelves.
+ *
+ * Drawn because it is walked into. It exists to close the staff side of the
+ * counter, and an obstacle a player is pushed out of with nothing where it
+ * stands is the invisible wall this project has managed to avoid so far.
+ */
+function BackShelf() {
+  const width = BACK_SHELF.maxX - BACK_SHELF.minX
+  const depth = BACK_SHELF.maxZ - BACK_SHELF.minZ
+  const centerX = (BACK_SHELF.minX + BACK_SHELF.maxX) / 2
+  const centerZ = (BACK_SHELF.minZ + BACK_SHELF.maxZ) / 2
+
+  return (
+    <group name="shop:back-shelf" position={[centerX, 0, centerZ]}>
+      <mesh position={[0, BACK_SHELF_HEIGHT / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[width, BACK_SHELF_HEIGHT, depth]} />
+        <meshStandardMaterial color={PANEL} roughness={0.6} />
+      </mesh>
+
+      {/* Two shelves of boxed stock, facing the room over the counter. */}
+      {[0.52, 1.06].map((height) => (
+        <group key={height}>
+          <mesh position={[-width / 2 + 0.02, height, 0]} rotation={[0, Math.PI / 2, 0]}>
+            <planeGeometry args={[depth - 0.12, 0.42]} />
+            <meshStandardMaterial color={WOOD} roughness={0.8} />
+          </mesh>
+          {[-0.62, 0, 0.62].map((offset) => (
+            <mesh
+              key={offset}
+              position={[-width / 2 + 0.16, height + 0.02, offset]}
+              rotation={[0, 0.18 * offset, 0]}
+              castShadow
+            >
+              <boxGeometry args={[0.24, 0.3, 0.42]} />
+              <meshStandardMaterial color={offset === 0 ? RUG : BRASS_LIT} roughness={0.85} />
+            </mesh>
+          ))}
+        </group>
+      ))}
+
+      {/* A brass rail capping it, matching the dado and the counter's top. */}
+      <mesh position={[0, BACK_SHELF_HEIGHT + 0.03, 0]}>
+        <boxGeometry args={[width + 0.08, 0.06, depth + 0.08]} />
+        <meshStandardMaterial color={BRASS} roughness={0.32} metalness={0.85} />
+      </mesh>
+    </group>
+  )
+}
+
 /* ------------------------------------------------------------------- scene */
 
 const CABINET_DEPTH = SHOE_CABINET.maxX - SHOE_CABINET.minX
@@ -301,6 +446,7 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
   const clearFitting = useAppearanceStore((state) => state.clearFitting)
   const worn = useFittedEquipped()
   const atMirror = useGameStore((state) => state.atMirror)
+  const atCheckout = useGameStore((state) => state.atCheckout)
   const shopPosition = useGameStore((state) => state.shopPosition)
   const shopFacing = useGameStore((state) => state.shopFacing)
 
@@ -315,15 +461,16 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
   useEffect(() => clearFitting, [clearFitting])
 
   /**
-   * F acts on whatever the player is standing at: a display, the mirror, or the
-   * way out.
+   * F acts on whatever the player is standing at: a display, the mirror, the
+   * counter, or the way out.
    *
    * No ranking, because there is never more than one: `WalkingPlayer` reports
-   * the single nearest target, and the mirror's and the door's radii are held
-   * clear of every display by `shopLayout.test.ts` and `venueDoors.test.ts`.
+   * the single nearest target, and the mirror's, the counter's and the door's
+   * radii are held clear of each other and of every display by
+   * `shopLayout.test.ts` and `venueDoors.test.ts`.
    *
-   * It stays live on the plinth so F steps back off it, which is the same shape
-   * as the clinic's chairs.
+   * It stays live at the mirror and at the counter so F steps back off either,
+   * which is the same shape as the clinic's chairs.
    */
   useActionKey(INTERACT_KEY, () => {
     const store = useGameStore.getState()
@@ -334,13 +481,40 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
       return
     }
 
+    if (store.atCheckout) {
+      store.leaveCheckout()
+      return
+    }
+
     if (store.nearbyExit) {
+      /*
+       * The clerk calls you back, once.
+       *
+       * The only place in the game where F does not do what the prompt said a
+       * frame ago, which is why the prompt changes rather than the key going
+       * quiet: the first press spends itself on being told what you are
+       * carrying, the second leaves anyway and the goods go back on the rail.
+       *
+       * Not a lock. The way to settle or drop a bill is at the counter, and a
+       * player who has walked to the door with more on than they can afford is
+       * exactly the player who would be stuck there.
+       */
+      if (isFitting(wardrobe.fitting) && !store.heldAtDoor) {
+        store.setHeldAtDoor(true)
+        return
+      }
+
       store.leaveVenue()
       return
     }
 
     if (store.nearbyMirror) {
       store.standAtMirror()
+      return
+    }
+
+    if (store.nearbyDesk) {
+      store.standAtCheckout()
       return
     }
 
@@ -363,8 +537,23 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
         radius: TRY_RADIUS,
       })),
       { id: 'mirror', position: MIRROR_STAND, radius: MIRROR_RADIUS },
+      { id: 'desk', position: DESK_STAND, radius: DESK_RADIUS },
       { id: 'exit', position: EXIT_DOOR, radius: EXIT_RADIUS },
     ],
+    [],
+  )
+
+  /*
+   * What the clerk notices, which is not what F acts on.
+   *
+   * A separate channel because `onNearest` reports only the closest target:
+   * folding the clerk in would mean standing where she can see you takes the
+   * prompt off whatever you are actually standing at. The clinic's desk learned
+   * this first. It is also wider than the till's own radius, so she looks up
+   * before the prompt appears rather than at the same moment.
+   */
+  const glanceTargets = useMemo<readonly ProximityTarget[]>(
+    () => [{ id: 'clerk', position: CLERK_STAND, radius: CLERK_GLANCE_RADIUS }],
     [],
   )
 
@@ -375,7 +564,16 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
 
     store.setNearbyExit(id === 'exit')
     store.setNearbyMirror(id === 'mirror')
+    store.setNearbyDesk(id === 'desk')
     store.setNearbyDisplay(id === null ? null : displayItemId(id))
+
+    // Walking away from the door takes the clerk's line down with it, so a
+    // press at some other fixture later cannot be the one that leaves.
+    if (id !== 'exit') store.setHeldAtDoor(false)
+  }
+
+  function handleGlance(id: string | null): void {
+    useGameStore.getState().setNearbyClerk(id === 'clerk')
   }
 
   return (
@@ -731,6 +929,35 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
       </group>
 
       {/*
+        The counter, its own light, and the person behind it.
+
+        The light is not optional. Every fixture in this room carries one
+        because the room is dark everywhere it is not selling something, and a
+        counter without one is a black slab with a lit shop behind it — which is
+        exactly what the first capture showed.
+      */}
+      <Counter />
+      <BackShelf />
+      <pointLight
+        position={[(COUNTER.minX + COUNTER.maxX) / 2, LIGHT_HEIGHT, (COUNTER.minZ + COUNTER.maxZ) / 2]}
+        color="#ffe0b8"
+        intensity={16}
+        distance={6.5}
+      />
+      <mesh
+        position={[
+          (COUNTER.minX + COUNTER.maxX) / 2,
+          WALL_HEIGHT - 0.04,
+          (COUNTER.minZ + COUNTER.maxZ) / 2,
+        ]}
+        rotation={[Math.PI / 2, 0, 0]}
+      >
+        <circleGeometry args={[0.09, 16]} />
+        <meshBasicMaterial color="#c9a678" />
+      </mesh>
+      <ShopClerk />
+
+      {/*
         No floor pool: the shop's floor is lit well enough to catch the
         doorway's own light, and the painted stand-in read as a plank on it.
       */}
@@ -742,20 +969,38 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
         floorPool={false}
       />
 
-      {atMirror ? (
+      {/*
+        Three ways to be in this room: on the plinth, at the counter, or walking.
+        The first two unmount the walk entirely, which is what stops a proximity
+        check running against a player who is not on their own feet.
+      */}
+      {atMirror && (
         <>
           <MirrorCamera />
           <group position={[FITTING[0], FITTING_HEIGHT, FITTING[1]]} rotation={[0, Math.PI, 0]}>
             <CasinoCharacter appearance={appearance} equipped={worn} />
           </group>
         </>
-      ) : (
+      )}
+
+      {atCheckout && (
+        <>
+          <DeskCamera />
+          <group position={[DESK_STAND[0], 0, DESK_STAND[2]]} rotation={[0, DESK_FACING, 0]}>
+            <CasinoCharacter appearance={appearance} equipped={worn} />
+          </group>
+        </>
+      )}
+
+      {!atMirror && !atCheckout && (
         <WalkingPlayer
           bounds={WALK_BOUNDS}
           spawn={shopPosition}
           facing={shopFacing}
           targets={targets}
           onNearest={handleNearest}
+          glanceTargets={glanceTargets}
+          onGlance={handleGlance}
           obstacles={solids}
           distance={4.4}
           pitch={0.42}

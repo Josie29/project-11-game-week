@@ -8,7 +8,11 @@ import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
 import { TableId } from '../scenes/casinoFloorLayout'
-import { displayFor, ENTRANCE as SHOP_ENTRANCE } from '../scenes/shopLayout'
+import {
+  displayFor,
+  ENTRANCE as SHOP_ENTRANCE,
+  EXIT_DOOR as SHOP_EXIT,
+} from '../scenes/shopLayout'
 import { donationTimeline, NurseTask } from '../scenes/clinicRoutine'
 import { STREET_BOUNDS } from '../scenes/stripLayout'
 import { MARKER_AMOUNT } from '../world/money'
@@ -20,11 +24,12 @@ import { VenueId } from '../world/venues'
 const DEMO_BET = 50
 
 /**
- * Bankroll handed to `?boot=mirror`.
+ * Bankroll handed to `?boot=mirror` and `?boot=short`.
  *
- * Chosen to straddle the two items on approval: the $520 gown is buyable and
- * the $900 pendant is $300 short, so one capture shows both states of the Buy
- * button. A figure either side of both would prove only one of them.
+ * It used to straddle the two items on approval, back when each carried its own
+ * Buy button and $600 showed one enabled and one disabled in a single frame.
+ * The bill is settled in one now, so what this has to be is *under* the $1,420
+ * total and plainly so — $820 short, which is the number the button prints.
  */
 const FITTING_BANKROLL = 600
 
@@ -39,6 +44,9 @@ const WINDOW_LOOK = (170 * Math.PI) / 180
 
 /** Bankroll handed to `?boot=shop`, enough to afford anything on the rails. */
 const SHOPPING_SPREE = 5000
+
+/** Camera yaw that looks back at the shop's door, for `?boot=held`. */
+const DOOR_LOOK = (200 * Math.PI) / 180
 
 /** Which recliner `?boot=drawing` uses. Mid-row, so both neighbours are in shot. */
 const DRAWING_CHAIR = 1
@@ -195,7 +203,13 @@ function applyTimeShortcut(): void {
  * - `?boot=shop` stands on The Gilded Hanger's floor, everything affordable.
  * - `?boot=display` stands at the sequin jacket, its prompt and card up.
  * - `?boot=mirror` stands on the fitting plinth in a gown and a pendant that
- *   have not been paid for, with a bankroll covering one of the two.
+ *   have not been paid for.
+ * - `?boot=checkout` stands at the counter with the same two on approval and a
+ *   bankroll that covers the bill.
+ * - `?boot=short` is the same counter with $600 in hand, so the button reads
+ *   how far off it is instead of what it would cost.
+ * - `?boot=held` stands at the door in an unpaid gown with the clerk's line up,
+ *   which is the second state of the exit prompt and cannot be walked to.
  * - `?dressed` puts the whole wardrobe on the player. A modifier, not a scene:
  *   compose it with any `?boot=` to check the outfit where it has to survive —
  *   `?boot=shop&dressed` for the anchors up close, `?boot=settled&dressed` for
@@ -242,6 +256,9 @@ export function applyBootShortcut(): void {
     'shop',
     'display',
     'mirror',
+    'checkout',
+    'short',
+    'held',
     'shopfront',
     'clinicfront',
     'strip',
@@ -351,6 +368,57 @@ export function applyBootShortcut(): void {
     useAppearanceStore.getState().tryOn('crimson-gown')
     useAppearanceStore.getState().tryOn('solitaire-pendant')
     useGameStore.getState().standAtMirror()
+    return
+  }
+
+  if (boot === 'checkout' || boot === 'short') {
+    /*
+     * At the counter with the same gown and pendant on approval.
+     *
+     * Two links rather than one because the button has two states and both are
+     * worth a capture: `checkout` can settle the $1,420 bill, `short` is $820
+     * off it. The bill is all-or-nothing now, so `FITTING_BANKROLL` no longer
+     * straddles the two items — it is simply under the total.
+     */
+    useAppearanceStore.getState().completeDesign()
+    useGameStore.getState().enterVenue(VenueId.GildedHanger)
+    const purse = boot === 'checkout' ? SHOPPING_SPREE : FITTING_BANKROLL
+    useGameStore.getState().adjustBankroll(purse - useGameStore.getState().bankroll)
+    useAppearanceStore.getState().tryOn('crimson-gown')
+    useAppearanceStore.getState().tryOn('solitaire-pendant')
+    useGameStore.getState().standAtCheckout()
+    return
+  }
+
+  if (boot === 'held') {
+    /*
+     * At the door in unpaid goods, with the clerk's line already up.
+     *
+     * The one interaction in the shop that cannot be captured by walking to a
+     * spot: it is a *second* state of the exit prompt, reached by pressing F
+     * once. Setting it here is what lets `npm run shots` see it at all.
+     */
+    useAppearanceStore.getState().completeDesign()
+    useGameStore.getState().enterVenue(VenueId.GildedHanger)
+    useAppearanceStore.getState().tryOn('crimson-gown')
+    useGameStore.setState({
+      shopPosition: [SHOP_EXIT[0], 0, SHOP_EXIT[2] - 1.2],
+      shopFacing: 0,
+      nearbyExit: true,
+      heldAtDoor: true,
+    })
+
+    /*
+     * ...and the camera swung round to look back at the door.
+     *
+     * At rest it trails the player, and a player standing at the door has a
+     * wall a metre behind them: `CAMERA_BOUNDS` clamps the seat to just above
+     * their head and the capture comes back as a plan view of a hat. Skipped
+     * when `?look=` is present, so an explicit angle still wins.
+     */
+    if (!new URLSearchParams(window.location.search).has('look')) {
+      useGameStore.setState({ initialCameraYaw: DOOR_LOOK })
+    }
     return
   }
 
