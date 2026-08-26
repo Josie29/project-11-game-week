@@ -33,6 +33,11 @@ export function usePresenceRoom(): void {
   // Sat at a table or in a donation chair: drawn seated, not standing inside
   // the furniture.
   const seated = activeTable !== null || atChair !== null
+  /*
+   * Which table, which `seated` cannot say. A clinic recliner is seated with no
+   * table, and the casino has two tables that a boolean cannot tell apart.
+   */
+  const table = activeTable
 
   useEffect(() => {
     const { enterRoom, leaveRoom, updateIdentity } = usePresenceStore.getState()
@@ -61,7 +66,7 @@ export function usePresenceRoom(): void {
       return
     }
 
-    const identity = { name, appearance, owned, equipped, seated }
+    const identity = { name, appearance, owned, equipped, seated, table }
 
     /*
      * Both, every time, and neither is wasteful. `enterRoom` returns early when
@@ -72,7 +77,7 @@ export function usePresenceRoom(): void {
      */
     enterRoom(roomId, boundsFor(roomId), identity)
     updateIdentity(identity)
-  }, [mode, roomId, name, appearance, owned, equipped, seated])
+  }, [mode, roomId, name, appearance, owned, equipped, seated, table])
 
   // Leaves for good when the app unmounts, so a hot reload does not strand a
   // socket holding a figure in the room.

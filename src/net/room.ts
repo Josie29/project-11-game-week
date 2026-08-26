@@ -5,6 +5,7 @@ import {
   sanitizeRemoteIdentity,
   type Snapshot,
 } from '../world/presence'
+import type { TableId } from '../scenes/casinoFloorLayout'
 import type { WalkBounds } from '../scenes/components/WalkingPlayer'
 
 /*
@@ -49,6 +50,8 @@ export interface LocalIdentity {
   readonly owned: readonly string[]
   readonly equipped: unknown
   readonly seated: boolean
+  /** Which table they are standing at, for the shooter queue. */
+  readonly table: TableId | null
 }
 
 export interface RoomConnection {
@@ -61,7 +64,7 @@ export interface RoomConnection {
    */
   send: (pose: Pose) => boolean
   /** Tells the room the player sat down or stood up. */
-  setSeated: (seated: boolean) => void
+  setSeated: (seated: boolean, table: TableId | null) => void
   /** Re-announces identity, e.g. after a wardrobe change. */
   announce: (identity: LocalIdentity) => void
   close: () => void
@@ -100,6 +103,7 @@ export function joinRoom(
         owned: current.owned,
         equipped: current.equipped,
         seated: current.seated,
+        table: current.table,
       }),
     )
   }
@@ -201,10 +205,10 @@ export function joinRoom(
       socket.send(JSON.stringify({ t: 'move', ...pose }))
       return true
     },
-    setSeated: (seated) => {
-      current = { ...current, seated }
+    setSeated: (seated, table) => {
+      current = { ...current, seated, table }
       if (socket?.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ t: 'seat', seated }))
+        socket.send(JSON.stringify({ t: 'seat', seated, table }))
       }
     },
     announce: (next) => {

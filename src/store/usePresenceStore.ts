@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { getLocalTransform } from '../net/localTransform'
+import { TableId } from '../scenes/casinoFloorLayout'
 import {
   isMultiplayerConfigured,
   joinRoom,
@@ -48,7 +49,7 @@ interface PresenceStore {
   leaveRoom: () => void
   /** Re-announces after a wardrobe or name change. */
   updateIdentity: (identity: LocalIdentity) => void
-  setSeated: (seated: boolean) => void
+  setSeated: (seated: boolean, table: TableId | null) => void
 }
 
 /**
@@ -167,6 +168,6 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
 
     // Not mirrored into `peers`: that roster is everyone *else*, and we never
     // draw ourselves from it.
-    setSeated: (seated) => connection?.setSeated(seated),
+    setSeated: (seated, table) => connection?.setSeated(seated, table),
   }
 })

@@ -1,5 +1,6 @@
 import { type Appearance, sanitizeAppearance } from '../character/appearance'
 import { type EquippedItems, sanitizeEquipped, sanitizeOwned } from '../character/catalog'
+import { TableId } from '../scenes/casinoFloorLayout'
 import type { WalkBounds } from '../scenes/components/WalkingPlayer'
 
 /*
@@ -47,6 +48,17 @@ export interface Snapshot extends Pose {
   readonly at: number
 }
 
+/**
+ * Coerces a wire value into a known table, or null.
+ *
+ * Total, like every other sanitizer here. An unrecognised table has to read as
+ * "not at a table" rather than becoming a third state that the queue would then
+ * have to have an opinion about.
+ */
+export function sanitizeTable(value: unknown): TableId | null {
+  return value === TableId.Craps || value === TableId.Blackjack ? value : null
+}
+
 /** Who a remote player is: the parts that change rarely. */
 export interface RemoteIdentity {
   readonly id: string
@@ -55,6 +67,16 @@ export interface RemoteIdentity {
   readonly equipped: EquippedItems
   /** True while they are sat at a table, so they are drawn seated. */
   readonly seated: boolean
+  /**
+   * Which table they are at, or null.
+   *
+   * Separate from `seated` because the two answer different questions and one
+   * field cannot answer both. `seated` decides how the figure is *drawn* and is
+   * true in the clinic's recliners too, where there is no table at all. This
+   * says which game they are standing at, which is what a shooter queue needs —
+   * a casino holds two tables and "seated" cannot tell them apart.
+   */
+  readonly table: TableId | null
 }
 
 /**
@@ -249,5 +271,6 @@ export function sanitizeRemoteIdentity(raw: unknown, fallbackId: string): Remote
     // Filtered against `owned`, so a peer cannot wear what they never bought.
     equipped: sanitizeEquipped(candidate.equipped, owned),
     seated: candidate.seated === true,
+    table: sanitizeTable(candidate.table),
   }
 }

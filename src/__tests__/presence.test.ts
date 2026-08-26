@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { TableId } from '../scenes/casinoFloorLayout'
 import {
   FALLBACK_NAME,
   interpolateAt,
@@ -8,6 +9,7 @@ import {
   sanitizePlayerName,
   sanitizePose,
   sanitizeRemoteIdentity,
+  sanitizeTable,
   shortestAngle,
   shouldSend,
   type Snapshot,
@@ -260,5 +262,34 @@ describe('shortestAngle', () => {
     expect(shortestAngle(Math.PI * 2)).toBeCloseTo(0)
     // 350° the long way is -10° the short way.
     expect(shortestAngle((350 * Math.PI) / 180)).toBeCloseTo((-10 * Math.PI) / 180)
+  })
+})
+
+describe('sanitizeTable', () => {
+  // The shooter queue is derived from who says they are at the craps table, and
+  // that claim arrives over a socket from another player's machine. An
+  // unrecognised value has to mean "not at a table" rather than becoming a
+  // third state the queue would have to hold an opinion about.
+  it('admits only the two real tables', () => {
+    expect(sanitizeTable('craps')).toBe(TableId.Craps)
+    expect(sanitizeTable('blackjack')).toBe(TableId.Blackjack)
+
+    for (const junk of [undefined, null, '', 'roulette', 'Craps', 0, 1, true, {}, []]) {
+      expect(sanitizeTable(junk)).toBeNull()
+    }
+  })
+
+  // `seated` and `table` answer different questions, and the clinic is the case
+  // that proves it: a player in a recliner is drawn sitting down but is at no
+  // table at all, so a queue keyed on `seated` would put them in line for dice
+  // in a different building.
+  it('is independent of seated', () => {
+    const inARecliner = sanitizeRemoteIdentity({ id: 'a', seated: true }, 'a')
+    expect(inARecliner.seated).toBe(true)
+    expect(inARecliner.table).toBeNull()
+
+    const atTheRail = sanitizeRemoteIdentity({ id: 'b', seated: false, table: 'craps' }, 'b')
+    expect(atTheRail.seated).toBe(false)
+    expect(atTheRail.table).toBe(TableId.Craps)
   })
 })

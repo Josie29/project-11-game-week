@@ -21,6 +21,7 @@ interface JoinMessage {
   readonly owned?: unknown
   readonly equipped?: unknown
   readonly seated?: unknown
+  readonly table?: unknown
 }
 
 interface MoveMessage {
@@ -34,6 +35,14 @@ interface MoveMessage {
 interface SeatMessage {
   readonly t: 'seat'
   readonly seated?: unknown
+  /**
+   * Which table, relayed but never interpreted.
+   *
+   * The server does not know what a blackjack table is and does not need to.
+   * It passes the value along so the clients can agree on who is standing at
+   * which game, on the same rule as every other identity field here.
+   */
+  readonly table?: unknown
 }
 
 type Incoming = JoinMessage | MoveMessage | SeatMessage
@@ -117,6 +126,7 @@ export class Room implements DurableObject {
           owned: message.owned,
           equipped: message.equipped,
           seated: message.seated === true,
+          table: typeof message.table === 'string' ? message.table : null,
         }
         ws.serializeAttachment(attachment)
 
@@ -152,9 +162,16 @@ export class Room implements DurableObject {
 
       case 'seat': {
         if (attachment.identity) {
+          const table = typeof message.table === 'string' ? message.table : null
           attachment.identity.seated = message.seated === true
+          attachment.identity.table = table
           ws.serializeAttachment(attachment)
-          this.broadcast(ws, { t: 'seated', id: attachment.id, seated: message.seated === true })
+          this.broadcast(ws, {
+            t: 'seated',
+            id: attachment.id,
+            seated: message.seated === true,
+            table,
+          })
         }
         return
       }
