@@ -1,12 +1,7 @@
 import { MeshReflectorMaterial, PerspectiveCamera } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
-import {
-  BackSide,
-  DoubleSide,
-  PerspectiveCamera as PerspectiveCameraImpl,
-  Vector3,
-} from 'three'
+import { DoubleSide, PerspectiveCamera as PerspectiveCameraImpl, Vector3 } from 'three'
 import { findItem, type ShopItem } from '../character/catalog'
 import { isFitting, wornInSlot } from '../character/fitting'
 import { WINDOW_DISPLAY } from '../character/windowDisplay'
@@ -72,6 +67,7 @@ import {
   type Display,
 } from './shopLayout'
 import { getPriceCardTexture } from './priceCardTexture'
+import { getShopWallTexture, getVelvetNormalTexture } from './shopTexture'
 import { useActionKey } from './useActionKey'
 
 /*
@@ -89,7 +85,6 @@ import { useActionKey } from './useActionKey'
  */
 
 /** Read off the reference. Nothing here is a hex value chosen at a keyboard. */
-const WALL = '#3d1338'
 const FLOOR = '#241d29'
 const BRASS = '#c9a227'
 const BRASS_LIT = '#e6c765'
@@ -594,6 +589,9 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
     [],
   )
 
+  const wallTexture = getShopWallTexture()
+  const velvet = getVelvetNormalTexture()
+
   const solids = useMemo(() => obstacles(), [])
 
   function handleNearest(id: string | null): void {
@@ -690,11 +688,32 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
       />
       <pointLight position={[0, 2.4, HALF_DEPTH - 1.2]} color="#6f7ae0" intensity={7} distance={12} />
 
-      {/* The room as a single inverted box: cheaper than six planes. */}
-      <mesh position={[0, WALL_HEIGHT / 2, 0]} receiveShadow>
-        <boxGeometry args={[ROOM_WIDTH, WALL_HEIGHT, ROOM_DEPTH]} />
-        <meshStandardMaterial color={WALL} roughness={0.92} side={BackSide} />
-      </mesh>
+      {/*
+        The walls as four planes rather than one inverted box.
+
+        The box was one draw and one material, which is cheaper — and one
+        material means one flat colour across the largest surface in the room.
+        The reference's walls darken toward the floor and carry gold at the
+        cornice and the dado, and none of that is expressible on a shared
+        material. Three extra draw calls, no extra lights, which is the trade
+        this room can actually afford.
+      */}
+      {[
+        { key: 'left', position: [-HALF_WIDTH, WALL_HEIGHT / 2, 0], rotation: [0, Math.PI / 2, 0], size: [ROOM_DEPTH, WALL_HEIGHT] },
+        { key: 'right', position: [HALF_WIDTH, WALL_HEIGHT / 2, 0], rotation: [0, -Math.PI / 2, 0], size: [ROOM_DEPTH, WALL_HEIGHT] },
+        { key: 'back', position: [0, WALL_HEIGHT / 2, -HALF_DEPTH], rotation: [0, 0, 0], size: [ROOM_WIDTH, WALL_HEIGHT] },
+        { key: 'front', position: [0, WALL_HEIGHT / 2, HALF_DEPTH], rotation: [0, Math.PI, 0], size: [ROOM_WIDTH, WALL_HEIGHT] },
+      ].map(({ key, position, rotation, size }) => (
+        <mesh
+          key={key}
+          position={position as [number, number, number]}
+          rotation={rotation as [number, number, number]}
+          receiveShadow
+        >
+          <planeGeometry args={size as [number, number]} />
+          <meshStandardMaterial map={wallTexture} roughness={0.92} />
+        </mesh>
+      ))}
 
       {/*
         A ceiling of its own, rather than the top face of the room box.
@@ -1081,12 +1100,21 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
       {/* The rug and the plinth in front of the mirror. */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[FITTING[0], 0.006, FITTING[1]]} receiveShadow>
         <circleGeometry args={[FITTING_RADIUS + 0.55, 40]} />
-        <meshStandardMaterial color={RUG} roughness={0.96} />
+        {/* The rug takes the nap too, so plinth and rug read as one material
+            rather than as two flat discs of slightly different brown. */}
+        <meshStandardMaterial color={RUG} roughness={0.96} normalMap={velvet} />
       </mesh>
       <group position={[FITTING[0], 0, FITTING[1]]}>
         <mesh position={[0, FITTING_HEIGHT / 2, 0]} castShadow receiveShadow>
           <cylinderGeometry args={[FITTING_RADIUS, FITTING_RADIUS + 0.05, FITTING_HEIGHT, 40]} />
-          <meshStandardMaterial color={PLINTH_TOP} roughness={0.85} />
+          {/*
+            Velvet, which is what you stand on to be looked at.
+
+            A normal map rather than more geometry or another light: this room
+            forward-renders thirteen point lights already and cannot carry a
+            fourteenth, but a texture is free. See `shopTexture.ts`.
+          */}
+          <meshStandardMaterial color={PLINTH_TOP} roughness={0.85} normalMap={velvet} />
         </mesh>
         <mesh position={[0, 0.03, 0]}>
           <cylinderGeometry args={[FITTING_RADIUS + 0.055, FITTING_RADIUS + 0.055, 0.06, 40]} />
