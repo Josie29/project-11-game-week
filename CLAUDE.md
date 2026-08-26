@@ -57,6 +57,41 @@ Concretely, the three categories that have caught real bugs here:
   cropping the player at the knees took the mirror under the threshold, and the
   fix was a wider mirror rather than a lower bar.
 
+- **Geometry itself, not just where it attaches.** `src/character/parts.ts` is
+  the vocabulary every piece of the character is built from — hair, the twelve
+  wearables, the body and the four garments are all part lists in
+  `hairParts.ts`, `itemParts.ts` and `bodyParts.ts`, and the components below
+  `src/scenes/` only draw them. Two predicates hold them: `floatingParts`
+  refuses a piece attached to nothing, and `fightingSurfaces` refuses two
+  parallel faces closer than a millimetre.
+
+  This exists because of a bug no test in the repository could have seen. The
+  ponytail's anchor was correct and `isOnBody` passed it — while the shape
+  hanging off that anchor was two primitives floating in space behind the head.
+  An anchor is not a shape.
+
+  Three things learned building those predicates, all of them the hard way:
+
+  - **A curved surface has no face to fight with.** Two spheres side by side
+    share a bounding-box plane and nothing else, and reported as conflicts they
+    had the coil ring pulled apart for nothing. Only a flat, axis-aligned face
+    counts.
+  - **Coincident is the worst case, not the safest.** Requiring a gap strictly
+    greater than zero let a lapel and a placket sit on exactly the same plane
+    and reported nothing. Faces on the same side are caught down to and
+    including zero; faces meeting back-to-back are flush and fine.
+  - **The threshold is arithmetic, not taste.** At this camera the depth buffer
+    resolves about 0.01mm at four metres. The old rig's 1–2mm offsets were never
+    the flicker, whatever they looked like.
+
+  **Worn geometry is only correct relative to what it is worn over.** The item
+  lists and the body list each passed alone while the gown's bodice was authored
+  at exactly the chest's own radius — one surface, two meshes, and vertical
+  stripes crawling down the front of the dress. The same class of error put a
+  wedge of bare leg at each hip, because a skirt narrower than the thigh it
+  covers is correct in the torso's frame and wrong on a person.
+  `itemParts.test.ts` dresses the figure and checks the pair.
+
   Not everything geometric is reachable this way. The arms hung inside the
   torso on every silhouette because `shoulderX` was set inside `torsoWidth / 2`;
   every anchor was legitimately on the body and the figure still rendered
@@ -144,6 +179,22 @@ and had simply never been reloaded, because a `'**' + '/.claude/**'` ignore glob
 added for the *main* checkout also matched every source file of a dev server
 started inside a worktree. `npm run locate` is the quickest way to tell the two
 apart: an object that is absent from the scene graph is not a rendering problem.
+
+**Rounded and tapered, never boxes.** Every figure on
+`art/refs/character_sheet.png` has a chest wider than its waist, sloped
+shoulders and limbs that narrow toward the joint. What shipped first was a
+rectangular slab with capsules hanging off it, and it read as a crate with
+limbs. The body is a stack of squashed, tapered cylinders now, the head is an
+ellipsoid, and the face features are set into the skull rather than laid on it
+— `faceSurfaceZ` is what keeps an eye on a curved cheek.
+
+**Check the sign on a rotation against what it does, not what it is called.**
+`IDLE_ARM_SPLAY` was documented as holding the arms clear of the body and was
+doing the exact opposite on both sides: rotating a limb about Z by a positive
+angle swings it toward +x, so the right arm needs a positive roll and the left a
+negative one, and the rig had them backwards. Both hands sat seven centimetres
+inside the hips. The figure read as having no hands at all, and `npm run locate`
+is what separated "not rendering" from "rendered inside the pelvis".
 
 **A flat quad standing in for light reads as geometry.** The exit door painted
 a rectangle on the floor to stand in for its own spill, and it passed on the
@@ -236,6 +287,15 @@ Dev-only deep links, stripped from production builds:
 | `?boot=southend` | the same at the south end |
 | `?look=DEGREES` | swings the walking camera round before it settles |
 | `?tilt=DEGREES` | tilts it up or down; negative looks up, at a ceiling |
+| `?sheet=hair` | every hairstyle in one frame, labelled |
+| `?sheet=items` | every catalogue item, one per figure |
+| `?sheet=garments` | the four starter garments |
+| `?sheet=builds` | three silhouettes across four garments |
+| `?sheet=skin` | every skin, hair and garment swatch |
+| `?build=` `?hair=` `?garment=` | one appearance field, by enum member |
+| `?skin=` `?haircolor=` `?garmentcolor=` | one palette swatch, by id |
+| `?wear=id,id` | grants and equips catalogue items |
+| `?turn=DEGREES` | turns the dressing-room stage; 180 is the back |
 | `?time=HH:MM` | opens at that hour, clock still running |
 | `?freeze` | holds the clock, so a capture is reproducible |
 
@@ -268,6 +328,22 @@ lands on the far wall well below the springing line: a two-storey coffered
 ceiling was rendering every frame into nobody's view, and no regression shot
 could have said so. A player drags to look up. A capture cannot, and a ceiling
 nothing can photograph is a ceiling nobody can tell is broken.
+
+**`?turn=` exists because for months there was no way to photograph the back of
+a character.** `?freeze` pinned the designer's turntable at rotation zero, so
+every capture of a figure this project ever took was a front view — and the
+ponytail rendered as a bare capsule floating eight centimetres behind the skull,
+with a gather bead beside it, which from the front is invisible and from behind
+reads as a limb growing out of the neck. Anything with a front and a back gets
+photographed from both.
+
+**`?sheet=` exists because the audit was otherwise three hundred captures.**
+Three builds by eight hairstyles, four garments, twelve items on and off, front
+and back. A sheet is one frame per sweep, labelled, and `contactSheet.test.ts`
+asserts the item sheet covers the catalogue exactly — a thirteenth item that
+quietly failed to appear would make the sheet claim a coverage it no longer had.
+Sheets are capped at two rows: a third stands behind the second and cannot be
+seen at all, which is what a four-by-three grid did to the first item sheet.
 
 `?look=` exists because the play camera trails the player down the street, so
 every facade is seen at a glancing angle. A shop window is a bright sliver from

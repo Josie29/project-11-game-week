@@ -1,6 +1,12 @@
 import { createGameFromShoe, createShoe, placeBet } from '../games/blackjack/engine'
 import { PlayerAction, Rank, Suit } from '../games/blackjack/types'
-import { Garment, HairStyle } from '../character/appearance'
+import { Garment, HairStyle, sanitizeAppearance } from '../character/appearance'
+import {
+  appearanceOverrides,
+  hasAppearanceOverride,
+  turnRadians,
+  wornItems,
+} from './appearanceLinks'
 import { Silhouette } from '../character/proportions'
 import { useAppearanceStore } from '../store/useAppearanceStore'
 import { useBlackjackStore } from '../store/useBlackjackStore'
@@ -152,6 +158,54 @@ function applyWardrobeShortcut(): void {
   }
 }
 
+/**
+ * Honours the appearance deep links: `?build=`, `?hair=`, `?haircolor=`,
+ * `?skin=`, `?garment=`, `?garmentcolor=` and `?wear=`.
+ *
+ * A modifier rather than a `?boot=` of its own, and for the same reason
+ * `?dressed` is one: what needs checking is a given hairstyle or item *in a
+ * given scene*. `?boot=designer&hair=ponytail&turn=180` is the capture that
+ * would have caught the ponytail this rebuild started from, and it is
+ * reachable only by composing the two.
+ *
+ * Items named by `?wear=` are granted rather than bought — the point is to look
+ * at the geometry, not to exercise the bankroll, and `equip` refuses anything
+ * unowned.
+ */
+function applyAppearanceShortcut(): void {
+  const params = new URLSearchParams(window.location.search)
+  if (!hasAppearanceOverride(params)) return
+
+  const wardrobe = useAppearanceStore.getState()
+  wardrobe.completeDesign()
+  wardrobe.setAppearance(
+    sanitizeAppearance({ ...wardrobe.appearance, ...appearanceOverrides(params) }),
+  )
+
+  const wanted = wornItems(params)
+  if (wanted.length === 0) return
+
+  useAppearanceStore.setState({ owned: [...new Set([...wardrobe.owned, ...wanted])] })
+  for (const id of wanted) {
+    useAppearanceStore.getState().equip(id)
+  }
+}
+
+/**
+ * Honours `?turn=DEGREES` by seeding the dressing-room stage's orbit yaw.
+ *
+ * The single most overdue line in this file. `?freeze` pinned the turntable at
+ * rotation zero, so every regression capture of a character ever taken on this
+ * project was a front view — and the defect that started the character rebuild
+ * was a ponytail that only reads as wrong from behind.
+ */
+function applyTurnShortcut(): void {
+  const turn = turnRadians(new URLSearchParams(window.location.search))
+  if (turn === null) return
+
+  useGameStore.setState({ designerYaw: turn })
+}
+
 /** Honours `?look=DEGREES` by seeding the walking camera's orbit yaw. */
 function applyLookShortcut(): void {
   const look = new URLSearchParams(window.location.search).get('look')
@@ -278,6 +332,8 @@ function applyTimeShortcut(): void {
 export function applyBootShortcut(): void {
   applyTimeShortcut()
   applyWardrobeShortcut()
+  applyAppearanceShortcut()
+  applyTurnShortcut()
   applyLookShortcut()
   applyTiltShortcut()
 

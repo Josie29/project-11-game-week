@@ -185,6 +185,16 @@ interface GameStore {
    * make the shop's mirror feel like an exit.
    */
   designerReturnTo: Location
+  /**
+   * Yaw the dressing-room stage starts turned to, in radians.
+   *
+   * The designer's equivalent of `initialCameraYaw`, and it exists for the same
+   * reason: a scene nobody can photograph from behind is a scene whose back is
+   * never checked. `?freeze` used to pin the turntable at zero, so every
+   * capture of a character in this project's history was a front view — which
+   * is how a ponytail shaped like a limb shipped. `?turn=180` is the fix.
+   */
+  designerYaw: number
 
   enterVenue: (id: VenueId) => void
   leaveVenue: () => void
@@ -282,6 +292,7 @@ export const useGameStore = create<GameStore>()(
       designerReturnTo: Location.Strip,
       initialCameraYaw: 0,
       initialCameraPitch: null,
+      designerYaw: 0,
 
       enterVenue: (id) =>
         set({

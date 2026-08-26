@@ -6,7 +6,7 @@ import { findItem, ItemShape, type ShopItem } from '../character/catalog'
 import { isFitting, wornInSlot } from '../character/fitting'
 import { WINDOW_DISPLAY } from '../character/windowDisplay'
 import { useAppearanceStore, useFittedEquipped } from '../store/useAppearanceStore'
-import { useGameStore } from '../store/useGameStore'
+import { Location, useGameStore } from '../store/useGameStore'
 import { INTERACT_KEY } from '../world/controls'
 import { getVenue, type VenueId } from '../world/venues'
 import { PROPORTIONS, Silhouette } from '../character/proportions'
@@ -631,10 +631,22 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
    *
    * Not in `leaveVenue`: `useAppearanceStore` already imports `useGameStore`,
    * and the reverse would be a cycle. Unmounting the room is the same event and
-   * it also covers the routes out that are not the door — the designer, a boot
-   * shortcut, a hot reload.
+   * it also covers the routes out that are not the door — a boot shortcut, a
+   * hot reload.
+   *
+   * Except the designer, which is the one route out that is not leaving. The
+   * mirror's "Change your look" button unmounts this room, so it used to hand
+   * back everything you had on: you walked in, put on a $520 gown, pressed the
+   * button to see it with different hair, and the gown was silently gone. The
+   * button does what it says now.
    */
-  useEffect(() => clearFitting, [clearFitting])
+  useEffect(
+    () => () => {
+      if (useGameStore.getState().location === Location.Designer) return
+      clearFitting()
+    },
+    [clearFitting],
+  )
 
   /**
    * F acts on whatever the player is standing at: a display, the mirror, the
