@@ -10,6 +10,8 @@
  * All coordinates are world space, because the tables are placed in it directly.
  */
 
+import { CAMERA_LOOK_HEIGHT, PLAY_FOV } from '../world/camera'
+
 export enum TableId {
   Blackjack = 'blackjack',
   Craps = 'craps',
@@ -120,20 +122,291 @@ export const DEALER_SPOTS: Record<TableId, readonly [number, number, number]> = 
  * a room sized to its contents puts the camera outside the back wall — the
  * first version opened looking at the room through its own exit doorway from
  * the street side. `CAMERA_BOUNDS` catches the rest.
+ *
+ * The far end is deeper again since the water court went in. The tables stop at
+ * `z = -2`; everything behind that is the court, and it is the thing the room
+ * is looked at down the length of.
  */
-export const ROOM: Footprint = { minX: -13, maxX: 6, minZ: -4.5, maxZ: 10 }
+export const ROOM: Footprint = { minX: -13, maxX: 6, minZ: -8, maxZ: 10 }
 
-export const WALL_HEIGHT = 4.6
+/**
+ * Two storeys, because one was the whole problem.
+ *
+ * At 4.6 the room was a box with a lid just above the pendants: no wall showed
+ * above the tables, so there was nowhere to put a waterfall, a balcony or
+ * anything else that reads as architecture. Nothing is *placed* at this height
+ * — `MEZZANINE_HEIGHT` and `WATERFALL_TOP` derive from it — so raising it again
+ * moves the building rather than leaving furniture behind at the old ceiling.
+ *
+ * This is the **springing line** now, not the ceiling: the top of the vertical
+ * walls, where the vault starts. `CEILING_HEIGHT` is the ceiling, and only at
+ * the crown — see `vaultHeightAt`.
+ */
+export const WALL_HEIGHT = 8.0
+
+/* --------------------------------------------------------------- the vault */
+
+/**
+ * How far the barrel vault rises above the springing.
+ *
+ * Set this to 0 and the room gets a flat ceiling back, with every rib, lamp and
+ * cable still landing on it: `vaultHeightAt` degrades to a constant. That is
+ * deliberate. A curved ceiling is the only thing in this room that changes its
+ * *shape*, and a one-line way back out is cheap insurance.
+ */
+export const VAULT_RISE = 2.2
+
+/** The crown, which is the ceiling directly over the aisle and nowhere else. */
+export const CEILING_HEIGHT = WALL_HEIGHT + VAULT_RISE
+
+const ROOM_HALF_WIDTH = (ROOM.maxX - ROOM.minX) / 2
+const ROOM_MID_X = (ROOM.minX + ROOM.maxX) / 2
+
+/**
+ * Radius of the circle the vault is a segment of.
+ *
+ * From the chord (the room's width) and the rise, by the intersecting-chords
+ * relation: `halfWidth² = rise × (2R - rise)`.
+ */
+export const VAULT_RADIUS =
+  VAULT_RISE > 0 ? (ROOM_HALF_WIDTH * ROOM_HALF_WIDTH + VAULT_RISE * VAULT_RISE) / (2 * VAULT_RISE) : 0
+
+/**
+ * Half the arc the vault sweeps, in radians — what the cylinder segment needs.
+ */
+export const VAULT_HALF_ANGLE = VAULT_RISE > 0 ? Math.asin(ROOM_HALF_WIDTH / VAULT_RADIUS) : 0
+
+/** Where the circle's centre sits, below the springing line. */
+export const VAULT_CENTER_Y = WALL_HEIGHT + VAULT_RISE - VAULT_RADIUS
+
+/**
+ * How high the ceiling is at a given x.
+ *
+ * Exported, and the reason is the pendants. Their cable used to be
+ * `WALL_HEIGHT - 3.6` — a single number, correct under a flat lid and wrong at
+ * every x but the centre under a curved one. A lamp hanging off a stub of cable
+ * two metres short of the ceiling is a still-image bug that nobody would think
+ * to go looking for at `x = -7.5` specifically, so anything that hangs from the
+ * ceiling asks this instead of writing a drop down.
+ *
+ * @param x World x. Clamped to the room, so a caller outside the walls gets the
+ *   springing rather than a NaN from the square root.
+ * @returns The ceiling height at that x, between `WALL_HEIGHT` and
+ *   `CEILING_HEIGHT`.
+ */
+export function vaultHeightAt(x: number): number {
+  if (VAULT_RISE <= 0) return WALL_HEIGHT
+
+  const offset = Math.min(ROOM_HALF_WIDTH, Math.abs(x - ROOM_MID_X))
+
+  return VAULT_CENTER_Y + Math.sqrt(VAULT_RADIUS * VAULT_RADIUS - offset * offset)
+}
+
+/**
+ * The vault's ribs: raised mouldings around sunken panels, which is what a
+ * coffer actually reads as from underneath.
+ *
+ * Modelled as ribs rather than as coffer boxes on purpose. Panels are shading
+ * and belong in the texture; ribs are silhouette and have to be geometry. The
+ * difference is twenty-one meshes against a hundred and twenty for the same
+ * picture.
+ */
+export const RIB_SPACING_Z = 1.6
+export const RIB_COUNT_ACROSS = 9
+
+/**
+ * Where the neon coving runs: along the springing on both long walls.
+ *
+ * It used to run *across* the room on the two short walls, which put it on the
+ * wall the camera faces and on the wall behind it — the two walls a player
+ * walking the length of the room spends the least time looking at. On the long
+ * walls it runs away from the viewer down the whole room, which is what the
+ * reference does and what makes the vault read as lit from its own edges.
+ *
+ * Two lines, a hand apart: the house colour and a cold one. One line reads as a
+ * strip light; two read as neon.
+ */
+export const COVING_X: readonly number[] = [ROOM.minX + 0.08, ROOM.maxX - 0.08]
+export const COVING_Y = WALL_HEIGHT - 0.18
+export const COVING_GAP = 0.16
+
+/* -------------------------------------------------------------- the court */
+
+/**
+ * The water court: the waterfall wall, its basin, and the coping round it.
+ *
+ * A footprint rather than a set of meshes because it is three things at once —
+ * what the pool is drawn to, what the player is kept out of, and what the walk
+ * limit at the far end is derived from. Two of those used to be able to
+ * disagree silently: the strip could be walked six units past the last thing
+ * there was to look at for exactly that reason.
+ *
+ * Centred on `AISLE_CENTER_X`, so it is straight ahead through the door.
+ */
+export const WATER_COURT: Footprint = { minX: -7.5, maxX: 0.5, minZ: ROOM.minZ, maxZ: -3.2 }
+
+/** Height of the water's surface, and of the coping that rings it. */
+export const POOL_LEVEL = 0.26
+export const POOL_RIM_HEIGHT = 0.42
+
+/**
+ * The sheet of falling water on the back wall.
+ *
+ * Inset from the court so the basin is wider than what lands in it, which is
+ * what makes the spill read as spreading rather than as a slab dropped in a
+ * slot.
+ *
+ * Neither number is a taste decision. The width is held by
+ * `waterfallSubtendedAngle` and the top by `waterfallHeadroom` — and the top is
+ * *not* derived from `WALL_HEIGHT`, deliberately, because the ceiling is not
+ * what crops it. The frame is. A lip hung two metres under an eight-metre
+ * ceiling was still a metre above the top of the screen.
+ */
+export const WATERFALL_WIDTH = 7.0
+export const WATERFALL_TOP = 5.6
+
+/** The polished stone the water runs down, which is wider than the water. */
+export const CASCADE_WALL_WIDTH = WATER_COURT.maxX - WATER_COURT.minX
+
+/* ----------------------------------------------------------- the colonnade */
+
+/**
+ * Gold columns down both long walls.
+ *
+ * On the *wall's* rhythm, and held off the floor's: the strip already paid for
+ * mixing the two, with a colonnade laid out on the towers' spacing putting a
+ * pillar squarely in front of all three venue doors. Everything that stands on
+ * this floor goes through `clearsFloor` before it is drawn, and the columns are
+ * the first callers.
+ */
+export const COLUMN_RADIUS = 0.42
+export const COLUMN_INSET = 0.9
+export const COLUMN_X: readonly number[] = [ROOM.minX + COLUMN_INSET, ROOM.maxX - COLUMN_INSET]
+export const COLUMN_Z: readonly number[] = [-6.2, -2.4, 1.4, 5.2, 9.0]
+
+/** Every column on the floor, as flat (x, z) pairs. */
+export const COLUMNS: readonly (readonly [number, number])[] = COLUMN_X.flatMap((x) =>
+  COLUMN_Z.map((z) => [x, z] as const),
+)
+
+/**
+ * The inside face of the colonnade — where the open floor actually ends.
+ *
+ * One number, used by the walk limit *and* by everything laid on the floor. The
+ * strip's lesson was that a walk limit and the last thing there is to walk past
+ * must not be two unrelated constants; the corollary here is that the rug and
+ * the walk limit must not be either, or the player is stopped standing on bare
+ * stone with the carpet ending a metre short of their feet.
+ */
+export const COLONNADE_INNER_X = {
+  min: COLUMN_X[0]! + COLUMN_RADIUS,
+  max: COLUMN_X[1]! - COLUMN_RADIUS,
+} as const
+
+/**
+ * The balcony that turns one storey into two.
+ *
+ * It oversails the long walls only — running it round the far wall would put a
+ * brass rail across the top of the waterfall, which is the one thing in the
+ * room the eye is supposed to go to.
+ */
+export const MEZZANINE_HEIGHT = 4.1
+export const MEZZANINE_DEPTH = 1.9
+
+/* --------------------------------------------------------------- the aisle */
+
+/**
+ * The marble runner from the door to the water.
+ *
+ * Derived from the gap the tables leave rather than chosen: a runner wide
+ * enough to look like one and laid down the middle of the room by eye would run
+ * under the craps rail, and the first thing anybody would notice is marble
+ * showing through a table. The tables decide where the aisle is; the aisle
+ * never decides where the tables are.
+ */
+export const AISLE_MIN_X = TABLE_FOOTPRINTS[TableId.Blackjack].maxX
+export const AISLE_MAX_X = TABLE_FOOTPRINTS[TableId.Craps].minX
+export const AISLE_CENTER_X = (AISLE_MIN_X + AISLE_MAX_X) / 2
+export const AISLE_WIDTH = AISLE_MAX_X - AISLE_MIN_X
+
+/**
+ * How much polished stone flanks the marble runner.
+ *
+ * The reference's walkway is about three metres of hard floor — stone, marble,
+ * stone — and that does not fit here, because its tables stand further apart
+ * than ours do. The gap between our two is `AISLE_WIDTH`, and the marble wants
+ * all of it.
+ *
+ * So this is not a width anybody chose. It is what is left between the aisle's
+ * edge and the nearest table's *actual* body: the footprints are padded by a
+ * couple of hand-widths so the player is stopped before they walk into a
+ * dealer, and a reveal of stone can live in that padding without ever showing
+ * under a table. Any wider and a rug stops short of the table standing on it,
+ * which reads as a rendering fault rather than a layout one.
+ *
+ * The reference's band structure still arrives, from the *ends* of the rugs
+ * rather than their sides: the floor is stone across its full width from the
+ * door to the near rug and from the far rug to the pool.
+ */
+export const AISLE_MARGIN = 0.2
+
+/* ------------------------------------------------------------------- rugs */
+
+/**
+ * The two carpet fields, one per table.
+ *
+ * Derived, not placed. A rug laid by eye is a rug a table ends up half on, and
+ * "half on the carpet, half on the stone" is the kind of thing that looks like
+ * a rendering bug rather than a layout one. Each field starts where the aisle's
+ * stone margin ends and runs out to the colonnade, and its depth covers its own
+ * table's footprint with a margin for the stools.
+ *
+ * Ordered to match `TABLE_IDS`, so the renderer can pair them up.
+ */
+export const RUG_COLONNADE_INSET = 0.55
+
+export const CARPET_FIELDS: Record<TableId, Footprint> = {
+  [TableId.Blackjack]: {
+    minX: COLONNADE_INNER_X.min + RUG_COLONNADE_INSET,
+    maxX: AISLE_MIN_X - AISLE_MARGIN,
+    minZ: TABLE_FOOTPRINTS[TableId.Blackjack].minZ - 1.5,
+    maxZ: TABLE_FOOTPRINTS[TableId.Blackjack].maxZ + 2.6,
+  },
+  [TableId.Craps]: {
+    minX: AISLE_MAX_X + AISLE_MARGIN,
+    maxX: COLONNADE_INNER_X.max - RUG_COLONNADE_INSET,
+    minZ: TABLE_FOOTPRINTS[TableId.Craps].minZ - 1.5,
+    maxZ: TABLE_FOOTPRINTS[TableId.Craps].maxZ + 2.6,
+  },
+}
+
+/* ---------------------------------------------------------------- greenery */
+
+/** Potted palms, at the four corners of the court where the light pools. */
+export const PALMS: readonly (readonly [number, number])[] = [
+  [WATER_COURT.minX - 1.1, WATER_COURT.maxZ - 0.4],
+  [WATER_COURT.maxX + 1.1, WATER_COURT.maxZ - 0.4],
+  [WATER_COURT.minX - 1.1, WATER_COURT.minZ + 1.6],
+  [WATER_COURT.maxX + 1.1, WATER_COURT.minZ + 1.6],
+]
+
+/** How much floor a palm takes up, for `clearsFloor`. */
+export const PALM_RADIUS = 0.62
 
 /**
  * Where the player may walk — the room, inset so they never touch a wall.
  *
  * The strip clamps rather than collides and so does this; the difference is
- * that a room has things in the middle of it, which `TABLE_FOOTPRINTS` covers.
+ * that a room has things in the middle of it, which `TABLE_FOOTPRINTS` and
+ * `WATER_COURT` cover.
+ *
+ * The sides are set by the colonnade rather than by the wall. A limit measured
+ * off the plaster lets the player stand inside a column, and a column you can
+ * stand inside is a column that is not there.
  */
 export const WALK_BOUNDS = {
-  minX: ROOM.minX + 0.6,
-  maxX: ROOM.maxX - 0.6,
+  minX: COLONNADE_INNER_X.min + 0.35,
+  maxX: COLONNADE_INNER_X.max - 0.35,
   minZ: ROOM.minZ + 0.6,
   maxZ: ROOM.maxZ - 0.6,
 } as const
@@ -193,6 +466,168 @@ export function isOnCasinoFloor(x: number, z: number, margin = 0): boolean {
     z >= ROOM.minZ + margin &&
     z <= ROOM.maxZ - margin
   )
+}
+
+/* ---------------------------------------------------------------- cameras */
+
+/**
+ * The trailing camera's seat on its orbit, as the walking scene sets it.
+ *
+ * These numbers used to live as literals in `CasinoInterior.tsx`, which was
+ * fine while nothing else needed to know them. It stopped being fine the moment
+ * a piece of geometry had to be sized to be *visible* from here: a camera
+ * constant and the thing it has to see, kept in two files, is precisely the
+ * disagreement no later reader thinks to check for.
+ *
+ * The pitch was 0.42, which looked down at the floor from just above the
+ * player's head. That was the right seat for a room whose ceiling was two
+ * metres above a pendant and whose only content was on tables. In a room with a
+ * two-storey waterfall at the end of it, it framed the carpet: everything above
+ * about `y = 1.5` on the back wall was off the top of the screen, so most of
+ * the cascade was rendering every frame into nobody's view. `entranceView`
+ * holds it now.
+ *
+ * `lookHeight` is shared with `WalkingPlayer` rather than copied — see
+ * `src/world/camera.ts`.
+ */
+export const WALK_CAMERA = {
+  distance: 6.0,
+  pitch: 0.14,
+  lookHeight: CAMERA_LOOK_HEIGHT,
+} as const
+
+/**
+ * Where the camera actually sits when the player walks in, and what it sees.
+ *
+ * The orbit puts it behind and above the spawn, and then `CAMERA_BOUNDS` pulls
+ * it back inside the room — which at this depth it genuinely does, so a naive
+ * "spawn plus distance" would be about two metres out.
+ *
+ * @returns The camera position and the point it looks at, both world space.
+ */
+export function entranceCamera(): {
+  readonly position: readonly [number, number, number]
+  readonly target: readonly [number, number, number]
+} {
+  const { distance, pitch, lookHeight } = WALK_CAMERA
+  const [spawnX, , spawnZ] = ENTRANCE
+
+  // Yaw is zero on arrival — the player faces -Z and the camera sits behind
+  // them, which on this axis is straight back along +Z.
+  const horizontal = Math.cos(pitch) * distance
+
+  return {
+    position: [
+      clamp(spawnX, CAMERA_BOUNDS.minX, CAMERA_BOUNDS.maxX),
+      Math.min(lookHeight + Math.sin(pitch) * distance, CAMERA_BOUNDS.maxY),
+      clamp(spawnZ + horizontal, CAMERA_BOUNDS.minZ, CAMERA_BOUNDS.maxZ),
+    ],
+    target: [spawnX, lookHeight, spawnZ],
+  }
+}
+
+/**
+ * How wide the waterfall is across the entrance view, in radians.
+ *
+ * The same measure as the shop's mirror, for the same reason: the room is
+ * eighteen metres deep and the hero of it stands at the far end, so its size in
+ * the world says nothing about whether anyone will see it.
+ *
+ * On its own this is *not enough*, and the first version of this room proved
+ * it: the waterfall passed here at 22.6 degrees while more than half of it sat
+ * above the top of the screen. Width and framing are two different questions —
+ * see `waterfallHeadroom`.
+ *
+ * @returns The angle the waterfall's two vertical edges subtend at the camera.
+ */
+export function waterfallSubtendedAngle(): number {
+  const { position } = entranceCamera()
+  const [cx, cy, cz] = position
+
+  const midHeight = (WATERFALL_TOP + POOL_LEVEL) / 2
+
+  const toEdge = (edgeX: number): readonly [number, number, number] => [
+    edgeX - cx,
+    midHeight - cy,
+    ROOM.minZ - cz,
+  ]
+
+  const left = toEdge(AISLE_CENTER_X - WATERFALL_WIDTH / 2)
+  const right = toEdge(AISLE_CENTER_X + WATERFALL_WIDTH / 2)
+
+  const dot = left[0] * right[0] + left[1] * right[1] + left[2] * right[2]
+  const lengths = Math.hypot(...left) * Math.hypot(...right)
+
+  return Math.acos(Math.min(1, Math.max(-1, dot / lengths)))
+}
+
+/**
+ * How far the top of the frame clears the top of the waterfall, in metres.
+ *
+ * Measured where it matters — on the back wall, from the entrance seat, through
+ * the actual frustum. The camera looks *down* at the player, so the top edge of
+ * the view is the play camera's half-angle above that tilted axis, and at
+ * seventeen metres a couple of degrees is a couple of metres of wall.
+ *
+ * Negative means the cascade is being drawn off the top of the screen, which is
+ * exactly what shipped in the first pass and exactly what no width measurement
+ * could have told anybody.
+ *
+ * @returns Metres of wall visible above `WATERFALL_TOP`. Negative if cropped.
+ */
+export function waterfallHeadroom(): number {
+  const { position, target } = entranceCamera()
+  const [, cameraY, cameraZ] = position
+  const [, targetY, targetZ] = target
+
+  // How far below horizontal the view axis points.
+  const tilt = Math.atan2(cameraY - targetY, cameraZ - targetZ)
+  const halfFov = ((PLAY_FOV / 2) * Math.PI) / 180
+
+  const toWall = cameraZ - ROOM.minZ
+  const topOfFrame = cameraY + toWall * Math.tan(halfFov - tilt)
+
+  return topOfFrame - WATERFALL_TOP
+}
+
+/* ------------------------------------------------------------- predicates */
+
+/**
+ * Whether something standing on the floor is clear of everything already there.
+ *
+ * The furniture equivalent of `clearsDoorways` on the strip, and here for the
+ * same reason it is: a column drawn as decoration rather than as an object with
+ * a footprint is a column that ends up in front of a door.
+ *
+ * @param x World x of the thing's centre.
+ * @param z World z of the thing's centre.
+ * @param radius How much floor it occupies.
+ * @returns True when it fouls no table, sit spot, door or the water court.
+ */
+export function clearsFloor(x: number, z: number, radius: number): boolean {
+  const spread: Footprint = {
+    minX: x - radius,
+    maxX: x + radius,
+    minZ: z - radius,
+    maxZ: z + radius,
+  }
+
+  if (footprintsOverlap(spread, WATER_COURT)) return false
+
+  for (const table of TABLE_IDS) {
+    if (footprintsOverlap(spread, TABLE_FOOTPRINTS[table])) return false
+
+    const [sitX, , sitZ] = SIT_SPOTS[table]
+    if (Math.hypot(sitX - x, sitZ - z) < SIT_RADII[table] + radius) return false
+  }
+
+  const [doorX, , doorZ] = EXIT_DOOR
+  return Math.hypot(doorX - x, doorZ - z) >= EXIT_RADIUS + radius
+}
+
+/** Clamps to a range, so `entranceCamera` need not import three. */
+function clamp(value: number, low: number, high: number): number {
+  return Math.min(high, Math.max(low, value))
 }
 
 /** Whether a point is inside a footprint — i.e. inside a table. */

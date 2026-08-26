@@ -165,6 +165,19 @@ interface GameStore {
    */
   initialCameraYaw: number
   /**
+   * Where the walking camera's orbit pitch starts, in radians.
+   *
+   * Same job as `initialCameraYaw` and the same reason for existing: the play
+   * camera looks slightly *down*, so the top of the frame lands on the far wall
+   * well below the springing line and the casino's vaulted ceiling — ribs,
+   * coffers and all — is never once in shot. A player can drag to look up. A
+   * capture cannot, and a ceiling nothing can photograph is a ceiling nobody
+   * can tell is broken.
+   *
+   * Zero is the play position. `?tilt=` moves it, for `npm run shots`.
+   */
+  initialCameraPitch: number | null
+  /**
    * Where closing the designer returns to.
    *
    * The mirror can be reached from inside the shop as well as on first run, and
@@ -268,6 +281,7 @@ export const useGameStore = create<GameStore>()(
       spawnPosition: PLAYER_SPAWN,
       designerReturnTo: Location.Strip,
       initialCameraYaw: 0,
+      initialCameraPitch: null,
 
       enterVenue: (id) =>
         set({

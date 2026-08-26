@@ -25,6 +25,7 @@ import { CheckoutPanel } from './ui/CheckoutPanel'
 import { FittingPanel } from './ui/FittingPanel'
 import { getVenue, VenueKind } from './world/venues'
 import { KEYBOARD_MAP } from './world/controls'
+import { PLAY_FOV } from './world/camera'
 import { bloomAt, CLINIC_BLOOM, INTERIOR_BLOOM } from './world/timeOfDay'
 
 export function App() {
@@ -80,7 +81,7 @@ export function App() {
     // KeyboardControls sits outside the Canvas and provides context to the
     // player rig inside it — the pattern drei documents for R3F scenes.
     <KeyboardControls map={[...KEYBOARD_MAP]}>
-      <Canvas shadows camera={{ position: [0, 5.2, 17.5], fov: 55 }}>
+      <Canvas shadows camera={{ position: [0, 5.2, 17.5], fov: PLAY_FOV }}>
         {import.meta.env.DEV && <DevBridge />}
         <TimeDriver />
         {isDesigning ? (
