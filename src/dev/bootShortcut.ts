@@ -418,6 +418,7 @@ export function applyBootShortcut(): void {
     'split',
     'resplit',
     'push',
+    'insurance',
     'draw',
     'craps',
     'placed',
@@ -862,6 +863,28 @@ export function applyBootShortcut(): void {
       { rank: Rank.Two, suit: Suit.Spades },
       { rank: Rank.Three, suit: Suit.Hearts },
       ...createShoe(11),
+    ]
+
+    useGameStore.getState().adjustBankroll(-DEMO_BET)
+    useBlackjackStore.setState({ game: placeBet(createGameFromShoe(stacked), DEMO_BET) })
+    return
+  }
+
+  if (boot === 'insurance') {
+    /*
+     * The dealer shows an ace and the insurance window is open.
+     *
+     * A random shoe deals this one round in thirteen, which is exactly how the
+     * felt got to advertise a bet the game did not offer for so long. No
+     * natural underneath, so answering the offer — either way — releases the
+     * hand and the round plays on.
+     */
+    const stacked = [
+      { rank: Rank.Ten, suit: Suit.Spades },
+      { rank: Rank.Ace, suit: Suit.Hearts },
+      { rank: Rank.Eight, suit: Suit.Clubs },
+      { rank: Rank.Nine, suit: Suit.Diamonds },
+      ...createShoe(19),
     ]
 
     useGameStore.getState().adjustBankroll(-DEMO_BET)
