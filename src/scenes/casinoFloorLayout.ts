@@ -10,9 +10,33 @@
  * All coordinates are world space, because the tables are placed in it directly.
  */
 
-import { CAMERA_LOOK_HEIGHT, PLAY_FOV } from '../world/camera'
-import { OUTER_HALF_DEPTH, OUTER_HALF_WIDTH } from './crapsTableLayout'
-import { CENTER_SEAT, PLAYER_SEATS } from './tableLayout'
+import {
+  CAMERA_LOOK_HEIGHT,
+  fovToFit,
+  LANDSCAPE_ASPECT,
+  playFov,
+  type Point3,
+  subtendedAngle,
+} from '../world/camera'
+import {
+  CENTER_SEAT,
+  CHIP_ROW_Z,
+  DEALER_ROW_Z,
+  ownsTheFelt,
+  PLAYER_SEATS,
+  SEAT_CHIP_GAP,
+  SEAT_SPLIT_OFFSET,
+  SEAT_SPOTS,
+  SPLIT_OFFSET,
+  TABLE_TOP_Y as FELT_TOP_Y,
+} from './tableLayout'
+import {
+  OUTER_HALF_DEPTH,
+  OUTER_HALF_WIDTH,
+  PIT_HALF_DEPTH,
+  PIT_HALF_WIDTH,
+  TABLE_TOP_Y as PIT_TOP_Y,
+} from './crapsTableLayout'
 
 export enum TableId {
   Blackjack = 'blackjack',
@@ -784,24 +808,12 @@ export function entranceCamera(): {
  * @returns The angle the waterfall's two vertical edges subtend at the camera.
  */
 export function waterfallSubtendedAngle(): number {
-  const { position } = entranceCamera()
-  const [cx, cy, cz] = position
-
   const midHeight = (WATERFALL_TOP + POOL_LEVEL) / 2
 
-  const toEdge = (edgeX: number): readonly [number, number, number] => [
-    edgeX - cx,
-    midHeight - cy,
-    ROOM.minZ - cz,
-  ]
-
-  const left = toEdge(AISLE_CENTER_X - WATERFALL_WIDTH / 2)
-  const right = toEdge(AISLE_CENTER_X + WATERFALL_WIDTH / 2)
-
-  const dot = left[0] * right[0] + left[1] * right[1] + left[2] * right[2]
-  const lengths = Math.hypot(...left) * Math.hypot(...right)
-
-  return Math.acos(Math.min(1, Math.max(-1, dot / lengths)))
+  return subtendedAngle(entranceCamera().position, [
+    [AISLE_CENTER_X - WATERFALL_WIDTH / 2, midHeight, ROOM.minZ],
+    [AISLE_CENTER_X + WATERFALL_WIDTH / 2, midHeight, ROOM.minZ],
+  ])
 }
 
 /**
@@ -816,21 +828,328 @@ export function waterfallSubtendedAngle(): number {
  * exactly what shipped in the first pass and exactly what no width measurement
  * could have told anybody.
  *
+ * @param aspect Viewport width divided by height. Defaults to the desktop
+ *   shape, which is what every existing caller means. A narrower window widens
+ *   the play camera and therefore only ever gains headroom — the assertion is
+ *   still worth running at both, because "only ever" is the sort of claim that
+ *   stops being true the moment somebody changes `playFov`.
  * @returns Metres of wall visible above `WATERFALL_TOP`. Negative if cropped.
  */
-export function waterfallHeadroom(): number {
+export function waterfallHeadroom(aspect: number = LANDSCAPE_ASPECT): number {
   const { position, target } = entranceCamera()
   const [, cameraY, cameraZ] = position
   const [, targetY, targetZ] = target
 
   // How far below horizontal the view axis points.
   const tilt = Math.atan2(cameraY - targetY, cameraZ - targetZ)
-  const halfFov = ((PLAY_FOV / 2) * Math.PI) / 180
+  const halfFov = ((playFov(aspect) / 2) * Math.PI) / 180
 
   const toWall = cameraZ - ROOM.minZ
   const topOfFrame = cameraY + toWall * Math.tan(halfFov - tilt)
 
   return topOfFrame - WATERFALL_TOP
+}
+
+/* -------------------------------------------------------------- seated shot */
+
+/**
+ * The seated shot at each table, as an orbit about the felt.
+ *
+ * These were literals in `CasinoInterior.tsx` until a test had to know where the
+ * camera actually ends up. That is the same reason `WALK_CAMERA` is here, and
+ * the reason is sharper for these two: on a phone held upright the horizontal
+ * frame collapses to a fifth of what it is on a desktop, and whether the cards
+ * are on screen stops being a property of the camera alone. A camera constant
+ * and the felt it has to hold, kept in two files, is the disagreement no later
+ * reader thinks to check for.
+ *
+ * The landscape values are exactly what shipped — `casinoFloorLayout.test.ts`
+ * asserts each one against the number it replaced, so the desktop shot is
+ * unchanged down to the pixel.
+ */
+export const SEATED_VIEW: Record<
+  TableId,
+  {
+    readonly fov: number
+    readonly yaw: number
+    readonly pitch: number
+    readonly distance: number
+    readonly maxDistance: number
+  }
+> = {
+  [TableId.Blackjack]: { fov: 45, yaw: -0.2925, pitch: 0.52, distance: 5.8, maxDistance: 9.5 },
+  [TableId.Craps]: { fov: 45, yaw: 0, pitch: 0.82, distance: 5.9, maxDistance: 9.5 },
+}
+
+/**
+ * What the seated camera looks at, table-local.
+ *
+ * Moved out of `CasinoInterior.tsx` with `SEATED_VIEW`, and unchanged: the
+ * tables are translated and never rotated, so the world target is this plus the
+ * table's origin.
+ */
+export const SEATED_TARGET: Record<TableId, Point3> = {
+  // Roughly the middle of the felt.
+  [TableId.Blackjack]: [0.15, 1.05, 0.45],
+  /*
+   * The craps table's printed layout is the game, so the camera looks at the
+   * middle of it. Aimed a little past centre toward the boxman, because the
+   * control bar covers the lower third of the screen and the pass line — the
+   * biggest, most bet-on marking on the felt — sits on the near edge.
+   */
+  [TableId.Craps]: [0, 1.05, 0.04],
+}
+
+/**
+ * How far the wide shot leans toward the player's own betting spot.
+ *
+ * Part of the way, not all of it: the dealer, the shoe and the other players
+ * are the rest of what the shot is of, and a camera locked square onto one
+ * stool is a portrait of a hand with no table around it. A phone has no room
+ * for that compromise and snaps the whole way instead — see `seatedTarget`.
+ */
+const SEAT_LEAN = 0.7
+
+/**
+ * What the seated camera looks at, given which stool the player took.
+ *
+ * The argument is which **stool**, not which of the engine's seats, on the same
+ * rule as `handAnchor` — a table with two people at first base and third base
+ * has two engine seats and five felt spots, and the camera belongs over the
+ * cards the local player actually staked.
+ *
+ * How far it follows depends on the shape of the screen. A desktop shot holds
+ * the whole table, so it leans by `SEAT_LEAN` and keeps the room in frame. A
+ * phone holds about a third of the table, and leaning means the player at first
+ * base still watches somebody else's cards with their own off the side of the
+ * screen — so it goes the whole way.
+ *
+ * A lone player at the middle stool is the case both skip: they own the felt,
+ * their hands are laid out about the centre line, and the design target is
+ * already over them.
+ *
+ * @param table Which table.
+ * @param stool Which of `SEAT_SPOTS` the player is at, or negative if nowhere.
+ * @param seatCount How many hands are in play; one for a solo table.
+ * @param portrait Whether the shot must follow the seat the whole way.
+ * @returns The look target, table-local.
+ */
+export function seatedTarget(
+  table: TableId,
+  stool: number,
+  seatCount: number,
+  portrait: boolean,
+): Point3 {
+  const design = SEATED_TARGET[table]
+  if (table === TableId.Craps || stool < 0 || ownsTheFelt(stool, seatCount)) return design
+
+  const spot = SEAT_SPOTS[stool]
+  if (!spot) return design
+
+  const x = portrait ? spot.x : design[0] + (spot.x - design[0]) * SEAT_LEAN
+
+  return [x, design[1], design[2]]
+}
+
+/**
+ * How wide the seated shot aims to end up, in degrees.
+ *
+ * `MAX_FOV` is the hard limit and this is the target. A shot that merely
+ * squeaks under the cap is still a very wide lens: blackjack fits a phone at
+ * its own distance at 68.7 degrees, and the near rail looms at that. Stepping
+ * back a little more costs nothing — the field of view is derived from what the
+ * subject spans, so the felt fills the same share of the frame either way — and
+ * buys back a normal-looking perspective.
+ */
+const SEAT_TARGET_FOV = 62
+
+/** How far the shot steps back at a time while looking for one that fits. */
+const SEAT_PULLBACK_STEP = 0.1
+
+/** And how far it may go before giving up and reporting the best it managed. */
+const SEAT_PULLBACK_LIMIT = 8
+
+/**
+ * What has to be on screen while seated, in table-local coordinates.
+ *
+ * **Not the table.** Blackjack's felt spans 53 degrees of the seated view and
+ * craps' spans 64, and no field of view a phone can hold without a fish-eye
+ * fits either. What has to fit is the part of the felt the game is played on:
+ * the dealer's row at the back, the player's chips at the front, and the widest
+ * a split ever spreads across.
+ *
+ * On a shared table this is the *local* player's own area, and it has to move
+ * with them: `seatedTarget` aims the shot at their stool, and a box left at the
+ * middle of the table would have the pullback fitting a piece of felt the
+ * camera is no longer pointed at. The far seats are what runs off the sides
+ * instead, which is the trade this whole shot makes — the cards you are playing
+ * are legible, and the strangers either side of you may not be on screen.
+ *
+ * The box is the same one `handAnchor` lays hands out in, which is why it takes
+ * the same two arguments: a lone player at the middle stool owns the felt and
+ * spreads splits across all of it, and everybody else gets their own spot.
+ *
+ * @param table Which table.
+ * @param stool Which of `SEAT_SPOTS` the player is at.
+ * @param seatCount How many hands are in play; one for a solo table.
+ * @returns The corners of the box, table-local, at felt height.
+ */
+export function seatedSubject(
+  table: TableId,
+  stool: number,
+  seatCount: number,
+): readonly Point3[] {
+  if (table === TableId.Craps) {
+    // The whole pit: the dice come to rest anywhere in it, and a roll the
+    // player cannot see is the one thing this shot may not do.
+    return [
+      [-PIT_HALF_WIDTH, PIT_TOP_Y, -PIT_HALF_DEPTH],
+      [PIT_HALF_WIDTH, PIT_TOP_Y, -PIT_HALF_DEPTH],
+      [-PIT_HALF_WIDTH, PIT_TOP_Y, PIT_HALF_DEPTH],
+      [PIT_HALF_WIDTH, PIT_TOP_Y, PIT_HALF_DEPTH],
+    ]
+  }
+
+  const spot = SEAT_SPOTS[stool]
+  if (ownsTheFelt(stool, seatCount) || !spot) {
+    return [
+      [-SPLIT_OFFSET, FELT_TOP_Y, DEALER_ROW_Z],
+      [SPLIT_OFFSET, FELT_TOP_Y, DEALER_ROW_Z],
+      [-SPLIT_OFFSET, FELT_TOP_Y, CHIP_ROW_Z],
+      [SPLIT_OFFSET, FELT_TOP_Y, CHIP_ROW_Z],
+    ]
+  }
+
+  const nearZ = spot.z + SEAT_CHIP_GAP
+
+  return [
+    [spot.x - SEAT_SPLIT_OFFSET, FELT_TOP_Y, DEALER_ROW_Z],
+    [spot.x + SEAT_SPLIT_OFFSET, FELT_TOP_Y, DEALER_ROW_Z],
+    [spot.x - SEAT_SPLIT_OFFSET, FELT_TOP_Y, nearZ],
+    [spot.x + SEAT_SPLIT_OFFSET, FELT_TOP_Y, nearZ],
+  ]
+}
+
+/**
+ * Where the seated camera sits, table-local, for a given orbit.
+ *
+ * Split out of `TableCamera`'s render loop so a test can stand in the same
+ * place the player does. The orbit convention is shared with `entranceCamera`
+ * and `WalkingPlayer`: yaw about Y, pitch above the target, distance along the
+ * resulting ray.
+ *
+ * @param seat The orbit to resolve.
+ * @param target What the camera looks at, table-local.
+ * @returns The camera position, table-local.
+ */
+export function seatedCameraAt(
+  seat: { readonly yaw: number; readonly pitch: number; readonly distance: number },
+  target: Point3,
+): Point3 {
+  const horizontal = Math.cos(seat.pitch) * seat.distance
+
+  return [
+    target[0] + Math.sin(seat.yaw) * horizontal,
+    target[1] + Math.sin(seat.pitch) * seat.distance,
+    target[2] + Math.cos(seat.yaw) * horizontal,
+  ]
+}
+
+/**
+ * The seated shot for a viewport shape.
+ *
+ * At every landscape aspect this returns `SEATED_VIEW[table]` unchanged, which
+ * is what keeps the desktop game exactly as it was — asserted, not assumed.
+ * Below that it moves to `PORTRAIT_SEAT` and derives the field of view from
+ * what `seatedSubject` actually spans from there, so the felt fills the same
+ * share of a phone's frame as it does of a desktop's.
+ *
+ * The target and the subject are both derived here rather than passed in, on
+ * the rule this project already keeps for a camera and the geometry it has to
+ * agree with. They are two views of the same fact — where the local player is
+ * sitting — and a caller that computed one and forgot the other would fit the
+ * shot to a piece of felt the camera is not pointed at, which is not something
+ * a later reader would think to check.
+ *
+ * @param table Which table.
+ * @param stool Which of `SEAT_SPOTS` the player is at, or negative if nowhere.
+ * @param seatCount How many hands are in play; one for a solo table.
+ * @param aspect Viewport width divided by height.
+ * @returns The look target, the field of view, and the orbit to seat the
+ *   camera on.
+ */
+export function seatedView(
+  table: TableId,
+  stool: number,
+  seatCount: number,
+  aspect: number,
+): {
+  readonly target: Point3
+  readonly fov: number
+  readonly yaw: number
+  readonly pitch: number
+  readonly distance: number
+  readonly maxDistance: number
+} {
+  const design = SEATED_VIEW[table]
+  const target = seatedTarget(table, stool, seatCount, aspect < 1)
+  const subject = seatedSubject(table, stool, seatCount)
+  const [originX, , originZ] = tableOrigin(table)
+
+  const fovAt = (seat: {
+    readonly yaw: number
+    readonly pitch: number
+    readonly distance: number
+  }): number => fovToFit(subtendedAngle(seatedCameraAt(seat, target), subject), aspect, design.fov)
+
+  // What the shot would need to open to as composed. Landscape windows are
+  // already wide enough, so they never leave this branch and the desktop game
+  // is untouched by everything below it.
+  if (fovAt(design) === design.fov) return { ...design, target }
+
+  /*
+   * Otherwise step back until the shot fits without a fish-eye.
+   *
+   * The *least* pullback that works, rather than a chosen one. Distance is very
+   * nearly free here — the field of view is derived from what the subject
+   * spans, so the felt fills the same share of the frame at any distance and
+   * moving back only lets the camera open less wide. What it is not free of is
+   * the room: the pitch has to flatten as the camera climbs or it goes through
+   * the ceiling, and the camera has to stay inside four walls. Both of those
+   * are derived here rather than picked, because a hand-picked pullback is
+   * exactly what was wrong first: 10.5 metres was right for a full-height phone
+   * screen and much too far once the craps rail's controls became a sheet and
+   * the canvas above it stopped being a slot.
+   */
+  let best = { ...design, target, fov: fovAt(design) }
+
+  for (
+    let distance = design.distance;
+    distance <= design.distance + SEAT_PULLBACK_LIMIT;
+    distance += SEAT_PULLBACK_STEP
+  ) {
+    // Flattened as it climbs, so the camera never rises through the ceiling.
+    const highest = Math.max(0, CAMERA_BOUNDS.maxY - target[1])
+    const pitch = Math.min(design.pitch, Math.asin(Math.min(1, highest / distance)))
+
+    const seat = { yaw: design.yaw, pitch, distance }
+    const [localX, , localZ] = seatedCameraAt(seat, target)
+    const worldX = originX + localX
+    const worldZ = originZ + localZ
+
+    const inRoom =
+      worldX >= CAMERA_BOUNDS.minX &&
+      worldX <= CAMERA_BOUNDS.maxX &&
+      worldZ >= CAMERA_BOUNDS.minZ &&
+      worldZ <= CAMERA_BOUNDS.maxZ
+    if (!inRoom) break
+
+    const fov = fovAt(seat)
+    best = { ...seat, target, fov, maxDistance: Math.max(design.maxDistance, distance) }
+    if (fov <= SEAT_TARGET_FOV) break
+  }
+
+  return best
 }
 
 /* ------------------------------------------------------------- predicates */

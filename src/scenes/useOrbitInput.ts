@@ -67,7 +67,38 @@ export function useOrbitInput(defaults: OrbitState, limits: OrbitLimits): OrbitI
     let lastX = 0
     let lastY = 0
 
+    /*
+     * Every pointer currently down on the canvas, so a pinch can be measured.
+     *
+     * A phone has no scroll wheel, and zoom is not a nicety here: the table
+     * cameras open wide to hold the felt on a narrow screen, and reading a card
+     * means being able to lean in. Two fingers is the gesture everybody already
+     * knows.
+     */
+    const down = new Map<number, { x: number; y: number }>()
+    let pinchSpan: number | null = null
+
+    /** The distance between the first two fingers down, or null. */
+    function spanOf(): number | null {
+      const points = [...down.values()]
+      const first = points[0]
+      const second = points[1]
+      if (!first || !second) return null
+
+      return Math.hypot(second.x - first.x, second.y - first.y)
+    }
+
     function onPointerDown(event: PointerEvent): void {
+      down.set(event.pointerId, { x: event.clientX, y: event.clientY })
+
+      if (down.size >= 2) {
+        // A second finger ends the drag it interrupts, so releasing one of a
+        // pinch does not swing the view by the gap between them.
+        activePointer = null
+        pinchSpan = spanOf()
+        return
+      }
+
       activePointer = event.pointerId
       lastX = event.clientX
       lastY = event.clientY
@@ -75,6 +106,26 @@ export function useOrbitInput(defaults: OrbitState, limits: OrbitLimits): OrbitI
     }
 
     function onPointerMove(event: PointerEvent): void {
+      if (down.has(event.pointerId)) {
+        down.set(event.pointerId, { x: event.clientX, y: event.clientY })
+      }
+
+      if (down.size >= 2) {
+        const span = spanOf()
+        if (span !== null && pinchSpan !== null && span > 0) {
+          const { minDistance, maxDistance } = limitsRef.current
+          // Fingers apart means closer, the same sense as scrolling up.
+          orbit.current.distance = MathUtils.clamp(
+            orbit.current.distance * (pinchSpan / span),
+            minDistance,
+            maxDistance,
+          )
+          lastInputAt.current = performance.now()
+        }
+        pinchSpan = span
+        return
+      }
+
       if (activePointer !== event.pointerId) return
 
       const deltaX = event.clientX - lastX
@@ -96,6 +147,9 @@ export function useOrbitInput(defaults: OrbitState, limits: OrbitLimits): OrbitI
     }
 
     function onPointerUp(event: PointerEvent): void {
+      down.delete(event.pointerId)
+      if (down.size < 2) pinchSpan = null
+
       if (activePointer !== event.pointerId) return
       element.releasePointerCapture(event.pointerId)
       activePointer = null
@@ -115,10 +169,14 @@ export function useOrbitInput(defaults: OrbitState, limits: OrbitLimits): OrbitI
       lastInputAt.current = performance.now()
     }
 
-    function onKeyDown(event: KeyboardEvent): void {
-      if (event.key.toLowerCase() !== 'r' || event.metaKey || event.ctrlKey) return
+    function reset(): void {
       orbit.current = { ...defaultsRef.current }
       lastInputAt.current = 0
+    }
+
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key.toLowerCase() !== 'r' || event.metaKey || event.ctrlKey) return
+      reset()
     }
 
     element.addEventListener('pointerdown', onPointerDown)

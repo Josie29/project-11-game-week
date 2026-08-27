@@ -6,6 +6,7 @@ import { appearanceOverrides } from './dev/appearanceLinks'
 import { parseSheetKind } from './dev/contactSheet'
 import { DevBridge } from './dev/DevBridge'
 import { usePresenceRoom } from './net/usePresenceRoom'
+import { PlayFov } from './scenes/components/PlayFov'
 import { RemotePlayers } from './scenes/components/RemotePlayers'
 import { ContactSheet } from './scenes/ContactSheet'
 import { CasinoInterior } from './scenes/CasinoInterior'
@@ -23,6 +24,7 @@ import { BlackjackPanel } from './ui/BlackjackPanel'
 import { CharacterDesigner } from './ui/CharacterDesigner'
 import { CrapsPanel } from './ui/CrapsPanel'
 import { Hud } from './ui/Hud'
+import { TouchControls } from './ui/TouchControls'
 import { WelcomeScreen } from './ui/WelcomeScreen'
 import { ClinicPanel } from './ui/ClinicPanel'
 import { CheckoutPanel } from './ui/CheckoutPanel'
@@ -31,6 +33,7 @@ import { UpdateNotice } from './ui/UpdateNotice'
 import { getVenue, VenueKind } from './world/venues'
 import { KEYBOARD_MAP } from './world/controls'
 import { PLAY_FOV } from './world/camera'
+import { useLayout } from './world/useLayout'
 import { bloomAt, CLINIC_BLOOM, INTERIOR_BLOOM } from './world/timeOfDay'
 
 export function App() {
@@ -39,6 +42,16 @@ export function App() {
   const hasDesigned = useAppearanceStore((state) => state.hasDesigned)
   const hasWelcomed = useSessionStore((state) => state.hasWelcomed)
   const activeTable = useGameStore((state) => state.activeTable)
+
+  /*
+   * The shape of the screen, and what is pointing at it.
+   *
+   * Only the two things the DOM has to decide are read here — whether a panel
+   * is a sheet, and whether to draw touch controls. Every *camera* sizes itself
+   * against the canvas instead, via `useCanvasAspect`, because once a sheet is
+   * up those are two different rectangles.
+   */
+  const layout = useLayout()
 
   // Joins whichever room the player is standing in, and leaves it on the way
   // out. A no-op when multiplayer is unconfigured.
@@ -94,6 +107,29 @@ export function App() {
   const isAtClinic = indoorVenue?.kind === VenueKind.Clinic
 
   /*
+   * Whether a full-width sheet is over the bottom of the screen.
+   *
+   * The designer, the shop's two stopping points, and the craps rail.
+   *
+   * The first three are side panels on a desktop, so becoming a sheet is barely
+   * a change. Craps is here for a different reason and it is the one worth
+   * writing down: its control bar carries a chip tray, four line bets and six
+   * numbers, and on a phone that is most of the screen. Left as an overlay it
+   * covered the felt almost entirely — including the pit the dice come to rest
+   * in, which makes the one thing the player is waiting to see the one thing
+   * they cannot. Blackjack's bar is four buttons and stays an overlay.
+   *
+   * The stylesheet decides whether a sheet is what these actually become; this
+   * only says which panels are up, so the DOM and the CSS do not both have to
+   * know what a phone is.
+   */
+  const hasSheet =
+    isDesigning || (isShopping && (atMirror || atCheckout)) || activeTable === TableId.Craps
+
+  /** Stopped somewhere: at a table, in a chair, on the plinth, at the till. */
+  const seated = activeTable !== null || atChair !== null || atMirror || atCheckout
+
+  /*
     The composer is global, so the hour has to be resolved here rather than
     inside the scene. Casinos are windowless by design and keep the night
     values; only the strip follows the clock.
@@ -111,56 +147,85 @@ export function App() {
     // KeyboardControls sits outside the Canvas and provides context to the
     // player rig inside it — the pattern drei documents for R3F scenes.
     <KeyboardControls map={[...KEYBOARD_MAP]}>
-      <Canvas shadows camera={{ position: [0, 5.2, 17.5], fov: PLAY_FOV }}>
-        {import.meta.env.DEV && <DevBridge />}
-        <TimeDriver />
-        {sheet !== null ? (
-          <ContactSheet kind={sheet} base={sheetBase} />
-        ) : isDesigning ? (
-          <DesignerStage />
-        ) : indoorVenue && activeVenue ? (
-          isShopping ? (
-            <ShopInterior venueId={activeVenue} />
-          ) : isAtClinic ? (
-            <ClinicInterior />
+      {/*
+        The drawing surface, which a bottom sheet shortens rather than covers.
+
+        On a phone the designer and the shop are sheets across the bottom of the
+        screen, and the first portrait capture of the fitting room showed why
+        this matters: the mirror was framed perfectly and the character was
+        behind the panel. Overlaying a fixed-camera shot is a crop, and a crop
+        no camera can see. Insetting the canvas instead means the scene is
+        composed for the rectangle it actually gets — and it makes that
+        rectangle a far saner shape, 390x464 rather than 390x844, which is most
+        of why neither of those two cameras needed moving at all.
+      */}
+      <div className="stage" data-sheet={hasSheet}>
+        <Canvas shadows camera={{ position: [0, 5.2, 17.5], fov: PLAY_FOV }}>
+          {import.meta.env.DEV && <DevBridge />}
+          {/* Matches the walking camera to the canvas it draws into. */}
+          <PlayFov />
+          <TimeDriver />
+          {sheet !== null ? (
+            <ContactSheet kind={sheet} base={sheetBase} />
+          ) : isDesigning ? (
+            <DesignerStage />
+          ) : indoorVenue && activeVenue ? (
+            isShopping ? (
+              <ShopInterior venueId={activeVenue} />
+            ) : isAtClinic ? (
+              <ClinicInterior />
+            ) : (
+              <CasinoInterior venueId={activeVenue} />
+            )
           ) : (
-            <CasinoInterior venueId={activeVenue} />
-          )
-        ) : (
-          <Strip />
-        )}
+            <Strip />
+          )}
 
-        {/*
-          Everyone else in the room, at the canvas root rather than inside a
-          scene. Each scene has its own coordinate space and its own room id, so
-          drawing peers here is correct for all of them — and it survives the
-          local player sitting down, which unmounts `WalkingPlayer` but should
-          certainly not empty the room.
-        */}
-        {!isDesigning && <RemotePlayers />}
+          {/*
+            Everyone else in the room, at the canvas root rather than inside a
+            scene. Each scene has its own coordinate space and its own room id, so
+            drawing peers here is correct for all of them — and it survives the
+            local player sitting down, which unmounts `WalkingPlayer` but should
+            certainly not empty the room.
+          */}
+          {!isDesigning && <RemotePlayers />}
 
-        {/*
-          Bloom is what turns emissive planes into neon. The materials are all
-          drawn with toneMapped={false} so they exceed 1.0 and cross the
-          luminance threshold, leaving unlit geometry untouched.
+          {/*
+            Bloom is what turns emissive planes into neon. The materials are all
+            drawn with toneMapped={false} so they exceed 1.0 and cross the
+            luminance threshold, leaving unlit geometry untouched.
 
-          The threshold has to climb with the sun. Under a daylight rig an
-          ordinary lit facade already exceeds the night value, and the whole
-          frame blooms out into fog.
-        */}
-        <EffectComposer>
-          <Bloom
-            intensity={bloom.intensity}
-            luminanceThreshold={bloom.luminanceThreshold}
-            luminanceSmoothing={0.25}
-            mipmapBlur
-          />
-          <Vignette offset={0.28} darkness={bloom.vignetteDarkness} />
-        </EffectComposer>
-      </Canvas>
+            The threshold has to climb with the sun. Under a daylight rig an
+            ordinary lit facade already exceeds the night value, and the whole
+            frame blooms out into fog.
+          */}
+          <EffectComposer>
+            <Bloom
+              intensity={bloom.intensity}
+              luminanceThreshold={bloom.luminanceThreshold}
+              luminanceSmoothing={0.25}
+              mipmapBlur
+            />
+            <Vignette offset={0.28} darkness={bloom.vignetteDarkness} />
+          </EffectComposer>
+        </Canvas>
+      </div>
 
       {/* The designer is a menu, not a place — the world HUD has no business there. */}
       {!isDesigning && !isWelcoming && sheet === null && <Hud />}
+
+      {/*
+        The stick, on a device with no keyboard.
+
+        Not while a menu is up, and not in the designer or at a table: there is
+        nothing to walk in any of those, and a stick over a scene the player
+        cannot move in is a control that lies. A contact sheet is not a session
+        either — it is a row of characters standing still, on the same rule that
+        keeps the HUD off it.
+      */}
+      {layout.touch && !isDesigning && !isWelcoming && sheet === null && !seated && (
+        <TouchControls />
+      )}
       {isDesigning && <CharacterDesigner />}
       {isWelcoming && <WelcomeScreen />}
 
