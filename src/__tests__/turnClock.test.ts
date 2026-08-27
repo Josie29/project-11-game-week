@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { dealGraceMs } from '../../worker/dealGrace'
+import { openingDealEndsAt } from '../scenes/revealTimeline'
 import { secondsUntilStand, TURN_WINDOW_MS } from '../world/turnClock'
 
 describe('the turn clock', () => {
@@ -40,5 +42,30 @@ describe('the turn clock', () => {
   it('clamps at zero past the deadline', () => {
     expect(secondsUntilStand(0, TURN_WINDOW_MS + 1)).toBe(0)
     expect(secondsUntilStand(0, TURN_WINDOW_MS + 5_000)).toBe(0)
+  })
+
+  /*
+   * Nobody's fifteen starts while cards are still flying. The room adds the
+   * deal animation's length to the round's first window, computed from its
+   * own mirror of `openingDealEndsAt` — the worker cannot import the scene,
+   * so this equality is the only thing holding the two formulas together. A
+   * drift here is a first player whose clock quietly starts mid-deal, at
+   * exactly one table size and not the others.
+   */
+  it('grants the room the same deal grace the felt actually takes', () => {
+    for (let seatCount = 1; seatCount <= 5; seatCount++) {
+      expect(dealGraceMs(seatCount), `${seatCount} seats`).toBe(openingDealEndsAt(seatCount))
+    }
+  })
+
+  /*
+   * The face is stamped for the end of the deal animation, so mid-deal the
+   * arithmetic reads above the whole window — which is what the panel keys
+   * on to show no number at all until the count truly begins.
+   */
+  it('reads above the window while the deal is still landing', () => {
+    const armedAt = 5_000
+    expect(secondsUntilStand(armedAt, 0)).toBeGreaterThan(TURN_WINDOW_MS / 1000)
+    expect(secondsUntilStand(armedAt, armedAt)).toBe(TURN_WINDOW_MS / 1000)
   })
 })
