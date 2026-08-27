@@ -20,6 +20,8 @@ import {
   CROSS_REACH,
   crossFarKerb,
   CROSS_SOUTH_Z,
+  END_BLOCK_BACK_HEIGHTS,
+  END_BLOCK_FRONT_HEIGHTS,
   END_BLOCK_X,
   endBlockRows,
   FACADE_X,
@@ -47,10 +49,6 @@ interface StreetEndProps {
   side: 1 | -1
   neonLevel: number
 }
-
-/** Heights of the closing wall, fixed so the skyline never reshuffles. */
-const FRONT_HEIGHTS = [8, 11, 7, 10, 8] as const
-const BACK_HEIGHTS = [13, 9, 15, 7, 12] as const
 
 export function StreetEnd({ side, neonLevel }: StreetEndProps) {
   const bucket = useTimeStore((state) => skyBucket(state.minuteOfDay))
@@ -127,7 +125,7 @@ export function StreetEnd({ side, neonLevel }: StreetEndProps) {
           <Building
             position={[x, 0, frontZ]}
             width={BUILDING_WIDTH}
-            height={FRONT_HEIGHTS[index] ?? 12}
+            height={END_BLOCK_FRONT_HEIGHTS[index] ?? 12}
             depth={BUILDING_DEPTH}
             neonColor="#5b6b8e"
             facing={side > 0 ? -1 : 1}
@@ -138,7 +136,7 @@ export function StreetEnd({ side, neonLevel }: StreetEndProps) {
           <Building
             position={[x + BUILDING_WIDTH / 2, 0, backZ]}
             width={BUILDING_WIDTH}
-            height={BACK_HEIGHTS[index] ?? 16}
+            height={END_BLOCK_BACK_HEIGHTS[index] ?? 16}
             depth={BUILDING_DEPTH}
             neonColor="#5b6b8e"
             facing={side > 0 ? -1 : 1}

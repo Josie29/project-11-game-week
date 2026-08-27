@@ -15,6 +15,12 @@
  * a door is one careless number away from a blank wall.
  */
 
+import {
+  CAMERA_LOOK_HEIGHT,
+  LANDSCAPE_ASPECT,
+  playFov,
+  subtendedAngle,
+} from '../world/camera'
 import { VENUES } from '../world/venues'
 
 /** Half-width of the reflective roadway. */
@@ -147,6 +153,16 @@ export const CROSS_PAVEMENT = 9
  */
 export const END_BLOCK_X: readonly number[] = [-16, -8, 0, 8, 16]
 
+/**
+ * Heights of the closing wall, fixed so the skyline never reshuffles.
+ *
+ * Here rather than in `StreetEnd.tsx` because the billboard's clearance is
+ * derived from the front row's centre tower: keeping the height and the thing
+ * that must out-climb it in one module is what lets a test hold them to it.
+ */
+export const END_BLOCK_FRONT_HEIGHTS: readonly number[] = [8, 11, 7, 10, 8]
+export const END_BLOCK_BACK_HEIGHTS: readonly number[] = [13, 9, 15, 7, 12]
+
 /** The far kerb of a cross street: where its pavement begins. */
 export function crossFarKerb(side: 1 | -1): number {
   return side > 0 ? CROSS_NORTH_Z + CROSS_HALF_WIDTH : CROSS_SOUTH_Z - CROSS_HALF_WIDTH
@@ -163,6 +179,126 @@ export function crossFarKerb(side: 1 | -1): number {
 export function endBlockRows(side: 1 | -1): readonly number[] {
   const face = crossFarKerb(side) + side * CROSS_PAVEMENT
   return [face + side * ROW_HALF_DEPTH, face + side * (ROW_HALF_DEPTH + BLOCK_DEPTH)]
+}
+
+/* ---------------------------------------------------- high-rollers boards */
+
+/*
+ * A leaderboard billboard stands on each junction's far pavement, looking back
+ * down the street. Past the kerb on purpose: it is scenery that talks about
+ * the players, and a thing the player could walk up to would owe them a prompt.
+ * The panel has to clear the closing block's centre tower to sit against sky,
+ * and it has to fit the walking camera's frame from the kerb — both of which
+ * are questions about numbers in this file, so both live here.
+ */
+
+/** On the street's centre line, in front of the closing block's middle tower. */
+export const BILLBOARD_X = 0
+
+/** How far past the far kerb the pylon stands, inside the pavement band. */
+export const BILLBOARD_SETBACK = 4
+
+/** Where a junction's billboard pylon stands. */
+export function billboardZ(side: 1 | -1): number {
+  return crossFarKerb(side) + side * BILLBOARD_SETBACK
+}
+
+export const BILLBOARD_PANEL_WIDTH = 8
+export const BILLBOARD_PANEL_HEIGHT = 4
+
+/**
+ * Sky above the panel's shoulder, in metres.
+ *
+ * The panel top is derived from the tower behind it rather than set: the board
+ * reads as a skyline sign only while it breaks the skyline, and a tower that
+ * grows two units in `END_BLOCK_FRONT_HEIGHTS` must drag the board up with it
+ * instead of quietly swallowing it.
+ */
+export const BILLBOARD_SKY_CLEARANCE = 1.2
+
+const TOWER_BEHIND_BILLBOARD =
+  END_BLOCK_FRONT_HEIGHTS[END_BLOCK_X.indexOf(BILLBOARD_X)] ?? 0
+
+export const BILLBOARD_PANEL_TOP_Y = TOWER_BEHIND_BILLBOARD + BILLBOARD_SKY_CLEARANCE
+export const BILLBOARD_PANEL_CENTER_Y = BILLBOARD_PANEL_TOP_Y - BILLBOARD_PANEL_HEIGHT / 2
+
+/**
+ * The walking camera as the strip runs it, mirrored the way
+ * `casinoFloorLayout.ts` mirrors its own in `WALK_CAMERA`: `Strip.tsx` passes
+ * no overrides, so these are `WalkingPlayer`'s defaults, and a fixed camera and
+ * the geometry it must hold belong in the same module so a test can bind them.
+ */
+export const STRIP_WALK_CAMERA = {
+  distance: 7.1,
+  pitch: 0.17,
+  lookHeight: CAMERA_LOOK_HEIGHT,
+} as const
+
+/**
+ * Where the camera sits when the player stands at a walk limit facing its
+ * billboard, and what it looks at.
+ *
+ * The kerb is the closest a player can ever be, so this is the frame every
+ * fit-and-headroom question below is asked in.
+ */
+export function billboardViewpoint(side: 1 | -1): {
+  readonly position: readonly [number, number, number]
+  readonly target: readonly [number, number, number]
+} {
+  const { distance, pitch, lookHeight } = STRIP_WALK_CAMERA
+  const playerZ = side > 0 ? STREET_BOUNDS.maxZ : STREET_BOUNDS.minZ
+  const horizontal = Math.cos(pitch) * distance
+
+  return {
+    // Facing the board puts the camera behind the player, back down the street.
+    position: [BILLBOARD_X, lookHeight + Math.sin(pitch) * distance, playerZ - side * horizontal],
+    target: [BILLBOARD_X, lookHeight, playerZ],
+  }
+}
+
+/**
+ * How wide the panel is across the view from the kerb, in radians.
+ *
+ * Width alone proves nothing about framing — see `billboardHeadroom` for the
+ * lesson the waterfall taught — but it is the legibility half: three rows of
+ * text on a panel subtending a few degrees is a landmark, not a leaderboard.
+ */
+export function billboardSubtendedAngle(side: 1 | -1): number {
+  const { position } = billboardViewpoint(side)
+  const z = billboardZ(side)
+
+  return subtendedAngle(position, [
+    [BILLBOARD_X - BILLBOARD_PANEL_WIDTH / 2, BILLBOARD_PANEL_CENTER_Y, z],
+    [BILLBOARD_X + BILLBOARD_PANEL_WIDTH / 2, BILLBOARD_PANEL_CENTER_Y, z],
+  ])
+}
+
+/**
+ * How far the top of the frame clears the top of the panel, in metres.
+ *
+ * The vertical question `waterfallHeadroom` exists to ask, asked of a taller
+ * subject: the walking camera tilts down and barely tilts up, so a panel sized
+ * only for width ends up drawn off the top of the screen exactly the way the
+ * six-metre cascade was.
+ *
+ * @param side 1 for the north board, -1 for the south.
+ * @param aspect Viewport width over height. Portrait widens `playFov` and only
+ *   gains headroom, but that is worth asserting rather than assuming.
+ * @returns Metres of sky visible above the panel. Negative means cropped.
+ */
+export function billboardHeadroom(side: 1 | -1, aspect: number = LANDSCAPE_ASPECT): number {
+  const { position, target } = billboardViewpoint(side)
+  const [, cameraY, cameraZ] = position
+  const [, targetY, targetZ] = target
+
+  // How far below horizontal the view axis points, regardless of direction.
+  const tilt = Math.atan2(cameraY - targetY, Math.abs(targetZ - cameraZ))
+  const halfFov = ((playFov(aspect) / 2) * Math.PI) / 180
+
+  const toPanel = Math.abs(billboardZ(side) - cameraZ)
+  const topOfFrame = cameraY + toPanel * Math.tan(halfFov - tilt)
+
+  return topOfFrame - BILLBOARD_PANEL_TOP_Y
 }
 
 /**

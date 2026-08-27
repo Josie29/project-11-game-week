@@ -26,7 +26,23 @@ import {
   LAMP_HEIGHT,
   PALM_HEIGHT_LEFT,
   PALM_HEIGHT_RIGHT,
+  BILLBOARD_PANEL_CENTER_Y,
+  BILLBOARD_PANEL_HEIGHT,
+  BILLBOARD_PANEL_TOP_Y,
+  BILLBOARD_X,
+  billboardHeadroom,
+  billboardSubtendedAngle,
+  billboardZ,
+  END_BLOCK_FRONT_HEIGHTS,
+  END_BLOCK_X,
 } from '../scenes/stripLayout'
+import {
+  FRAME_MARGIN,
+  frameWidth,
+  LANDSCAPE_ASPECT,
+  playFov,
+  PORTRAIT_ASPECT,
+} from '../world/camera'
 import { keyDirection, lightingAt, MINUTES_PER_DAY } from '../world/timeOfDay'
 import { VENUES } from '../world/venues'
 
@@ -153,6 +169,94 @@ describe('the ends of the street', () => {
       // ...and not so tight that the far end vanishes into a wall of it.
       expect(fogFar, `the street is lost in fog at ${minute} minutes`).toBeGreaterThan(length)
     }
+  })
+})
+
+describe('the high rollers boards', () => {
+  const SIDES = [1, -1] as const
+
+  /*
+   * The decision the feature rests on: the boards are scenery that talk about
+   * the players, and nothing on this strip happens to a player because they
+   * walked somewhere — a board inside the walk bounds would owe them a prompt.
+   */
+  it('stands each board past the kerb, where nobody can walk', () => {
+    for (const side of SIDES) {
+      expect(
+        isOnStrip(BILLBOARD_X, billboardZ(side)),
+        `the side-${side} board stands where the player can reach it`,
+      ).toBe(false)
+    }
+
+    // The predicate is not simply refusing everything at the junctions: one
+    // step inside the kerb is still the street.
+    expect(isOnStrip(BILLBOARD_X, STREET_BOUNDS.maxZ)).toBe(true)
+    expect(isOnStrip(BILLBOARD_X, STREET_BOUNDS.minZ)).toBe(true)
+  })
+
+  /*
+   * The board reads as a skyline sign only while it breaks the skyline. The
+   * centre tower of the closing block stands directly behind the pylon, and a
+   * panel that stops below its roofline is a poster on a building, unreadable
+   * against the tower's own windows at night.
+   */
+  it('lifts the panel clear of the tower standing behind it', () => {
+    const tower = END_BLOCK_FRONT_HEIGHTS[END_BLOCK_X.indexOf(BILLBOARD_X)] ?? 0
+
+    expect(tower, 'the closing block lost its centre tower').toBeGreaterThan(0)
+    expect(
+      BILLBOARD_PANEL_TOP_Y,
+      'the panel top sits at or below the tower roofline',
+    ).toBeGreaterThan(tower)
+    // And the panel's own bottom is above head height: the pylon is what makes
+    // it a billboard rather than a wall across the pavement.
+    expect(BILLBOARD_PANEL_CENTER_Y - BILLBOARD_PANEL_HEIGHT / 2).toBeGreaterThan(2.2)
+  })
+
+  /*
+   * The waterfall lesson, applied before shipping instead of after: the walking
+   * camera tilts down and can barely tilt up, so the real framing risk for a
+   * tall panel is the top of the screen, not the sides. Asserted at both ends
+   * and both aspects because "portrait only ever gains headroom" is a claim
+   * about playFov, not a law.
+   */
+  it('keeps the whole panel under the top of the frame from the kerb', () => {
+    for (const side of SIDES) {
+      expect(
+        billboardHeadroom(side, LANDSCAPE_ASPECT),
+        `the side-${side} board is cropped on a desktop`,
+      ).toBeGreaterThan(0.5)
+      expect(
+        billboardHeadroom(side, PORTRAIT_ASPECT),
+        `the side-${side} board is cropped on a phone`,
+      ).toBeGreaterThan(0.5)
+    }
+  })
+
+  // The legibility half: three rows of text need width across the view, and a
+  // panel subtending a few degrees is a landmark rather than a leaderboard.
+  it('fills the frame from the kerb without overflowing it', () => {
+    for (const side of SIDES) {
+      const subtended = billboardSubtendedAngle(side)
+
+      expect(
+        subtended,
+        `the side-${side} board is too small to read from the kerb`,
+      ).toBeGreaterThan((15 * Math.PI) / 180)
+
+      for (const aspect of [LANDSCAPE_ASPECT, PORTRAIT_ASPECT]) {
+        expect(
+          subtended * FRAME_MARGIN,
+          `the side-${side} board overflows the frame at aspect ${aspect.toFixed(2)}`,
+        ).toBeLessThanOrEqual(frameWidth(playFov(aspect), aspect) + 1e-9)
+      }
+    }
+  })
+
+  // Symmetry, so a change to one junction cannot quietly strand the other:
+  // both boards stand the same distance past their own kerb.
+  it('stands both boards the same distance past their kerbs', () => {
+    expect(billboardZ(1) - CROSS_NORTH_KERB).toBeCloseTo(-(billboardZ(-1) - CROSS_SOUTH_KERB), 10)
   })
 })
 
