@@ -10,12 +10,24 @@ import { useSessionStore } from './store/useSessionStore'
 import { poseBuffer, usePresenceStore } from './store/usePresenceStore'
 import { useGameStore } from './store/useGameStore'
 import { INTERPOLATION_DELAY_MS, interpolateAt } from './world/presence'
+import { applySheetFraction } from './world/viewport'
 import './styles.css'
 
 const container = document.getElementById('root')
 if (!container) {
   throw new Error('Root element #root not found in index.html')
 }
+
+/*
+ * Hands the stylesheet the one number it shares with a layout module.
+ *
+ * On a phone the designer and the shop become sheets across the bottom of the
+ * screen and the canvas is inset above them. Those are a CSS rule and a DOM
+ * attribute respectively, and if they disagreed about how tall a sheet is, the
+ * scene would be composed for a rectangle that is not the one on screen —
+ * silently, and only on hardware the captures do not run on.
+ */
+applySheetFraction(document.documentElement)
 
 if (import.meta.env.DEV) {
   // Dev-only handle for driving the game from the console or a browser harness,

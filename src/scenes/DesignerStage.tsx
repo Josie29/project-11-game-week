@@ -14,6 +14,7 @@ import { useAppearanceStore, useFittedEquipped } from '../store/useAppearanceSto
 import { useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
 import { CasinoCharacter } from './components/CasinoCharacter'
+import { useCanvasAspect } from '../world/useCanvasAspect'
 import { StageLighting } from './components/StageLighting'
 import { useOrbitInput } from './useOrbitInput'
 
@@ -94,6 +95,7 @@ export function DesignerStage() {
   const initialDistance = useGameStore((state) => state.designerDistance)
 
   const turntable = useRef<Group>(null)
+  const portrait = useCanvasAspect() < 1
   const cameraRef = useRef<PerspectiveCameraImpl>(null)
   const target = useMemo(() => new Vector3(0, 1, 0), [])
 
@@ -215,19 +217,32 @@ export function DesignerStage() {
 
       <StageLighting />
 
-      <group ref={turntable} position={[0, PLINTH_HEIGHT, 0]}>
-        <CasinoCharacter appearance={appearance} equipped={equipped} />
-      </group>
+      {/*
+        Offset right of centre, because the control panel is on the left.
 
-      {/* Plinth. Gives the figure somewhere to stand and catches the rim light. */}
-      <mesh position={[0, PLINTH_HEIGHT / 2, 0]} receiveShadow castShadow>
-        <cylinderGeometry args={[0.62, 0.68, PLINTH_HEIGHT, 40]} />
-        <meshStandardMaterial color="#1b1730" roughness={0.6} metalness={0.2} />
-      </mesh>
-      <mesh position={[0, PLINTH_HEIGHT + 0.002, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.58, 0.62, 48]} />
-        <meshBasicMaterial color="#ff2d95" toneMapped={false} />
-      </mesh>
+        Only while it *is* on the left. On a phone the panel is a sheet across
+        the bottom and the whole width is the figure's, so the same nudge just
+        stands them off to one side of an empty stage.
+
+        The plinth travels with the figure. It stood at the world origin while
+        the offset was on the turntable alone, which put the character beside
+        their own plinth rather than on it.
+      */}
+      <group position={[portrait ? 0 : 0.48, 0, 0]}>
+        <group ref={turntable} position={[0, PLINTH_HEIGHT, 0]}>
+          <CasinoCharacter appearance={appearance} equipped={equipped} />
+        </group>
+
+        {/* Plinth. Gives the figure somewhere to stand and catches the rim light. */}
+        <mesh position={[0, PLINTH_HEIGHT / 2, 0]} receiveShadow castShadow>
+          <cylinderGeometry args={[0.62, 0.68, PLINTH_HEIGHT, 40]} />
+          <meshStandardMaterial color="#1b1730" roughness={0.6} metalness={0.2} />
+        </mesh>
+        <mesh position={[0, PLINTH_HEIGHT + 0.002, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.58, 0.62, 48]} />
+          <meshBasicMaterial color="#ff2d95" toneMapped={false} />
+        </mesh>
+      </group>
 
       {/* Floor, dark and slightly reflective, as the reference sheet has it. */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>

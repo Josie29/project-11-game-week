@@ -14,6 +14,15 @@ import { requireQuietMachine } from './machineLoad.mjs'
  * from a hope into a check.
  *
  * Usage: npm run shots [outDir]
+ *        npm run shots:mobile [outDir]
+ *
+ * `SHOTS_VIEWPORT=WIDTHxHEIGHT` captures the same list at another shape, and
+ * `npm run shots:mobile` is that at a phone's. Not a cosmetic difference: a
+ * field of view is stated vertically, so a portrait window sees under a third
+ * as much across the screen, two of the panels become sheets that shorten the
+ * canvas, and every fixed camera in the game reframes. None of it is visible in
+ * a 1600x900 capture, which is why the same twenty-odd scenes are worth
+ * rendering twice.
  */
 
 requireQuietMachine('The scene captures')
@@ -164,7 +173,31 @@ const SCENES = [
   { name: 'craps-rolled', path: '/?boot=craps&time=21:00&freeze', settleMs: 3400, keys: [' '] },
 ]
 
-const outDir = resolve(process.argv[2] ?? 'shots')
+/**
+ * The page options for `SHOTS_VIEWPORT`, defaulting to the desktop shape.
+ *
+ * A narrow viewport also gets touch emulation, because the on-screen stick and
+ * the tappable prompts key off the pointer type rather than the width — a
+ * capture that only resized would show the desktop controls at a phone's shape,
+ * which is the one combination no player ever sees.
+ */
+function pageOptions() {
+  const spec = process.env.SHOTS_VIEWPORT
+  if (!spec) return { viewport: { width: 1600, height: 900 } }
+
+  const match = /^(\d+)x(\d+)$/.exec(spec)
+  if (!match) throw new Error(`Bad SHOTS_VIEWPORT "${spec}" — expected WIDTHxHEIGHT`)
+
+  const width = Number(match[1])
+  const height = Number(match[2])
+  if (width >= height) return { viewport: { width, height } }
+
+  return { viewport: { width, height }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 }
+}
+
+const PAGE_OPTIONS = pageOptions()
+
+const outDir = resolve(process.argv[2] ?? (process.env.SHOTS_VIEWPORT ? 'shots/mobile' : 'shots'))
 await rm(outDir, { recursive: true, force: true })
 await mkdir(outDir, { recursive: true })
 
@@ -183,7 +216,7 @@ const results = []
 
 try {
   for (const scene of SCENES) {
-    const page = await browser.newPage({ viewport: { width: 1600, height: 900 } })
+    const page = await browser.newPage(PAGE_OPTIONS)
 
     const errors = []
     page.on('pageerror', (error) => errors.push(String(error)))
@@ -195,7 +228,7 @@ try {
     })
 
     await page.goto(`${BASE}${scene.path}`, { waitUntil: 'networkidle' })
-    await page.waitForSelector('canvas', { timeout: 15000 })
+    await page.waitForSelector('canvas', { timeout: 60000 })
 
     // Let any ?boot= shortcut finish before typing; those go through the same
     // gesture lead-in as a real action.
@@ -233,7 +266,7 @@ try {
         }),
     )
 
-    await page.screenshot({ path: `${outDir}/${scene.name}.png` })
+    await page.screenshot({ path: `${outDir}/${scene.name}.png`, timeout: 120000 })
     await page.close()
 
     results.push({ scene: scene.name, frames, errors })

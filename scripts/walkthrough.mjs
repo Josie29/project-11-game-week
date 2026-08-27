@@ -12,11 +12,21 @@ import { requireQuietMachine } from './machineLoad.mjs'
  * movement keys, so it works against a deployed URL and proves the path between
  * the scenes as well as the scenes themselves.
  *
- * Usage: node scripts/walkthrough.mjs [baseUrl] [outDir]
+ * Usage: node scripts/walkthrough.mjs [baseUrl] [outDir] [--touch]
  *
  * Keys have to be *held*. `page.keyboard.press` is down-and-up in a few
  * milliseconds, which at 7.5 units per second moves the player about a
  * centimetre — the first version of this looked like the controls were dead.
+ *
+ * `--touch` drives the same beats on a phone: a portrait viewport, and every
+ * key replaced by the on-screen control that does the same job. The assertions
+ * below are worded to hold in both — "at a chair or the door" rather than
+ * "F at a chair or the door", because the room is the claim and the key is not. Only two
+ * helpers know the difference — `walk` and `press` — so every assertion and
+ * every capture below is shared, which is the point. A phone build that reaches
+ * the same fifteen beats is a phone build that works, and nothing else in this
+ * project can say so: `?boot=` links are stripped from production, and a
+ * screenshot cannot tell a stick that walks from one that does not.
  */
 
 requireQuietMachine('The walkthrough')
@@ -26,8 +36,12 @@ const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 /** Kept in step with `DONATION_FEE` in src/world/money.ts by hand. */
 const DONATION_FEE = 100
 
-const baseUrl = process.argv[2] ?? 'http://localhost:5173'
-const outDir = resolve(process.argv[3] ?? 'shots/walkthrough')
+const args = process.argv.slice(2)
+const TOUCH = args.includes('--touch')
+const positional = args.filter((arg) => !arg.startsWith('--'))
+
+const baseUrl = positional[0] ?? 'http://localhost:5173'
+const outDir = resolve(positional[1] ?? (TOUCH ? 'shots/walkthrough-touch' : 'shots/walkthrough'))
 
 /** Long enough for a scene transition plus its settle animation. */
 const SETTLE_MS = 2000
@@ -43,6 +57,22 @@ const SETTLE_MS = 2000
  */
 const DOOR_BURST_MS = 500
 
+/**
+ * Burst length for a leg that walks until a prompt appears.
+ *
+ * Shorter under the stick, because the stick carries further. A key press has
+ * to reach a listener and the walk ramps from it; the stick is held at full
+ * travel from the first frame of the burst, and a measured six bursts of half a
+ * second moved 2.3 units by thumb against 1.6 by keyboard. The same 700 ms that
+ * arrives at the craps rail on a desktop steps clean over its prompt on a
+ * phone, and `walkUntil` only looks between bursts — so the leg walks the
+ * length of the room and fails having been offered the table mid-stride.
+ *
+ * This is `DOOR_BURST_MS`'s argument applied to prompts in general: a window
+ * you have to *end* a burst inside is a window a long burst can cross.
+ */
+const WALK_BURST_MS = TOUCH ? DOOR_BURST_MS : 700
+
 await rm(outDir, { recursive: true, force: true })
 await mkdir(outDir, { recursive: true })
 
@@ -56,7 +86,11 @@ const browser = await chromium.launch({
   ],
 })
 
-const page = await browser.newPage({ viewport: { width: 1600, height: 900 } })
+const page = await browser.newPage(
+  TOUCH
+    ? { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 }
+    : { viewport: { width: 1600, height: 900 } },
+)
 
 const failures = []
 page.on('pageerror', (error) => failures.push(String(error)))
@@ -71,12 +105,167 @@ page.on('pageerror', (error) => failures.push(String(error)))
  * default, which makes W mean "down the street" every time.
  */
 async function walk(keys, ms) {
-  await page.keyboard.press('KeyR')
+  /*
+   * The key, in both modes, and deliberately.
+   *
+   * This press is scaffolding rather than a claim: movement is camera-relative
+   * and the follow camera swings as you walk, so re-pinning the orbit before
+   * each burst is what makes "hold left" mean the same thing on burst thirty as
+   * on burst one. Going through the on-screen button instead put a Playwright
+   * click — seconds, on a page this starved of frames — between every burst,
+   * which changed how far a burst carried and made the two modes untunable
+   * against each other. The button gets its own beat further down, which is
+   * where a claim about it belongs.
+   */
+  /*
+   * Sent to the body rather than to whatever happens to hold focus.
+   *
+   * `page.keyboard` delivers to the focused element, and by this point that is
+   * whichever button the last beat clicked — or nothing at all, if the panel it
+   * lived in has since unmounted. The listener is on `window` and a keypress
+   * with no focused element still reaches it, but "still reaches it" is a
+   * property of the page's focus state rather than of this call, and this call
+   * is what every walking leg's frame of reference depends on.
+   */
+  await page.locator('body').press('KeyR')
   await page.waitForTimeout(40)
+
+  if (TOUCH) {
+    await pushStick(keys, ms)
+    return
+  }
 
   for (const key of keys) await page.keyboard.down(key)
   await page.waitForTimeout(ms)
   for (const key of keys) await page.keyboard.up(key)
+}
+
+/** Which way each movement key points on the stick. Screen y runs downward. */
+const STICK_DIRECTION = {
+  KeyW: [0, -1],
+  KeyS: [0, 1],
+  KeyA: [-1, 0],
+  KeyD: [1, 0],
+}
+
+/**
+ * Holds the on-screen stick in the direction those keys mean, for `ms`.
+ *
+ * Driven with the mouse rather than `page.touchscreen`, which can only tap.
+ * The stick's handlers are written against pointer events and do not care which
+ * device produced them, and `setPointerCapture` keeps delivering the moves
+ * after the cursor leaves the stick — which it does immediately, because full
+ * travel is the edge of the control.
+ */
+async function pushStick(keys, ms) {
+  const box = await page.locator('.touch__stick').boundingBox()
+  if (!box) throw new Error('the on-screen stick is not on screen')
+
+  const centreX = box.x + box.width / 2
+  const centreY = box.y + box.height / 2
+
+  let x = 0
+  let y = 0
+  for (const key of keys) {
+    const direction = STICK_DIRECTION[key]
+    if (!direction) throw new Error(`no stick direction for ${key}`)
+    x += direction[0]
+    y += direction[1]
+  }
+
+  const length = Math.hypot(x, y) || 1
+  const travel = Math.min(box.width, box.height) / 2
+
+  /*
+   * One move to full travel, not a swept drag.
+   *
+   * The stick is analog, so the intermediate positions would each ask for a
+   * fraction of a walk — and each is a pointer event on a page already short of
+   * frames. A player's thumb lands and stays; this does the same.
+   */
+  await page.mouse.move(centreX, centreY)
+  await page.mouse.down()
+  await page.mouse.move(centreX + (x / length) * travel, centreY + (y / length) * travel)
+  await page.waitForTimeout(ms)
+  await page.mouse.up()
+}
+
+/**
+ * A key, or the on-screen control that does the same job.
+ *
+ * Every one of these has a button because a phone has no keyboard, and that is
+ * not a concession to this script — a player on a phone reaches every one of
+ * them the same way. Where the mapping had nowhere to click, the fix was a
+ * button in the game rather than a special case here.
+ */
+async function press(key) {
+  if (!TOUCH) {
+    await page.keyboard.press(key)
+    return
+  }
+
+  if (key === 'KeyF') {
+    /*
+     * The prompt card is the accept key. Only ever one is up at a time.
+     *
+     * Generous, because Playwright will not click a moving target and this one
+     * moves: the card is re-laid-out as the player walks the last stride into
+     * range, and settling takes wall-clock seconds at the frame rate this
+     * renders at. Eight seconds timed out on a card the log shows it had
+     * already found.
+     */
+    await page.locator('.hud__prompt--tap').first().click({ timeout: 30000 })
+    return
+  }
+
+  if (key === 'KeyM') {
+    await page.locator('.hud__menu').click({ timeout: 8000 })
+    return
+  }
+
+  if (key === 'Escape') {
+    // "Leave the thing you are in", which each panel spells out in its own
+    // words. Whichever is on screen is the one that is meant.
+    const ways = ['Close', 'Get up', 'Step down', 'Step back', 'Leave table']
+    for (const label of ways) {
+      const button = page.getByRole('button', { name: new RegExp(`^${label}`) }).first()
+      if (await button.isVisible().catch(() => false)) {
+        await button.click()
+        return
+      }
+    }
+
+    /*
+     * Nothing open, which is not a failure.
+     *
+     * Escape with no panel up is a no-op for a player at a keyboard, and this
+     * script leans on that: several beats press it defensively, to close
+     * whatever the previous beat might have left open. Throwing here made the
+     * touch run fail at a beat the desktop run walks straight past.
+     */
+    return
+  }
+
+  if (key === 'Digit1') {
+    /*
+     * The first stake, whichever table is up.
+     *
+     * Blackjack's stakes are `.button--chip` and the craps rail's are `.chip`;
+     * they look the same and are two different controls. Naming both here beats
+     * clicking by label — the buttons carry their own shortcut in the text
+     * ("$10 1"), and on touch that badge is hidden, so an exact-name click
+     * would match in one mode and not the other.
+     */
+    await page.locator('.button--chip, .chip').first().click({ timeout: 15000 })
+    return
+  }
+
+  if (key === 'Space') {
+    await page.getByRole('button', { name: /Roll the dice/ }).first().click({ timeout: 8000 })
+    return
+  }
+
+  throw new Error(`no on-screen equivalent for ${key}`)
 }
 
 async function isVisible(text) {
@@ -90,7 +279,7 @@ async function isVisible(text) {
  * order of magnitude between runs, so the same hold lands somewhere different
  * every time. Stepping and checking is slower and does not care.
  */
-async function walkUntil(keys, text, { burstMs = 700, bursts = 30 } = {}) {
+async function walkUntil(keys, text, { burstMs = WALK_BURST_MS, bursts = 30 } = {}) {
   for (let i = 0; i < bursts; i++) {
     if (await isVisible(text)) return
     await walk(keys, burstMs)
@@ -111,7 +300,7 @@ async function walkUntil(keys, text, { burstMs = 700, bursts = 30 } = {}) {
  * the count walking around inside) is right on its own. Unlike `walkUntil` this
  * never throws: not arriving is one of the two expected outcomes.
  */
-async function walkAtMost(keys, text, { burstMs = 700, bursts = 20 } = {}) {
+async function walkAtMost(keys, text, { burstMs = WALK_BURST_MS, bursts = 20 } = {}) {
   for (let i = 0; i < bursts; i++) {
     if (await isVisible(text)) return
     await walk(keys, burstMs)
@@ -133,7 +322,7 @@ async function walkAtMost(keys, text, { burstMs = 700, bursts = 20 } = {}) {
  *
  * Naming one fixture made that a failure. Naming the row makes it a walk.
  */
-async function walkUntilAny(keys, texts, { burstMs = 700, bursts = 30 } = {}) {
+async function walkUntilAny(keys, texts, { burstMs = WALK_BURST_MS, bursts = 30 } = {}) {
   for (let i = 0; i < bursts; i++) {
     for (const text of texts) {
       if (await isVisible(text)) return text
@@ -156,7 +345,7 @@ async function walkUntilAny(keys, texts, { burstMs = 700, bursts = 30 } = {}) {
  * the script that is supposed to behave like one.
  */
 async function interact() {
-  await page.keyboard.press('KeyF')
+  await press('KeyF')
   await page.waitForTimeout(900)
 }
 
@@ -165,7 +354,14 @@ let captureCount = 0
 
 async function capture(name) {
   await page.waitForTimeout(SETTLE_MS)
-  await page.screenshot({ path: resolve(outDir, `${name}.png`) })
+  /*
+   * Generous, because the wait is for a *stable* frame under SwiftShader.
+   * A loaded machine takes these scenes below one frame a second, and at that
+   * rate the default thirty seconds reports a timeout for a renderer that is
+   * merely slow — which reads as the walkthrough failing at whichever beat it
+   * happened to reach.
+   */
+  await page.screenshot({ path: resolve(outDir, `${name}.png`), timeout: 120000 })
   captureCount += 1
   console.log(`ok   ${name}`)
 }
@@ -233,7 +429,7 @@ try {
   await capture('1-designer')
 
   await page.getByRole('button', { name: 'Hit the strip' }).click()
-  await expectText('WASD to walk', 'leaving the designer')
+  await expectText('at a door', 'leaving the designer')
   await capture('2-strip')
 
   /*
@@ -245,14 +441,21 @@ try {
    *     Escape closing it is the claim that the key keeps its one meaning
    *     everywhere: leave the thing you are in.
    */
-  await page.keyboard.press('KeyM')
+  // The one control a phone has and a desktop does not. Every walking leg
+  // below drives it; this only says it arrived.
+  if (TOUCH) {
+    await page.locator('.touch__stick').waitFor({ state: 'visible', timeout: 20000 })
+    console.log('     the stick is on screen')
+  }
+
+  await press('KeyM')
   await page.waitForTimeout(400)
   await expectText('Start over', 'opening settings with M')
   await capture('2b-settings')
 
-  await page.keyboard.press('Escape')
+  await press('Escape')
   await page.waitForTimeout(400)
-  await expectText('WASD to walk', 'closing settings with Escape')
+  await expectText('at a door', 'closing settings with Escape')
 
   // 2. Head diagonally for the shop's side of the street. The player clamps at
   //    the kerb, so the D component stops mattering once they reach it and the
@@ -281,7 +484,7 @@ try {
 
   //    Asserted on the standing hint, which is the shop's own: it is a room you
   //    walk now, and the hint names what F is for in it.
-  await expectText('F at a rail, the mirror, the till or the door', 'walking into the shop')
+  await expectText('at a rail, the mirror, the till or the door', 'walking into the shop')
   await capture('4-shop')
 
   /*
@@ -347,7 +550,7 @@ try {
   await interact()
   await expectText('Take it to the counter to pay', 'standing at the mirror')
   await capture('6-mirror')
-  await page.keyboard.press('Escape')
+  await press('Escape')
   await page.waitForTimeout(600)
 
   /*
@@ -433,7 +636,7 @@ try {
     console.log('     could not afford it, and put it all back')
   }
 
-  await page.keyboard.press('Escape')
+  await press('Escape')
   await page.waitForTimeout(600)
 
   /*
@@ -451,7 +654,7 @@ try {
    *    Three different arrangements of counted bursts failed, in both directions.
    *    Now it is one scan: walk down the kerb until the clinic offers.
    */
-  await page.keyboard.press('Escape')
+  await press('Escape')
   await page.waitForTimeout(600)
   /*
    *    Up the room first, then a scan along the front wall.
@@ -463,7 +666,7 @@ try {
   await walkAtMost(['KeyS', 'KeyD'], 'to step out', { burstMs: DOOR_BURST_MS, bursts: 22 })
   await walkUntil(['KeyA'], 'to step out', { burstMs: DOOR_BURST_MS, bursts: 20 })
   await interact()
-  await expectText('WASD to walk', 'stepping back onto the strip')
+  await expectText('at a door', 'stepping back onto the strip')
   // Out on the street in something that was tried on and then paid for — the
   // proof that a purchase survives the walk out of the room it was made in.
   await capture('9-out-in-it')
@@ -473,7 +676,7 @@ try {
     bursts: 45,
   })
   await interact()
-  await expectText('F at a chair or the door', 'walking into the clinic')
+  await expectText('at a chair or the door', 'walking into the clinic')
   await capture('10-clinic')
 
   // 6. Sell a pint. Ten seconds of nurse, and the bankroll is the proof.
@@ -486,7 +689,7 @@ try {
    */
   await walkAtMost(['KeyW'], 'Donation chair', { bursts: 8 })
   await expectText('Donation chair', 'arriving in the clinic')
-  await page.keyboard.press('KeyF')
+  await press('KeyF')
   await page.waitForTimeout(700)
   await expectText('Donate', 'sitting in the chair')
 
@@ -501,7 +704,7 @@ try {
    *    has gone with her.
    */
   await page.waitForTimeout(6000)
-  await page.screenshot({ path: resolve(outDir, '11-drawing.png') })
+  await page.screenshot({ path: resolve(outDir, '11-drawing.png'), timeout: 120000 })
   captureCount += 1
   console.log('ok   11-drawing')
 
@@ -531,15 +734,15 @@ try {
    *    S and D together because the door is at the far corner from the chairs:
    *    the recliners run down the left wall and the way out is centre-right.
    */
-  await page.keyboard.press('Escape')
+  await press('Escape')
   await page.waitForTimeout(700)
 
-  await walkUntil(['KeyS', 'KeyD'], 'Press F to step out', {
+  await walkUntil(['KeyS', 'KeyD'], 'to step out', {
     burstMs: DOOR_BURST_MS,
     bursts: 40,
   })
   await interact()
-  await expectText('F at a door', 'stepping back onto the strip')
+  await expectText('at a door', 'stepping back onto the strip')
 
   /*
    *    Cross, then ride the kerb up to the casino's door.
@@ -561,7 +764,7 @@ try {
     bursts: 60,
   })
   await interact()
-  await expectText('F at a table or the door', 'walking into the casino')
+  await expectText('at a table or the door', 'walking into the casino')
 
   /*
    *    Shorter bursts for the last few feet across the floor.
@@ -579,7 +782,7 @@ try {
   await capture('13-at-the-table')
 
   // 8. Sit down and play a hand. F, not E — E is the camera orbit.
-  await page.keyboard.press('KeyF')
+  await press('KeyF')
   await page.waitForTimeout(600)
   await expectText('Leave table', 'sitting down')
   await capture('14-seated')
@@ -587,7 +790,7 @@ try {
   //    The stake keys are the primary control at the table, and the buttons
   //    carry their shortcut in the label ("$10 1"), which makes an exact-name
   //    click brittle. Press the key the HUD tells the player to press.
-  await page.keyboard.press('Digit1')
+  await press('Digit1')
   // Wager travel plus a one-card-per-second opening deal: the last card leaves
   // the shoe about 3.4s after the stake, and still has to flip and settle.
   await page.waitForTimeout(4600)
@@ -597,9 +800,9 @@ try {
   // 9. Cross the floor to the other table. The casino stopped being a single
   //    table a while ago, and nothing walked from one to the other — which is
   //    the only part of the room a `?boot=` link cannot reach.
-  await page.keyboard.press('Escape')
+  await press('Escape')
   await page.waitForTimeout(800)
-  await expectText('F at a table or the door', 'standing back up')
+  await expectText('at a table or the door', 'standing back up')
 
   /*
    *    Straight across, at the depth the blackjack seat already put the player.
@@ -615,7 +818,7 @@ try {
 
   // 10. Take the rail at craps and throw the dice. Nobody sits at craps, so
   //    this is a stand rather than a seat.
-  await page.keyboard.press('KeyF')
+  await press('KeyF')
   await page.waitForTimeout(600)
   await expectText('Roll the dice', 'stepping up to craps')
   await capture('17-at-craps')
@@ -632,7 +835,7 @@ try {
   await page.locator('[data-bet="pass-line"]').first().click()
   await page.waitForTimeout(400)
 
-  await page.keyboard.press('Space')
+  await press('Space')
   //    Long enough for the tumble to settle and the dice to turn to their
   //    faces; the throw gives up after 2.2 seconds of its own accord.
   await page.waitForTimeout(3600)
@@ -649,7 +852,7 @@ try {
 
   console.log(`\n${captureCount} beats → ${outDir}`)
 } catch (error) {
-  await page.screenshot({ path: resolve(outDir, 'failure.png') })
+  await page.screenshot({ path: resolve(outDir, 'failure.png'), timeout: 120000 })
   console.error(`\nFAILED: ${error.message}`)
 
   /*

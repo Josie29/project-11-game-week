@@ -85,3 +85,36 @@ The audit these came out of is [character-audit.md](character-audit.md).
 - **Anything laid out on a building's rhythm collides with anything laid out on
   a door's.** Everything standing on the pavement goes through `clearsDoorways`,
   and `hasColonnade` derives the exemption rather than listing it.
+
+## The shape of the window
+
+- **A field of view is vertical, so the shape of the window is part of the
+  geometry.** At 1600x900 a 45° camera sees 72.7° across; on a 390x844 phone the
+  same camera sees 21.7. Every subtended-angle measure here was written against
+  the first number without saying so, and they are all *floors* — "wide enough to
+  read". Portrait needs a ceiling too: the shop's mirror is 24.4° wide and its
+  camera showed 20 across a phone, so the one surface the fitting scene exists
+  for was cropped at both edges with every test passing. `frameWidth`, `fovToFit`
+  and `playFov` in `src/world/camera.ts` are that ceiling and `camera.test.ts`
+  holds every hero subject to it.
+- **A panel over a fixed-camera scene is a crop, and no camera can see it.**
+  Chasing it by moving the camera finds no position that works. On a phone those
+  panels are sheets, `.stage` insets the canvas above them, and the scene is
+  composed for the rectangle it actually gets — 390x464 rather than 390x844,
+  which is most of why neither shop camera needed moving. `SHEET_FRACTION` in
+  `src/world/viewport.ts` is published to CSS as `--sheet`, so the panel and the
+  canvas cannot disagree about where the fold is.
+- **Cameras size themselves against the canvas, never the window.** Once a sheet
+  is up those are two different rectangles — `useCanvasAspect`, not `useLayout`.
+- **Where a camera cannot be opened wide enough, move it — and derive how far.**
+  Blackjack's felt spans 53° of the seated view and craps' spans 64, and no field
+  of view a phone holds without a fish-eye fits either. `seatedView` steps back
+  until the shot fits, flattening the pitch as it climbs so it stays under the
+  ceiling and inside the walls. A hand-picked pullback was there first, and 10.5m
+  was right for a full-height phone screen and much too far the moment the craps
+  rail's controls became a sheet.
+- **How far the seated shot follows a stool depends on the window.** Landscape
+  leans part of the way and keeps the dealer and the other players in frame;
+  portrait holds about a third of the table, so leaning still leaves your own
+  cards off the side and it snaps the whole way. Both take the **stool**, not the
+  engine's seat index — the same distinction `handAnchor` draws.
