@@ -12,7 +12,7 @@ import {
   TableId,
 } from '../scenes/casinoFloorLayout'
 import { SEAT_SPOTS } from '../scenes/tableLayout'
-import { claimRefused, freeSeats, ownSeat, seatOf, takenSeats } from '../world/seating'
+import { claimRefused, sittingOut, freeSeats, ownSeat, seatOf, takenSeats } from '../world/seating'
 import { ownsTheFelt } from '../scenes/tableLayout'
 
 /*
@@ -276,5 +276,32 @@ describe('a seat read off a URL', () => {
     expect(seatFromParam('nine')).toBe(DEFAULT_BLACKJACK_SEAT)
     expect(seatFromParam(String(BLACKJACK_SEAT_COUNT))).toBe(DEFAULT_BLACKJACK_SEAT)
     expect(seatFromParam('-1')).toBe(DEFAULT_BLACKJACK_SEAT)
+  })
+})
+
+describe('sitting this one out', () => {
+  // Catches issue #15: "Sitting this one out" printed beside "$10 in —
+  // deals in 13s". A wager pending in the gather is not spectating.
+  it('clears the moment a wager is in during the gather', () => {
+    expect(sittingOut(true, -1, true, 10)).toBe(false)
+  })
+
+  // The other half of the issue's done-when: a player who genuinely missed
+  // the window still sees the banner once the round deals.
+  it('shows for a seatless player once the round is dealt', () => {
+    expect(sittingOut(true, -1, false, 0)).toBe(true)
+    // Even a stray bet record cannot hide it outside the betting window.
+    expect(sittingOut(true, -1, false, 10)).toBe(true)
+  })
+
+  it('never shows for a seated player or a solo table', () => {
+    expect(sittingOut(true, 2, false, 0)).toBe(false)
+    expect(sittingOut(false, -1, false, 0)).toBe(false)
+  })
+
+  // The paired positive: with no bet and the gather open, the banner is
+  // honest — you are sitting out unless you stake.
+  it('shows during the gather while nothing is staked', () => {
+    expect(sittingOut(true, -1, true, 0)).toBe(true)
   })
 })

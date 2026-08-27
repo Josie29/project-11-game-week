@@ -1,11 +1,11 @@
 import { useEffect, useMemo } from 'react'
-import type { PlayerAction } from '../games/blackjack/types'
+import { RoundPhase, type PlayerAction } from '../games/blackjack/types'
 import { TableId } from '../scenes/casinoFloorLayout'
 import { useBlackjackStore } from '../store/useBlackjackStore'
 import { useGameStore } from '../store/useGameStore'
 import { usePresenceStore } from '../store/usePresenceStore'
 import { PlayMode, useSessionStore } from '../store/useSessionStore'
-import { claimRefused, takenSeats } from '../world/seating'
+import { claimRefused, sittingOut, takenSeats } from '../world/seating'
 
 /** Stable empties, so a selector does not return a new object every render. */
 const NO_SEATS: Readonly<Record<number, string>> = {}
@@ -114,8 +114,17 @@ export function useSharedBlackjack(): SharedBlackjack {
    */
   const shared = mode === PlayMode.Multiplayer && activeTable === TableId.Blackjack
 
-  /** True when this player is watching a round they did not bet into. */
-  const spectating = shared && mySeatIndex < 0
+  const pendingBet = selfId === null ? 0 : (roomBets[selfId] ?? 0)
+  // Subscribed, not read once: the banner has to come back the moment a deal
+  // lands without this player in it, which is a phase change.
+  const gatherOpen = useBlackjackStore((state) => state.game.phase === RoundPhase.Betting)
+
+  /*
+   * True when this player is watching a round they did not bet into. A wager
+   * pending in the gather counts as being in — see `sittingOut` for the
+   * banner-beside-the-deal-clock bug this distinction fixes.
+   */
+  const spectating = sittingOut(shared, mySeatIndex, gatherOpen, pendingBet)
 
   // Alone, every turn is yours. Shared, the engine decides the order and this
   // only reports it — the refusal itself lives in `actAs`. A spectator never
@@ -137,8 +146,6 @@ export function useSharedBlackjack(): SharedBlackjack {
   useEffect(() => {
     if (refused) standUp()
   }, [refused, standUp])
-
-  const pendingBet = selfId === null ? 0 : (roomBets[selfId] ?? 0)
 
   // Who holds the turn, by name — the craps shooter's rule exactly: this
   // player is "You", the roster names the rest, and a peer who never gave a

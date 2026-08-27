@@ -60,6 +60,7 @@ const IDENTITY = {
   owned: [] as readonly string[],
   equipped: {},
   seated: false,
+  chair: null,
   bankroll: 500,
   table: null,
   seat: null,

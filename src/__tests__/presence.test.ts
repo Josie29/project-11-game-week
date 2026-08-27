@@ -319,3 +319,27 @@ describe('sanitizeRemoteIdentity bankroll', () => {
     expect(sanitizeRemoteIdentity({ id: 'a', bankroll: 1e12 }, 'a').bankroll).toBe(1e9)
   })
 })
+
+describe('sanitizeRemoteIdentity chair', () => {
+  // Issue #6's transport: without the index a donor is drawn from their last
+  // walking pose, beside the chair instead of in it.
+  it('passes a real recliner index through', () => {
+    expect(sanitizeRemoteIdentity({ id: 'a', chair: 2 }, 'a').chair).toBe(2)
+    expect(sanitizeRemoteIdentity({ id: 'a', chair: 0 }, 'a').chair).toBe(0)
+  })
+
+  // Old worker or old client: the field is simply absent, and absent must mean
+  // "no chair", never a crash and never chair zero.
+  it('defaults a missing chair to none', () => {
+    expect(sanitizeRemoteIdentity({ id: 'a' }, 'a').chair).toBeNull()
+  })
+
+  // A chair the clinic does not have is no chair — clamping would stack two
+  // donors into recliner zero.
+  it('rejects a chair the clinic does not have', () => {
+    expect(sanitizeRemoteIdentity({ id: 'a', chair: 99 }, 'a').chair).toBeNull()
+    expect(sanitizeRemoteIdentity({ id: 'a', chair: -1 }, 'a').chair).toBeNull()
+    expect(sanitizeRemoteIdentity({ id: 'a', chair: 1.5 }, 'a').chair).toBeNull()
+    expect(sanitizeRemoteIdentity({ id: 'a', chair: '2' }, 'a').chair).toBeNull()
+  })
+})

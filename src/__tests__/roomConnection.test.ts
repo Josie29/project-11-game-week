@@ -20,6 +20,7 @@ const IDENTITY: LocalIdentity = {
   owned: [],
   equipped: {},
   seated: false,
+  chair: null,
   bankroll: 500,
   table: null,
   seat: null,

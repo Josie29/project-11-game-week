@@ -28,6 +28,8 @@ interface JoinMessage {
   readonly owned?: unknown
   readonly equipped?: unknown
   readonly seated?: unknown
+  /** Which clinic recliner, relayed so a donor is drawn in it (issue #6). */
+  readonly chair?: unknown
   /** Chips in hand, relayed verbatim for the strip's high-rollers boards. */
   readonly bankroll?: unknown
   readonly table?: unknown
@@ -447,8 +449,9 @@ export class Room implements DurableObject {
           owned: message.owned,
           equipped: message.equipped,
           seated: message.seated === true,
-          // Relayed for the strip's high-rollers boards. Verbatim on the usual
-          // rule: every client re-sanitizes on receipt.
+          // Relayed verbatim on the usual rule: every client re-sanitizes on
+          // receipt. The chair places a donor; the bankroll feeds the boards.
+          chair: message.chair,
           bankroll: message.bankroll,
           table: typeof message.table === 'string' ? message.table : null,
         }

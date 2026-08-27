@@ -82,7 +82,7 @@ export function usePresenceRoom(): void {
       return
     }
 
-    const identity = { name, appearance, owned, equipped, seated, bankroll, table, seat }
+    const identity = { name, appearance, owned, equipped, seated, chair: atChair, bankroll, table, seat }
 
     /*
      * Both, every time, and neither is wasteful. `enterRoom` returns early when
@@ -93,7 +93,7 @@ export function usePresenceRoom(): void {
      */
     enterRoom(roomId, boundsFor(roomId), identity)
     updateIdentity(identity)
-  }, [mode, roomId, name, appearance, owned, equipped, seated, bankroll, table, seat])
+  }, [mode, roomId, name, appearance, owned, equipped, seated, atChair, bankroll, table, seat])
 
   // Leaves for good when the app unmounts, so a hot reload does not strand a
   // socket holding a figure in the room.

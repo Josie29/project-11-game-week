@@ -123,3 +123,31 @@ export function ownSeat(atTable: TableId | null, seat: number | null): number | 
 
   return isBlackjackSeat(seat) ? seat : DEFAULT_BLACKJACK_SEAT
 }
+
+/**
+ * Whether this player is watching a round rather than in it.
+ *
+ * "No seat in the engine's round" is the right test mid-round and the wrong
+ * one during the gather: the seat index stays -1 until the deal lands, so a
+ * player whose wager is already in was told "Sitting this one out" beside the
+ * clock counting down to their own deal (issue #15). A pending wager during
+ * the betting window counts as playing — and only during the window, so a
+ * stray bet record can never hide the banner from somebody the deal actually
+ * left out.
+ *
+ * @param shared True at a multiplayer table; alone, nobody spectates.
+ * @param seatIndex This player's seat in the current round, -1 for none.
+ * @param betting True while the table is gathering wagers.
+ * @param pendingBet This player's wager in the room's gather, 0 for none.
+ */
+export function sittingOut(
+  shared: boolean,
+  seatIndex: number,
+  betting: boolean,
+  pendingBet: number,
+): boolean {
+  if (!shared) return false
+  if (seatIndex >= 0) return false
+
+  return !(betting && pendingBet > 0)
+}

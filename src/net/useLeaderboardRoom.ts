@@ -35,6 +35,7 @@ export function useLeaderboardRoom(): void {
       owned: [],
       equipped: {},
       seated: false,
+      chair: null,
       bankroll,
       table: null,
       seat: null,

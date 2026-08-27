@@ -1,6 +1,7 @@
 import { type Appearance, sanitizeAppearance } from '../character/appearance'
 import { type EquippedItems, sanitizeEquipped, sanitizeOwned } from '../character/catalog'
 import { TableId } from '../scenes/casinoFloorLayout'
+import { CHAIR_COUNT } from '../scenes/clinicLayout'
 import type { WalkBounds } from '../scenes/components/WalkingPlayer'
 
 /*
@@ -77,6 +78,15 @@ export interface RemoteIdentity {
    * a casino holds two tables and "seated" cannot tell them apart.
    */
   readonly table: TableId | null
+  /**
+   * Which clinic recliner they are in, or null anywhere else.
+   *
+   * On the wire even though the chair is never room-arbitrated — a recliner is
+   * a seat nobody else can walk up to, so there is no claim to settle — because
+   * without the index a seated donor has to be drawn from their last *walking*
+   * pose, which is the patch of floor beside the chair (issue #6).
+   */
+  readonly chair: number | null
   /**
    * Chips in hand, for the high-rollers boards at the ends of the strip.
    *
@@ -255,6 +265,19 @@ export function sanitizePose(raw: unknown, bounds: WalkBounds): Pose {
 }
 
 /**
+ * Coerces a chair index into one the clinic actually has, or null.
+ *
+ * Range-checked rather than clamped: a chair the clinic does not have is not
+ * "the nearest chair", it is no chair — drawing the figure at recliner zero
+ * would seat two donors in one chair, which is the bug this field exists to
+ * fix wearing a different hat.
+ */
+export function sanitizeChair(raw: unknown): number | null {
+  const value = typeof raw === 'number' && Number.isInteger(raw) ? raw : null
+  return value !== null && value >= 0 && value < CHAIR_COUNT ? value : null
+}
+
+/**
  * Coerces a whole remote player into something drawable.
  *
  * Total: never throws, always returns a figure that renders. Reuses the
@@ -280,6 +303,7 @@ export function sanitizeRemoteIdentity(raw: unknown, fallbackId: string): Remote
     equipped: sanitizeEquipped(candidate.equipped, owned),
     seated: candidate.seated === true,
     table: sanitizeTable(candidate.table),
+    chair: sanitizeChair(candidate.chair),
     // Floored to a whole dollar: the board must never print what the HUD
     // cannot. The cap is arbitrary but a peer claiming a trillion dollars is
     // lying in a way that would also break the board's column layout.

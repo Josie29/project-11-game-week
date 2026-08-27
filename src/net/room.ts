@@ -87,6 +87,8 @@ export interface LocalIdentity {
   readonly owned: readonly string[]
   readonly equipped: unknown
   readonly seated: boolean
+  /** Which clinic recliner they are in, or null. Drawn, never arbitrated. */
+  readonly chair: number | null
   /** Chips in hand, whole dollars, for the high-rollers boards. */
   readonly bankroll: number
   /** Which table they are standing at, for the shooter queue. */
@@ -173,6 +175,7 @@ export function joinRoom(
         owned: current.owned,
         equipped: current.equipped,
         seated: current.seated,
+        chair: current.chair,
         bankroll: current.bankroll,
         table: current.table,
         seat: current.seat,
