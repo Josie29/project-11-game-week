@@ -1,4 +1,5 @@
 import { chromium } from 'playwright-core'
+import { requireQuietMachine } from './machineLoad.mjs'
 
 /*
  * Two players at one blackjack table, sharing one shoe.
@@ -13,6 +14,11 @@ import { chromium } from 'playwright-core'
  *
  * Usage: node scripts/sharedBlackjack.mjs [baseUrl] [outPng]
  */
+
+// Two browser contexts on a software renderer, which is twice the most CPU-
+// hungry thing in the repository — and the assertions here are about *timing*,
+// so a loaded machine does not merely make it slow.
+requireQuietMachine('The shared blackjack check')
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const BASE = process.argv[2] ?? 'http://localhost:5182'
