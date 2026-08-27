@@ -28,6 +28,7 @@ import {
   SIDEWALK_HEIGHT,
 } from '../stripLayout'
 import { Building } from './Building'
+import { LeaderboardBillboard } from './LeaderboardBillboard'
 
 /**
  * The junction at each end of the strip, and the block standing across it.
@@ -146,6 +147,10 @@ export function StreetEnd({ side, neonLevel }: StreetEndProps) {
           />
         </group>
       ))}
+
+      {/* The HIGH ROLLERS board, on the pavement in front of the closing
+          block, looking back down the street. */}
+      <LeaderboardBillboard side={side} neonLevel={neonLevel} daylight={daylight} />
 
       {/*
         Kerb line at the near side, so the pavement visibly stops rather than

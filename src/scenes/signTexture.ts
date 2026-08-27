@@ -47,8 +47,8 @@ function finish(ctx: CanvasRenderingContext2D): Texture {
   return texture
 }
 
-/** Rings a rectangle with evenly spaced bulbs. */
-function drawBulbBorder(
+/** Rings a rectangle with evenly spaced bulbs. Shared with the leaderboard. */
+export function drawBulbBorder(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
@@ -81,9 +81,9 @@ function drawBulbBorder(
  * Draws glowing text by stroking a wide halo before filling the core.
  *
  * A single fill reads as flat coloured text; the layered shadow is what makes
- * it look like a lit tube.
+ * it look like a lit tube. Shared with the leaderboard's header.
  */
-function drawNeonText(
+export function drawNeonText(
   ctx: CanvasRenderingContext2D,
   text: string,
   x: number,

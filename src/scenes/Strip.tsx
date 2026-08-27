@@ -1,7 +1,11 @@
 import { MeshReflectorMaterial } from '@react-three/drei'
 import { useLayoutEffect, useMemo } from 'react'
 import { BackSide, RepeatWrapping } from 'three'
+import { useAppearanceStore } from '../store/useAppearanceStore'
+import { useGameStore } from '../store/useGameStore'
+import { usePresenceStore } from '../store/usePresenceStore'
 import { useTimeStore } from '../store/useTimeStore'
+import { leaderboardRows } from '../world/leaderboard'
 import { VENUES, VenueKind } from '../world/venues'
 import {
   BLOCK_DEPTH,
@@ -34,6 +38,7 @@ import {
   skyPaletteAt,
 } from '../world/timeOfDay'
 import { setFacadeDaylight } from './facadeTexture'
+import { setLeaderboardRows } from './leaderboardTexture'
 import { getRoadTexture, setRoadDaylight } from './roadTexture'
 import { Building } from './components/Building'
 import { Celestial } from './components/Celestial'
@@ -281,6 +286,29 @@ function SurfaceDaylight() {
   return null
 }
 
+/**
+ * Keeps the HIGH ROLLERS boards current, the way `SurfaceDaylight` keeps the
+ * road: a render-nothing owner of one texture side effect.
+ *
+ * Mounted once even though two boards draw it — they share the one texture,
+ * so a second updater would be a second painter of the same canvas. Solo and
+ * suppressed sessions have an empty roster, and the merge in `leaderboardRows`
+ * then shows exactly the local player, which is the decided behaviour rather
+ * than a fallback.
+ */
+function LeaderboardStandings() {
+  const bankroll = useGameStore((state) => state.bankroll)
+  const name = useAppearanceStore((state) => state.playerName)
+  const peers = usePresenceStore((state) => state.peers)
+  const selfId = usePresenceStore((state) => state.selfId)
+
+  useLayoutEffect(() => {
+    setLeaderboardRows(leaderboardRows({ id: selfId ?? 'self', name, bankroll }, Object.values(peers)))
+  }, [bankroll, name, peers, selfId])
+
+  return null
+}
+
 export function Strip() {
   // Quantized so the street only re-renders while neon is actually fading,
   // rather than once a second for the whole day.
@@ -297,6 +325,7 @@ export function Strip() {
       <StripLighting />
       <Roadway />
       <SurfaceDaylight />
+      <LeaderboardStandings />
 
       {/* Raised sidewalks either side of the roadway, kerb to kerb. */}
       {[-1, 1].map((side) => (
