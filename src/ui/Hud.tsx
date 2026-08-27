@@ -228,9 +228,16 @@ export function Hud() {
           <span>
             {/* You stand at craps and sit at blackjack, and the prompt should
                 say which — offering a seat at a table that has none is the kind
-                of small lie that makes the rest read as approximate. */}
+                of small lie that makes the rest read as approximate.
+
+                Which stool it is, though, is not worth naming. Calling the ends
+                first base and third base and the middle three "this seat" reads
+                as three of them being unnamed rather than as a row of five, and
+                the terms mean nothing to a player who has not played before.
+                The prompt follows the stool you are standing at; it does not
+                have to say its name for that to be true. */}
             <Accept /> to{' '}
-            {STANDING_TABLES.has(nearbyTable) ? 'take the rail' : 'sit'}
+            {STANDING_TABLES.has(nearbyTable) ? 'take the rail' : 'sit at this seat'}
           </span>
         </Prompt>
       )}

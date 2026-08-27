@@ -10,15 +10,19 @@ import { INTERACT_KEY } from '../world/controls'
 import { useCanvasAspect } from '../world/useCanvasAspect'
 import { getVenue, type VenueId } from '../world/venues'
 import {
+  BLACKJACK_SEAT_IDS,
+  BLACKJACK_SEAT_RADIUS,
+  blackjackSeatFacing,
+  blackjackSeatFromId,
+  blackjackSeatSpot,
+  blackjackStandSpot,
   CAMERA_BOUNDS,
+  CRAPS_PROMPT,
   DEALER_SPOTS,
+  DEFAULT_BLACKJACK_SEAT,
   EXIT_DOOR,
   EXIT_RADIUS,
-  SEATS,
-  SIT_RADII,
-  seatedTarget,
   seatedView,
-  SIT_SPOTS,
   STANDING_TABLES,
   TABLE_FOOTPRINTS,
   TABLE_IDS,
@@ -32,6 +36,7 @@ import { BlackjackTable } from './components/BlackjackTable'
 import { CasinoCharacter } from './components/CasinoCharacter'
 import { CasinoRoom } from './components/CasinoRoom'
 import { CrapsTable } from './components/CrapsTable'
+import { useSharedBlackjack } from '../net/useSharedBlackjack'
 import { useSharedCraps } from '../net/useSharedCraps'
 import { Stool } from './components/Stool'
 import { PLAYER_SEATS } from './tableLayout'
@@ -80,36 +85,34 @@ const DESIRED = new Vector3()
  * Input handling is shared with the walking camera via `useOrbitInput`; only
  * the limits and what it looks at differ.
  */
-function TableCamera({ table }: { table: TableId }) {
+function TableCamera({ table, seat }: { table: TableId; seat: number | null }) {
   const cameraRef = useRef<PerspectiveCameraImpl>(null)
   const defaultCamera = useThree((state) => state.camera)
   const aspect = useCanvasAspect()
-  const portrait = aspect < 1
 
   /*
-   * Which seat is ours, and how many there are.
+   * How many hands are in play.
    *
-   * Only blackjack has seats, and only a shared table has more than one — the
-   * store reports index 0 of 1 for a solo game, which `seatedTarget` treats as
-   * the centre line it has always been.
+   * Only blackjack has seats, and only a shared table has more than one. Which
+   * *stool* the player took comes in as a prop rather than from this store: the
+   * store's `mySeatIndex` is a position among the people playing, and the felt's
+   * spots are indexed by stool — the same distinction `handAnchor` draws, and
+   * for the same reason. A lone player at third base has their cards at third
+   * base, so the camera belongs there too.
    */
-  const mySeatIndex = useBlackjackStore((state) => state.mySeatIndex)
   const seatCount = useBlackjackStore((state) => Math.max(1, state.seatIds.length))
 
-  const localTarget = useMemo(
-    () => seatedTarget(table, mySeatIndex, seatCount, portrait),
-    [table, mySeatIndex, seatCount, portrait],
-  )
-
   const view = useMemo(
-    () => seatedView(table, localTarget, aspect),
-    [table, localTarget, aspect],
+    () => seatedView(table, seat ?? DEFAULT_BLACKJACK_SEAT, seatCount, aspect),
+    [table, seat, seatCount, aspect],
   )
 
   const target = useMemo(() => {
     const [originX, , originZ] = tableOrigin(table)
-    return new Vector3(originX + localTarget[0], localTarget[1], originZ + localTarget[2])
-  }, [table, localTarget])
+    const local = view.target
+
+    return new Vector3(originX + local[0], local[1], originZ + local[2])
+  }, [table, view])
 
   const { orbit } = useOrbitInput(
     { yaw: view.yaw, pitch: view.pitch, distance: view.distance },
@@ -162,12 +165,13 @@ function BlackjackPit() {
 
   return (
     <group position={[x, 0, z]}>
-      {PLAYER_SEATS.map((stool) => (
+      {PLAYER_SEATS.map((stool, seat) => (
         <Stool
           key={`${stool.x}-${stool.z}`}
           position={[stool.x, 0, stool.z]}
-          // Turn each seat to face the middle of the table.
-          rotationY={Math.atan2(-stool.x, -stool.z)}
+          // Turned to the middle of the table, and the player sitting here is
+          // turned by the same function rather than by its own copy of it.
+          rotationY={blackjackSeatFacing(seat)}
         />
       ))}
       <BlackjackTable />
@@ -188,8 +192,11 @@ export function CasinoInterior({ venueId }: CasinoInteriorProps) {
   const appearance = useAppearanceStore((state) => state.appearance)
   const equipped = useAppearanceStore((state) => state.equipped)
   const activeTable = useGameStore((state) => state.activeTable)
+  const activeSeat = useGameStore((state) => state.activeSeat)
   // Where this player stands at the craps rail, and who has the dice.
   const craps = useSharedCraps()
+  // Which stools are spoken for, and whether this player's claim was allowed.
+  const blackjack = useSharedBlackjack()
   const floorPosition = useGameStore((state) => state.floorPosition)
 
   /**
@@ -204,19 +211,41 @@ export function CasinoInterior({ venueId }: CasinoInteriorProps) {
     const store = useGameStore.getState()
 
     if (store.nearbyExit) store.leaveVenue()
-    else if (store.nearbyTable !== null) store.sitAt(store.nearbyTable)
+    else if (store.nearbyTable !== null) {
+      // The stool being stood at, or none for a table you take standing.
+      store.sitAt(store.nearbyTable, store.nearbySeat ?? undefined)
+    }
   })
 
+  /*
+   * One prompt per stool, plus the craps rail and the way out.
+   *
+   * The stools deliberately overlap each other, on the clinic's rule: prompts
+   * along a row cannot be both non-overlapping and gapless, and gapless is what
+   * matters. They all offer the same *kind* of thing and `WalkingPlayer` reports
+   * the nearest, so the row resolves to the stool being walked up to.
+   *
+   * A stool somebody else is on is left off the list entirely. That is the whole
+   * of "only empty seats are available" on this side — the room is what makes it
+   * true when two people reach for the same one at once.
+   */
+  const takenSeats = blackjack.takenSeats
   const targets = useMemo<readonly ProximityTarget[]>(
     () => [
-      ...TABLE_IDS.map((table) => ({
-        id: table as string,
-        position: SIT_SPOTS[table],
-        radius: SIT_RADII[table],
-      })),
+      ...BLACKJACK_SEAT_IDS.flatMap((id, seat) =>
+        takenSeats.has(seat)
+          ? []
+          : [{ id, position: blackjackStandSpot(seat), radius: BLACKJACK_SEAT_RADIUS }],
+      ),
+      {
+        id: TableId.Craps as string,
+        position: CRAPS_PROMPT.center,
+        radius: CRAPS_PROMPT.radius,
+        halfLength: CRAPS_PROMPT.halfLength,
+      },
       { id: 'exit', position: EXIT_DOOR, radius: EXIT_RADIUS },
     ],
-    [],
+    [takenSeats],
   )
 
   /*
@@ -233,13 +262,37 @@ export function CasinoInterior({ venueId }: CasinoInteriorProps) {
     [],
   )
 
+  /*
+   * Where the seated figure stands and which way it looks.
+   *
+   * Both derived from the same stool the furniture is drawn at, rather than
+   * written down a second time here — a player and the stool under them are the
+   * clearest possible case of two constants that must not be allowed to
+   * disagree. Craps takes neither: `railSpot` places it and it faces the felt.
+   */
+  const seatedSpot = blackjackSeatSpot(activeSeat ?? DEFAULT_BLACKJACK_SEAT)
+  const seatedFacing =
+    activeTable === TableId.Craps
+      ? Math.PI
+      : blackjackSeatFacing(activeSeat ?? DEFAULT_BLACKJACK_SEAT)
+
   function handleNearest(id: string | null): void {
     const store = useGameStore.getState()
 
     // The exit offers itself and waits, like every other door in the game. It
     // used to leave on contact, which made crossing the room a hazard.
     store.setNearbyExit(id === 'exit')
-    store.setNearbyTable(id === 'exit' ? null : ((id as TableId | null) ?? null))
+
+    if (id === 'exit' || id === null) {
+      store.setNearbyTable(null)
+      return
+    }
+
+    // A stool names both the table and which place at it; the craps rail names
+    // only the table, because it has no places to choose between.
+    const seat = blackjackSeatFromId(id)
+    if (seat !== -1) store.setNearbyTable(TableId.Blackjack, seat)
+    else store.setNearbyTable(id as TableId, null)
   }
 
   return (
@@ -288,20 +341,32 @@ export function CasinoInterior({ venueId }: CasinoInteriorProps) {
         />
       ) : (
         <>
-          <TableCamera table={activeTable} />
+          <TableCamera
+            table={activeTable}
+            seat={activeTable === TableId.Blackjack ? activeSeat : null}
+          />
           <group
             /*
-             * Craps spreads people along the rail, with whoever holds the dice
-             * at the shooter's end. Everybody used to be put on that one spot,
-             * so two players stood inside each other and neither looked like
-             * the shooter. Blackjack is still a single seat here.
+             * On the stool this player chose, at the spot on the rail the queue
+             * gave them.
+             *
+             * Blackjack used to draw every player on the middle stool whatever
+             * seat they held — which is `SEATS[Blackjack]` — so two people at
+             * one table were rendered inside each other, exactly as craps did
+             * before the rail was spread out.
              */
             position={
               activeTable === TableId.Craps
                 ? [craps.railSpot[0], 0, craps.railSpot[2]]
-                : [SEATS[activeTable][0], 0, SEATS[activeTable][2]]
+                : [seatedSpot[0], 0, seatedSpot[2]]
             }
-            rotation={[0, Math.PI, 0]}
+            /*
+             * Turned to the middle of the table, which is the way the stool
+             * faces. Square to -Z is right for the middle seat and wrong for
+             * every other: at third base you would be sitting side-on to your
+             * own cards, facing the empty end of the felt.
+             */
+            rotation={[0, seatedFacing, 0]}
           >
             {/*
               Standing at craps, seated at blackjack. Nobody sits at a craps

@@ -1,9 +1,22 @@
 import { useFrame } from '@react-three/fiber'
-import { useRef, type ReactNode, type RefObject } from 'react'
-import { DoubleSide, Group, MathUtils } from 'three'
+import { useMemo, useRef, type ReactNode, type RefObject } from 'react'
+import { Group, MathUtils } from 'three'
 import { anchorFor, type Anchor } from '../../character/anchors'
-import { Garment, resolveAppearance, type Appearance } from '../../character/appearance'
+import { resolveAppearance, type Appearance } from '../../character/appearance'
+import {
+  footParts,
+  forearmParts,
+  gripSeat,
+  handParts,
+  ringSeat,
+  shinParts,
+  thighParts,
+  torsoParts,
+  upperArmParts,
+  type BodyOptions,
+} from '../../character/bodyParts'
 import { findItem, ItemShape, Slot, type EquippedItems } from '../../character/catalog'
+import { figurePalette } from '../../character/partPalette'
 import {
   metricsFor,
   PROPORTIONS,
@@ -14,6 +27,12 @@ import { useBlackjackStore } from '../../store/useBlackjackStore'
 import { GESTURES, Gesture, REST_POSE } from '../gestures'
 import { Accessory } from './character/Accessory'
 import { Hair } from './character/Hair'
+import { Parts } from './character/Parts'
+
+/** Mirrors a seat authored on the right hand onto whichever hand wears it. */
+function sideways(seat: readonly [number, number, number], side: 1 | -1): [number, number, number] {
+  return [side * seat[0], seat[1], seat[2]]
+}
 
 /** A gesture and when it started, for a caller driving an arm themselves. */
 export interface ArmSignal {
@@ -21,18 +40,19 @@ export interface ArmSignal {
   readonly startedAt: number
 }
 
-/** Moulded ivory, as the dummies in `art/refs/shop_exterior_wide.png` are. */
-/*
- * Deliberately duller than a shop dummy really is.
+/**
+ * How far the arms hang out from the body at rest.
  *
- * At #ded5c8 the forms were the brightest thing in the shop by a wide margin
- * once each fixture got its own downlight — three white heads pulling the eye
- * off the clothes they exist to show. Still reads as cream through the window
- * from the street, which is the other place these are seen.
+ * The sign matters and was inverted. Rotating a limb about Z by a positive
+ * angle moves a point hanging below the joint toward +x, so the *right* arm
+ * needs a positive roll to swing outward and the left a negative one — and the
+ * rig had exactly the opposite. Both arms swung seven centimetres inward, which
+ * put both hands inside the hips: the figure read as having no hands at all,
+ * and `npm run locate` found them buried rather than missing.
+ *
+ * `REST_POSE.shoulderRoll` in `gestures.ts` has to agree, or the arm pops
+ * across the body the instant a gesture finishes.
  */
-const MANNEQUIN_FORM = '#c6b9a6'
-
-/** Arms rest slightly out from the body rather than clipping through it. */
 const IDLE_ARM_SPLAY = 0.12
 
 /** Dealer stands with both hands forward over the chip rack. */
@@ -85,21 +105,10 @@ interface CasinoCharacterProps {
    * Player and dealer gesture independently — during a split settlement the
    * player rakes in a winning hand while the dealer sweeps the losing one — so
    * each reads its own pair of store fields.
-   *
-   * The figure subscribes imperatively rather than taking a pose prop, so a
-   * gesture animates without re-rendering the whole body every frame.
    */
   gestureSource?: 'player' | 'dealer' | undefined
   /**
    * Drives the right arm directly, instead of from a store.
-   *
-   * `gestureSource` reads `useBlackjackStore`, which is the wrong store for
-   * anyone who is not at a card table — the clinic's nurse has her own timing
-   * and no hand to signal with. Passing the gesture and its start time makes
-   * the arm drivable by any caller. Takes precedence over `gestureSource`.
-   *
-   * Named for the signal rather than the pose because `pose` is already the
-   * local the frame loop resolves it into.
    *
    * A ref rather than a value, for the same reason `speedRef` is one: the frame
    * loop reads it every frame, and a plain prop would be whatever it was at the
@@ -110,7 +119,7 @@ interface CasinoCharacterProps {
 }
 
 /**
- * A low-poly casino figure assembled from primitives.
+ * A casino figure assembled from primitives.
  *
  * Built in code rather than loaded as a rigged model for two reasons. The first
  * is the hand signals: driving named joint groups directly gives exact control
@@ -119,9 +128,12 @@ interface CasinoCharacterProps {
  * hair, garment and a dozen purchasable items combine into far more figures
  * than anyone would export by hand, and every one of them is free here.
  *
- * All measurements come from `character/proportions.ts` and all attachment
- * points from `character/anchors.ts`, both of which are pure and tested. This
- * component decides nothing about where things go; it only draws them.
+ * This component decides nothing about what the figure looks like. Measurements
+ * come from `character/proportions.ts`, attachment points from
+ * `character/anchors.ts`, and — since the rebuild — every shape from
+ * `character/bodyParts.ts`, `hairParts.ts` and `itemParts.ts`. All of those are
+ * pure and asserted. What is left here is the joint hierarchy and the animation
+ * that drives it, which is the part a test cannot hold.
  */
 export function CasinoCharacter({
   appearance,
@@ -135,7 +147,8 @@ export function CasinoCharacter({
   gestureSource,
   armSignal,
 }: CasinoCharacterProps) {
-  const { silhouette, hairStyle, hair, skin, garment, colors } = resolveAppearance(appearance)
+  const resolved = resolveAppearance(appearance)
+  const { silhouette, hairStyle, hair, colors } = resolved
   const body = PROPORTIONS[silhouette]
   const metrics = metricsFor(silhouette)
 
@@ -223,7 +236,7 @@ export function CasinoCharacter({
       )
       shoulderRight.current.rotation.z = MathUtils.lerp(
         shoulderRight.current.rotation.z,
-        driven ? pose.shoulderRoll : -IDLE_ARM_SPLAY,
+        driven ? pose.shoulderRoll : IDLE_ARM_SPLAY,
         rate,
       )
     }
@@ -260,6 +273,55 @@ export function CasinoCharacter({
     held: findItem(equipped?.[Slot.Held]),
   }
 
+  /*
+   * A gown brings its own floor-length skirt, so the starter dress must not
+   * draw a second one underneath it. Anything shorter must not suppress it:
+   * suppressing on *any* outerwear put a jacket over a cocktail dress and left
+   * the character in bare legs.
+   */
+  const options = useMemo<BodyOptions>(
+    () => ({
+      garment: resolved.garment,
+      hasSkirt: colors.hasSkirt,
+      seated,
+      staff,
+      mannequin,
+      suppressSkirt: worn.outerwear?.shape === ItemShape.Gown,
+      // A bought jacket or gown covers the starter garment's shirt and tie.
+      coveredByOuterwear: worn.outerwear !== null,
+      bareArms: worn.outerwear?.shape === ItemShape.Gown,
+      // A solid lens is over them; drawing eyes behind it only invites the two
+      // to fight for the same millimetre of face.
+      eyesCovered: worn.eyes !== null,
+    }),
+    [resolved.garment, colors.hasSkirt, seated, staff, mannequin, worn.outerwear, worn.eyes],
+  )
+
+  const palette = useMemo(() => figurePalette(resolved, mannequin), [resolved, mannequin])
+
+  /*
+   * The arms take the jacket's colour when one is worn.
+   *
+   * Outerwear is a torso item — it has no sleeves of its own, because the arms
+   * are separate animated segments. Left alone, an ivory tuxedo came out ivory
+   * from the waist up and charcoal down both arms, which reads as a waistcoat
+   * over someone else's suit. A gown is the other case and is handled by
+   * `bareArms` above: it is sleeveless, so the arm shows skin.
+   */
+  const armPalette = useMemo(() => {
+    const jacket = worn.outerwear?.shape === ItemShape.Jacket ? worn.outerwear : null
+    if (!jacket) return palette
+
+    return { ...palette, primary: jacket.colors.primary, shirt: palette.shirt }
+  }, [palette, worn.outerwear])
+
+  const torso = useMemo(() => torsoParts(body, options), [body, options])
+  const thigh = useMemo(() => thighParts(body, options), [body, options])
+  const shin = useMemo(() => shinParts(body, options), [body, options])
+  const foot = useMemo(() => footParts(body), [body])
+  const upperArm = useMemo(() => upperArmParts(body, options), [body, options])
+  const forearm = useMemo(() => forearmParts(body, options), [body, options])
+
   /**
    * Rebases a root-frame anchor into the torso group, which sits at the hip.
    *
@@ -273,44 +335,18 @@ export function CasinoCharacter({
     anchor[2],
   ]
 
-  /*
-   * A gown brings its own floor-length skirt, so the starter dress must not
-   * draw a second one underneath it. Anything shorter must not suppress it:
-   * suppressing on *any* outerwear put a jacket over a cocktail dress and left
-   * the character in bare legs.
-   */
-  const wearsSkirt = colors.hasSkirt && worn.outerwear?.shape !== ItemShape.Gown
-  const legColor = colors.hasSkirt ? skin : colors.secondary
-
-  const jacketMaterial = <meshStandardMaterial color={colors.primary} roughness={0.75} />
-  // Shop dummies are one moulded colour throughout, hands and head included.
-  const formColor = mannequin ? MANNEQUIN_FORM : skin
-  const skinMaterial = <meshStandardMaterial color={formColor} roughness={0.8} />
-
   /** One arm, from shoulder to fingertips. Refs are only wired to the right. */
-  const renderArm = (side: 1 | -1) => {
+  const renderArm = (side: 1 | -1): ReactNode => {
     const isLeft = side === -1
 
     return (
       <>
-        <mesh position={[0, -body.upperArm / 2, 0]} castShadow>
-          <capsuleGeometry args={[0.055, body.upperArm - 0.08, 4, 8]} />
-          {jacketMaterial}
-        </mesh>
+        <Parts parts={upperArm} palette={armPalette} namePrefix={`arm${side}`} />
 
         {/* `null` rather than `undefined`: under exactOptionalPropertyTypes an
             explicit undefined ref is not assignable. */}
         <group ref={side === 1 ? elbowRight : null} position={[0, -body.upperArm, 0]}>
-          <mesh position={[0, -body.forearm / 2, 0]} castShadow>
-            <capsuleGeometry args={[0.05, body.forearm - 0.08, 4, 8]} />
-            {jacketMaterial}
-          </mesh>
-
-          {/* Shirt cuff showing past the jacket sleeve. */}
-          <mesh position={[0, -body.forearm + 0.03, 0]}>
-            <cylinderGeometry args={[0.052, 0.052, 0.045, 8]} />
-            <meshStandardMaterial color={colors.shirt} roughness={0.7} />
-          </mesh>
+          <Parts parts={forearm} palette={armPalette} namePrefix={`forearm${side}`} />
 
           {/*
             Worn items go on the left arm on purpose. The right one carries the
@@ -324,33 +360,25 @@ export function CasinoCharacter({
           )}
 
           <group name={`hand:${side === 1 ? 'right' : 'left'}`} position={[0, -body.forearm, 0]}>
-            {/* Palm */}
-            <mesh position={[0, -0.05, 0]}>
-              <boxGeometry args={[0.085, 0.09, 0.05]} />
-              {skinMaterial}
-            </mesh>
-            {/* Index and middle fingers, extended for the tap and V signals. */}
-            {[-0.022, 0.022].map((offset) => (
-              <mesh key={offset} position={[offset, -0.12, 0.012]}>
-                <boxGeometry args={[0.02, 0.06, 0.022]} />
-                {skinMaterial}
-              </mesh>
-            ))}
-            {/* Thumb, tucked across the side of the palm. */}
-            <mesh position={[side * -0.05, -0.075, 0.018]} rotation={[0, 0, side * 0.5]}>
-              <boxGeometry args={[0.019, 0.045, 0.021]} />
-              {skinMaterial}
-            </mesh>
+            <Parts parts={handParts(side, body)} palette={palette} namePrefix={`hand${side}`} />
 
+            {/*
+              Both of these read their seat off `bodyParts.ts` rather than
+              carrying a hand-typed triple. They used to carry one, written
+              against a hand a third smaller than the restyle produced: the
+              signet ring rendered as a white disc in the middle of the palm and
+              the cane's knob sat beside an open hand rather than in it.
+              `anchorFor` is derived from the same two functions, so the tested
+              anchor and the rendered position cannot drift apart.
+            */}
             {isLeft && worn.finger && (
-              // Nudged onto a finger rather than the palm's centre line.
-              <group name="worn:finger" position={[0.022, -0.06, 0.014]}>
+              <group name="worn:finger" position={sideways(ringSeat(body), side)}>
                 <Accessory item={worn.finger} body={body} />
               </group>
             )}
 
             {isLeft && worn.held && (
-              <group name="worn:held" position={[side * 0.06, -0.09, 0.05]}>
+              <group name="worn:held" position={sideways(gripSeat(body), side)}>
                 <Accessory item={worn.held} body={body} />
               </group>
             )}
@@ -360,235 +388,62 @@ export function CasinoCharacter({
     )
   }
 
-  /** One shoe, either the garment's own or a purchased pair. */
   /*
-   * The shoe, positioned relative to the ankle rather than to the knee.
+   * One shoe, either the garment's own or a purchased pair — in the ankle's
+   * frame, not the knee's.
    *
    * The offsets used to carry `-body.shin` so they read from the shin group's
    * own origin, which is the knee. That is fine while the ankle never bends —
    * and the moment it did, rotating the foot swung it through an arc a whole
-   * shin long instead of turning it on the spot, which put both shoes inside the
-   * footrest cushion. Its caller now sits at the ankle, so these are small
-   * numbers about a foot rather than large ones about a leg.
+   * shin long instead of turning it on the spot, which put both shoes inside
+   * the footrest cushion. `footParts` is authored about the ankle for the same
+   * reason, so these are small numbers about a foot rather than large ones
+   * about a leg.
    */
-  const renderShoe = (): ReactNode =>
+  const renderShoe = (side: number): ReactNode =>
     worn.feet ? (
       <group name="worn:feet" position={[0, 0.035, 0.05]}>
         <Accessory item={worn.feet} body={body} />
       </group>
     ) : (
-      <mesh position={[0, 0.02, 0.05]} castShadow>
-        <boxGeometry args={[0.115, 0.07, 0.22]} />
-        <meshStandardMaterial color={colors.shoes} roughness={0.45} />
-      </mesh>
+      <Parts parts={foot} palette={palette} namePrefix={`foot${side}`} />
     )
 
   return (
     <group ref={bodyRef}>
       {/* Legs, jointed at hip and knee so the figure can stand or sit. */}
       {[-1, 1].map((side) => (
-        <group
-          key={side}
-          position={[side * body.hipWidth, hipY, 0]}
-          rotation={[thighPitch, 0, 0]}
-        >
-          <mesh position={[0, -body.thigh / 2, 0]} castShadow>
-            <capsuleGeometry args={[0.095, body.thigh - 0.1, 4, 8]} />
-            <meshStandardMaterial color={legColor} roughness={0.85} />
-          </mesh>
+        <group key={side} position={[side * body.hipWidth, hipY, 0]} rotation={[thighPitch, 0, 0]}>
+          <Parts parts={thigh} palette={palette} namePrefix={`thigh${side}`} />
 
           <group position={[0, -body.thigh, 0]} rotation={[kneePitch, 0, 0]}>
-            <mesh position={[0, -body.shin / 2, 0]} castShadow>
-              <capsuleGeometry args={[0.085, body.shin - 0.1, 4, 8]} />
-              <meshStandardMaterial color={legColor} roughness={0.85} />
-            </mesh>
-            {/* The ankle, which only bends when the leg is laid out. */}
+            <Parts parts={shin} palette={palette} namePrefix={`shin${side}`} />
+
+            {/*
+              A bought pair of shoes replaces the bare foot rather than sitting
+              over it, and both hang off the ankle so they turn with it.
+            */}
             <group position={[0, -body.shin, 0]} rotation={[anklePitch, 0, 0]}>
-              {renderShoe()}
+              {renderShoe(side)}
             </group>
           </group>
         </group>
       ))}
 
       <group position={[0, hipY, 0]}>
-        {/* Torso */}
-        <mesh position={[0, body.torsoHeight / 2, 0]} castShadow>
-          <boxGeometry args={[body.torsoWidth, body.torsoHeight, body.torsoDepth]} />
-          {jacketMaterial}
-        </mesh>
+        <Parts parts={torso} palette={palette} namePrefix="body" />
 
         {/*
-          The starter dress's or skirt's own hem. Suppressed when a gown is
-          equipped, since that item draws a longer one of its own.
+          Hair, in the head's own frame — origin at the centre of the skull.
+          A dummy has none, for the same reason it has no face.
         */}
-        {wearsSkirt && (
-          <mesh position={[0, seated ? -0.06 : -0.16, 0]} castShadow>
-            <cylinderGeometry
-              args={[
-                body.torsoWidth * 0.4,
-                body.torsoWidth * 0.58,
-                seated ? 0.2 : 0.38,
-                14,
-                1,
-                true,
-              ]}
-            />
-            <meshStandardMaterial color={colors.secondary} roughness={0.6} side={DoubleSide} />
-          </mesh>
-        )}
-
-        {/*
-          Shirt panel down the chest — the shirt showing between the lapels.
-          Only the outfits that actually have a shirt under something: on a tee
-          or a dress it reads as a bib stuck to the front of the figure.
-        */}
-        {(garment === Garment.Suit || garment === Garment.ShirtAndSkirt) && (
-          <mesh position={[0, body.torsoHeight * 0.56, body.torsoDepth / 2 + 0.002]}>
-            <boxGeometry args={[0.16, body.torsoHeight * 0.72, 0.012]} />
-            <meshStandardMaterial color={colors.shirt} roughness={0.7} />
-          </mesh>
-        )}
-
-        {/* Lapels and tie belong to the suit, not to a tee or a dress. */}
-        {garment === Garment.Suit && (
-          <>
-            {[-1, 1].map((side) => (
-              <mesh
-                key={side}
-                position={[side * 0.115, body.torsoHeight * 0.7, body.torsoDepth / 2 + 0.008]}
-                rotation={[0, 0, side * 0.28]}
-              >
-                <boxGeometry args={[0.1, 0.26, 0.014]} />
-                <meshStandardMaterial color={colors.primaryTrim} roughness={0.7} />
-              </mesh>
-            ))}
-
-            <mesh position={[0, body.torsoHeight * 0.87, body.torsoDepth / 2 + 0.013]}>
-              <boxGeometry args={[0.045, 0.05, 0.016]} />
-              <meshStandardMaterial color={colors.accent} roughness={0.55} />
-            </mesh>
-            <mesh position={[0, body.torsoHeight * 0.6, body.torsoDepth / 2 + 0.011]}>
-              <boxGeometry args={[0.052, body.torsoHeight * 0.46, 0.012]} />
-              <meshStandardMaterial color={colors.accent} roughness={0.55} />
-            </mesh>
-          </>
-        )}
-
-        {/* Shoulder seams, catching a little more light than the garment body. */}
-        {[-1, 1].map((side) => (
-          <mesh
-            key={side}
-            position={[side * body.torsoWidth * 0.4, body.torsoHeight * 0.93, 0]}
-          >
-            <boxGeometry args={[0.09, 0.05, body.torsoDepth - 0.005]} />
-            <meshStandardMaterial color={colors.primaryTrim} roughness={0.7} />
-          </mesh>
-        ))}
-
-        {/*
-          Back of the garment: a collar band and a centre seam. The player is
-          seen almost entirely from behind, so without these the figure is a
-          featureless dark slab in the foreground.
-        */}
-        <mesh position={[0, body.torsoHeight * 0.93, -body.torsoDepth / 2 - 0.001]}>
-          <boxGeometry args={[body.torsoWidth * 0.72, 0.06, 0.014]} />
-          <meshStandardMaterial color={colors.primaryTrim} roughness={0.7} />
-        </mesh>
-        <mesh position={[0, body.torsoHeight * 0.34, -body.torsoDepth / 2 - 0.001]}>
-          <boxGeometry args={[0.016, body.torsoHeight * 0.55, 0.012]} />
-          <meshStandardMaterial color={colors.primaryTrim} roughness={0.7} />
-        </mesh>
-        {/* Shirt collar showing above the garment at the back of the neck. */}
-        <mesh position={[0, body.torsoHeight + 0.012, -body.torsoDepth * 0.35]}>
-          <boxGeometry args={[0.15, 0.055, 0.05]} />
-          <meshStandardMaterial color={colors.shirt} roughness={0.7} />
-        </mesh>
-
-        {/* House name badge, as worn on the floor. */}
-        {staff && (
-          <mesh position={[-0.13, body.torsoHeight * 0.52, body.torsoDepth / 2 + 0.006]}>
-            <boxGeometry args={[0.07, 0.024, 0.01]} />
-            <meshStandardMaterial color="#d9c48a" roughness={0.4} metalness={0.6} />
-          </mesh>
-        )}
-
-        {/* Shirt collar, two wings either side of the neck. */}
-        {[-1, 1].map((side) => (
-          <mesh
-            key={side}
-            position={[side * 0.055, body.torsoHeight + 0.005, body.torsoDepth * 0.4]}
-            rotation={[0, 0, side * 0.42]}
-          >
-            <boxGeometry args={[0.055, 0.075, 0.03]} />
-            <meshStandardMaterial color={colors.shirt} roughness={0.7} />
-          </mesh>
-        ))}
-
-        {/* Neck and head */}
-        <mesh position={[0, body.torsoHeight + body.neckHeight / 2, 0]}>
-          <cylinderGeometry args={[0.055, 0.06, body.neckHeight + 0.03, 8]} />
-          {skinMaterial}
-        </mesh>
-        <mesh
-          position={[0, body.torsoHeight + body.neckHeight + body.headHeight / 2, 0]}
-          castShadow
-        >
-          <boxGeometry args={[body.headWidth, body.headHeight, body.headDepth]} />
-          {skinMaterial}
-        </mesh>
-
-        {/* Eyes and brows. Small, but they are what stop the head reading as a
-            featureless block at this distance. A dummy wants exactly that
-            featureless block, so it skips the whole face. */}
-        {!mannequin &&
-          [-1, 1].map((side) => {
-          const eyeY = body.torsoHeight + body.neckHeight + body.headHeight * 0.62
-          const faceZ = body.headDepth / 2 + 0.001
-
-          return (
-            <group key={side}>
-              <mesh position={[side * 0.048, eyeY, faceZ]}>
-                <boxGeometry args={[0.038, 0.022, 0.008]} />
-                <meshStandardMaterial color="#f4f2ee" roughness={0.5} />
-              </mesh>
-              <mesh position={[side * 0.048, eyeY, faceZ + 0.005]}>
-                <boxGeometry args={[0.016, 0.018, 0.008]} />
-                <meshStandardMaterial color="#20161a" roughness={0.4} />
-              </mesh>
-              <mesh position={[side * 0.05, eyeY + 0.031, faceZ - 0.001]}>
-                <boxGeometry args={[0.05, 0.014, 0.01]} />
-                <meshStandardMaterial color={hair} roughness={0.9} />
-              </mesh>
-              </group>
-            )
-          })}
-
-        {/* Nose, mouth and hair — all of it skipped on a dummy. */}
         {!mannequin && (
-          <>
-            <mesh
-              position={[
-                0,
-                body.torsoHeight + body.neckHeight + body.headHeight * 0.5,
-                body.headDepth / 2 + 0.007,
-              ]}
-            >
-              <boxGeometry args={[0.026, 0.045, 0.022]} />
-              {skinMaterial}
-            </mesh>
-            <mesh
-              position={[
-                0,
-                body.torsoHeight + body.neckHeight + body.headHeight * 0.28,
-                body.headDepth / 2 + 0.001,
-              ]}
-            >
-              <boxGeometry args={[0.05, 0.011, 0.008]} />
-              <meshStandardMaterial color="#8a4f45" roughness={0.6} />
-            </mesh>
-
+          <group
+            name="hair"
+            position={[0, body.torsoHeight + body.neckHeight + body.headHeight / 2, 0]}
+          >
             <Hair style={hairStyle} color={hair} body={body} />
-          </>
+          </group>
         )}
 
         {/* Worn items that hang off the torso and head. */}
@@ -617,7 +472,7 @@ export function CasinoCharacter({
         <group
           ref={armLeftRef}
           position={[-body.shoulderX, metrics.shoulderYLocal, 0]}
-          rotation={[0, 0, IDLE_ARM_SPLAY]}
+          rotation={[0, 0, -IDLE_ARM_SPLAY]}
         >
           {renderArm(-1)}
         </group>
@@ -625,7 +480,7 @@ export function CasinoCharacter({
         <group
           ref={shoulderRight}
           position={[body.shoulderX, metrics.shoulderYLocal, 0]}
-          rotation={[0, 0, -IDLE_ARM_SPLAY]}
+          rotation={[0, 0, IDLE_ARM_SPLAY]}
         >
           {renderArm(1)}
         </group>

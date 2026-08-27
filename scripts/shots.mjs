@@ -1,6 +1,7 @@
 import { mkdir, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { chromium } from 'playwright-core'
+import { requireQuietMachine } from './machineLoad.mjs'
 
 /**
  * Captures every scene in one run, so a change to one cannot silently break
@@ -23,6 +24,8 @@ import { chromium } from 'playwright-core'
  * a 1600x900 capture, which is why the same twenty-odd scenes are worth
  * rendering twice.
  */
+
+requireQuietMachine('The scene captures')
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const BASE = process.env.SHOTS_BASE_URL ?? 'http://localhost:5180'
@@ -88,6 +91,32 @@ const SCENES = [
   { name: 'broke', path: '/?boot=broke&time=21:00&freeze', settleMs: 1800 },
   { name: 'in-debt', path: '/?boot=debt&time=21:00&freeze', settleMs: 1800 },
   { name: 'designer', path: '/?boot=designer&time=21:00&freeze', settleMs: 2000 },
+  // The back of the designer's figure, which no capture on this project could
+  // reach until `?turn=` existed — and which is where the defects were.
+  { name: 'designer-back', path: '/?boot=designer&turn=180&time=21:00&freeze', settleMs: 2000 },
+
+  /*
+   * The contact sheets: a whole sweep in one frame.
+   *
+   * These exist because the audit they serve was unphotographable. Eight
+   * hairstyles, twelve items, four garments and three builds is roughly three
+   * hundred states, and before `?sheet=` and `?turn=` not one of them could be
+   * reached — there was no deep link for a hairstyle or an item, and `?freeze`
+   * pinned the turntable at rotation zero, so every character capture ever
+   * taken here was a front view. A ponytail shaped like a limb survived that
+   * for months.
+   *
+   * The hair sheets run in platinum on midnight rather than the default jet on
+   * charcoal: jet hair against a dark suit is legible on a screen you can turn
+   * and unreadable in a still, and a regression shot nobody can read is not one.
+   */
+  { name: 'sheet-hair', path: '/?sheet=hair&haircolor=platinum&garmentcolor=midnight&time=21:00&freeze', settleMs: 2600 },
+  { name: 'sheet-hair-back', path: '/?sheet=hair&turn=200&haircolor=platinum&garmentcolor=midnight&time=21:00&freeze', settleMs: 2600 },
+  { name: 'sheet-items', path: '/?sheet=items&time=21:00&freeze', settleMs: 2800 },
+  { name: 'sheet-items-back', path: '/?sheet=items&turn=180&time=21:00&freeze', settleMs: 2800 },
+  { name: 'sheet-garments', path: '/?sheet=garments&time=21:00&freeze', settleMs: 2600 },
+  { name: 'sheet-builds', path: '/?sheet=builds&time=21:00&freeze', settleMs: 2800 },
+  { name: 'sheet-skin', path: '/?sheet=skin&time=21:00&freeze', settleMs: 2800 },
   /*
    * The shop is a room you walk now, so it takes three frames rather than one.
    *

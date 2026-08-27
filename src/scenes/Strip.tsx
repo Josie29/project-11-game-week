@@ -9,7 +9,11 @@ import {
   BUILDING_DEPTH,
   BUILDING_ROWS,
   BUILDING_WIDTH,
+  clearsApproach,
   clearsDoorways,
+  LAMP_HEIGHT,
+  PALM_HEIGHT_LEFT,
+  PALM_HEIGHT_RIGHT,
   FACADE_X,
   hasColonnade,
   LAMP_ROW_Z,
@@ -35,7 +39,7 @@ import { Building } from './components/Building'
 import { Celestial } from './components/Celestial'
 import { ClinicFront } from './components/ClinicFront'
 import { ShopFront } from './components/ShopFront'
-import { VenueDoor } from './components/VenueDoor'
+import { CasinoFront } from './components/CasinoFront'
 import { Player } from './components/Player'
 import { PalmTree, StreetLamp } from './components/StreetProps'
 import { StreetEnd } from './components/StreetEnd'
@@ -345,18 +349,18 @@ export function Strip() {
 
       {PALM_ROW_Z.map((z, index) => (
         <group key={z}>
-          {clearsDoorways(-7.6, z) && (
+          {clearsDoorways(-7.6, z) && clearsApproach(-7.6, z, PALM_HEIGHT_LEFT) && (
             <PalmTree
               position={[-7.6, SIDEWALK_HEIGHT, z]}
-              height={6.4}
+              height={PALM_HEIGHT_LEFT}
               spin={index * 0.8}
               daylight={daylight}
             />
           )}
-          {clearsDoorways(7.6, z - 4) && (
+          {clearsDoorways(7.6, z - 4) && clearsApproach(7.6, z - 4, PALM_HEIGHT_RIGHT) && (
             <PalmTree
               position={[7.6, SIDEWALK_HEIGHT, z - 4]}
-              height={7.1}
+              height={PALM_HEIGHT_RIGHT}
               spin={index * 1.3}
               daylight={daylight}
             />
@@ -366,14 +370,14 @@ export function Strip() {
 
       {LAMP_ROW_Z.map((z) => (
         <group key={z}>
-          {clearsDoorways(-6.6, z) && (
+          {clearsDoorways(-6.6, z) && clearsApproach(-6.6, z, LAMP_HEIGHT) && (
             <StreetLamp
               position={[-6.6, SIDEWALK_HEIGHT, z]}
               neonLevel={neonLevel}
               daylight={daylight}
             />
           )}
-          {clearsDoorways(6.6, z - 6) && (
+          {clearsDoorways(6.6, z - 6) && clearsApproach(6.6, z - 6, LAMP_HEIGHT) && (
             <StreetLamp
               position={[6.6, SIDEWALK_HEIGHT, z - 6]}
               neonLevel={neonLevel}
@@ -392,7 +396,7 @@ export function Strip() {
         if (venue.kind === VenueKind.Clinic) {
           return <ClinicFront key={venue.id} venue={venue} neonLevel={neonLevel} />
         }
-        return <VenueDoor key={venue.id} casino={venue} neonLevel={neonLevel} />
+        return <CasinoFront key={venue.id} casino={venue} neonLevel={neonLevel} />
       })}
 
       <Player />

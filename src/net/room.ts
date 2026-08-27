@@ -38,6 +38,14 @@ export interface RoomHandlers {
   readonly onRolled?: (table: string, roll: { first: number; second: number }) => void
   /** Who holds the dice now, or null when nobody is at the table. */
   readonly onShooter?: (table: string, id: string | null, lineup: readonly string[]) => void
+  /**
+   * Who is in which place at a table, as the room has settled it.
+   *
+   * The authority on seating, and the only one. Two clients can each believe
+   * they took the same stool and no shared rule can separate them; this is the
+   * room's answer, and both of them draw from it.
+   */
+  readonly onSeats?: (table: string, seats: Readonly<Record<number, string>>) => void
   /** The table as somebody else last published it, for a mid-hand arrival. */
   readonly onTableState?: (table: string, value: unknown) => void
   /** A player joined, or their identity changed. */
@@ -51,7 +59,7 @@ export interface RoomHandlers {
   readonly onDeal?: (
     table: string,
     seed: number,
-    bets: readonly { id: string; amount: number }[],
+    bets: readonly { id: string; amount: number; seat: number | null }[],
   ) => void
   /** Somebody acted. Order of arrival is the order every client applies. */
   readonly onAction?: (table: string, id: string, action: string) => void
@@ -72,6 +80,13 @@ export interface LocalIdentity {
   readonly seated: boolean
   /** Which table they are standing at, for the shooter queue. */
   readonly table: TableId | null
+  /**
+   * Which place at that table they are claiming, or null for none.
+   *
+   * A claim, not a fact. The room decides — see `onSeats`, which is the only
+   * thing that says where anybody is actually sitting.
+   */
+  readonly seat: number | null
 }
 
 export interface RoomConnection {
@@ -84,7 +99,7 @@ export interface RoomConnection {
    */
   send: (pose: Pose) => boolean
   /** Tells the room the player sat down or stood up. */
-  setSeated: (seated: boolean, table: TableId | null) => void
+  setSeated: (seated: boolean, table: TableId | null, seat: number | null) => void
   /** Re-announces identity, e.g. after a wardrobe change. */
   announce: (identity: LocalIdentity) => void
   /** Puts a wager in. The room deals once every seat has one. */
@@ -141,6 +156,7 @@ export function joinRoom(
         equipped: current.equipped,
         seated: current.seated,
         table: current.table,
+        seat: current.seat,
       }),
     )
   }
@@ -208,6 +224,33 @@ export function joinRoom(
         return
       }
 
+      case 'seats': {
+        if (typeof message.table !== 'string') return
+
+        /*
+         * Rebuilt key by key rather than passed through.
+         *
+         * It arrives as an object with string keys, from a peer-facing server,
+         * and it is about to decide where figures are drawn. A key that is not
+         * a seat number or a value that is not an id has to vanish here rather
+         * than become a figure standing at seat `NaN`.
+         */
+        const raw = typeof message.seats === 'object' && message.seats !== null
+          ? (message.seats as Record<string, unknown>)
+          : {}
+        const seats: Record<number, string> = {}
+
+        for (const [key, id] of Object.entries(raw)) {
+          const seat = Number(key)
+          if (Number.isInteger(seat) && seat >= 0 && typeof id === 'string' && id.length > 0) {
+            seats[seat] = id
+          }
+        }
+
+        handlers.onSeats?.(message.table, seats)
+        return
+      }
+
       case 'shooter': {
         if (typeof message.table === 'string') {
           const lineup = Array.isArray(message.lineup)
@@ -250,7 +293,17 @@ export function joinRoom(
         const bets = raw
           .map((entry) => entry as Record<string, unknown>)
           .filter((entry) => typeof entry.id === 'string' && Number.isInteger(Number(entry.amount)))
-          .map((entry) => ({ id: entry.id as string, amount: Number(entry.amount) }))
+          .map((entry) => ({
+            id: entry.id as string,
+            amount: Number(entry.amount),
+            /*
+             * Which stool this hand belongs to, so the cards land in front of
+             * the player who bet them. Null for a table with no seats, and for
+             * an older room that does not send it — the felt falls back to
+             * dealing order, which is exactly what it did before seats existed.
+             */
+            seat: Number.isInteger(Number(entry.seat)) ? Number(entry.seat) : null,
+          }))
 
         if (typeof message.table === 'string' && Number.isFinite(seed) && bets.length > 0) {
           handlers.onDeal?.(message.table, seed >>> 0, bets)
@@ -324,10 +377,10 @@ export function joinRoom(
       socket.send(JSON.stringify({ t: 'move', ...pose }))
       return true
     },
-    setSeated: (seated, table) => {
-      current = { ...current, seated, table }
+    setSeated: (seated, table, seat) => {
+      current = { ...current, seated, table, seat }
       if (socket?.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ t: 'seat', seated, table }))
+        socket.send(JSON.stringify({ t: 'seat', seated, table, seat }))
       }
     },
     sendBet: (amount) => {

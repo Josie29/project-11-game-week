@@ -22,6 +22,7 @@ interface JoinMessage {
   readonly equipped?: unknown
   readonly seated?: unknown
   readonly table?: unknown
+  readonly seat?: unknown
 }
 
 interface MoveMessage {
@@ -43,6 +44,19 @@ interface SeatMessage {
    * which game, on the same rule as every other identity field here.
    */
   readonly table?: unknown
+  /**
+   * Which place at that table, claimed rather than assigned.
+   *
+   * The one thing in this file the room genuinely arbitrates, and it has to:
+   * two clients can each believe they took the same stool, and no amount of
+   * agreeing on a rule fixes that — only one of them can be right, and only
+   * something that sees both claims can say which. First claim wins.
+   *
+   * Still not game knowledge. The room does not know what a seat is or how many
+   * a table has; it knows that a place is exclusive and hands back the map of
+   * who holds what.
+   */
+  readonly seat?: unknown
 }
 
 /**
@@ -145,6 +159,15 @@ interface Attachment {
    */
   bet: number | null
   /**
+   * The place at the table this socket holds, or null for none.
+   *
+   * On the attachment with everything else, for the reason this file keeps
+   * repeating: a hibernating object keeps its sockets and loses its memory. A
+   * seat map held in memory would come back empty after the first lull and hand
+   * every stool out twice.
+   */
+  seat: number | null
+  /**
    * Whether this player may take a turn, as they themselves reported it.
    *
    * A bare boolean, and deliberately nothing more. At craps it means "I have a
@@ -175,6 +198,16 @@ const MAX_MESSAGE_BYTES = 4_096
  * what a busy real table looks like too.
  */
 const MAX_AT_TABLE = 8
+
+/**
+ * The highest place number a client may claim.
+ *
+ * Not a statement about how many seats a table has — the room does not know
+ * that, and the client refuses a seat its own table does not have. This is only
+ * what stops a claim being an arbitrary key: an unbounded seat number is an
+ * unbounded map, growing for as long as somebody keeps sending new ones.
+ */
+const MAX_SEAT_INDEX = 8
 
 /**
  * What the room should do when a turn clock runs out.
@@ -260,6 +293,7 @@ export class Room implements DurableObject {
       pose: null,
       tookTableAt: null,
       bet: null,
+      seat: null,
       // Nobody is eligible until they say so, so an empty table hands the dice
       // to nobody rather than to whoever happens to be standing closest.
       canShoot: false,
@@ -286,6 +320,18 @@ export class Room implements DurableObject {
 
     switch (message.t) {
       case 'join': {
+        /*
+         * Captured before the identity is overwritten.
+         *
+         * Every wardrobe change, rename and sitting-down re-announces as a
+         * join, so this is also the path a player takes when they *stand up*:
+         * they arrive here having moved from a table to nothing, and the stool
+         * they were on has to be handed back or nobody can ever use it again.
+         */
+        const previousTable = typeof attachment.identity?.table === 'string'
+          ? attachment.identity.table
+          : null
+
         attachment.identity = {
           name: message.name,
           appearance: message.appearance,
@@ -295,6 +341,15 @@ export class Room implements DurableObject {
           table: typeof message.table === 'string' ? message.table : null,
         }
         attachment.tookTableAt = attachment.identity.table === null ? null : Date.now()
+        /*
+         * The claim is resolved before the welcome goes out, so the map the new
+         * arrival receives already says whether they got the seat they asked
+         * for. Refused, they are simply seatless and their client puts them back
+         * on their feet — the alternative is a client that believes it is sat
+         * down for as long as one round trip takes, which is exactly long enough
+         * to draw two people in one stool.
+         */
+        attachment.seat = this.resolveClaim(ws, attachment, message.seat)
         ws.serializeAttachment(attachment)
 
         // Everyone already here, so the new arrival sees a populated room
@@ -327,6 +382,18 @@ export class Room implements DurableObject {
         }
 
         this.broadcast(ws, { t: 'joined', player: { id: attachment.id, ...attachment.identity } })
+
+        /*
+         * Everyone, including the arrival: the map is what places the figures,
+         * and a client that cannot see it draws a seated player nowhere.
+         *
+         * Both tables when they moved between them, because the one they left
+         * has a stool free that nobody has been told about.
+         */
+        if (typeof joinedTable === 'string') this.announceSeats(joinedTable)
+        if (previousTable !== null && previousTable !== joinedTable) {
+          this.announceSeats(previousTable)
+        }
         return
       }
 
@@ -355,8 +422,13 @@ export class Room implements DurableObject {
           if (table !== attachment.identity.table) {
             attachment.tookTableAt = table === null ? null : Date.now()
           }
+          const previousTable = typeof attachment.identity.table === 'string'
+            ? attachment.identity.table
+            : null
+
           attachment.identity.seated = message.seated === true
           attachment.identity.table = table
+          attachment.seat = this.resolveClaim(ws, attachment, message.seat)
           ws.serializeAttachment(attachment)
           this.broadcast(ws, {
             t: 'seated',
@@ -364,6 +436,11 @@ export class Room implements DurableObject {
             seated: message.seated === true,
             table,
           })
+
+          if (table !== null) this.announceSeats(table)
+          if (previousTable !== null && previousTable !== table) {
+            this.announceSeats(previousTable)
+          }
         }
         return
       }
@@ -469,6 +546,68 @@ export class Room implements DurableObject {
   }
 
   /**
+   * Decides whether a claimed place is this socket's to have.
+   *
+   * First claim wins, and the incumbent is never disturbed: somebody already
+   * sitting down must not be turned out because a second player walked up and
+   * asked for the same stool. The loser gets null and their client puts them
+   * back on their feet, which is the honest outcome — the alternative is two
+   * figures in one chair, each convinced the seat is theirs.
+   *
+   * @param ws The socket claiming.
+   * @param attachment Its attachment, with `identity.table` already current.
+   * @param requested Whatever arrived on the wire.
+   * @returns The place they now hold, or null for none.
+   */
+  private resolveClaim(ws: WebSocket, attachment: Attachment, requested: unknown): number | null {
+    const table = attachment.identity?.table
+    // Not at a table is not seated. Standing up releases by this path.
+    if (typeof table !== 'string') return null
+
+    const seat = Number(requested)
+    if (!Number.isInteger(seat) || seat < 0 || seat > MAX_SEAT_INDEX) return null
+
+    // Already holding it: a re-announce must not read as a fresh claim on a
+    // seat you are sitting in, or every wardrobe change would evict you.
+    if (attachment.seat === seat) return seat
+
+    for (const socket of this.state.getWebSockets()) {
+      if (socket === ws) continue
+
+      const held = socket.deserializeAttachment() as Attachment | null
+      if (held?.identity?.table === table && held.seat === seat) return null
+    }
+
+    return seat
+  }
+
+  /**
+   * Who is in which place at a table, as everybody has to agree it.
+   *
+   * @param table Which table's places.
+   * @param leaving A socket to leave out, for somebody on their way off.
+   *   `webSocketClose` runs while the socket is still in `getWebSockets`, so
+   *   without this the seat map published on a disconnect still has the person
+   *   who just disconnected sitting in it — and the stool is held by a tab that
+   *   is already closed until something else happens to republish the map.
+   */
+  private announceSeats(table: string, leaving?: WebSocket): void {
+    const seats: Record<string, string> = {}
+
+    for (const socket of this.state.getWebSockets()) {
+      if (socket === leaving) continue
+
+      const held = socket.deserializeAttachment() as Attachment | null
+      if (!held?.identity || held.identity.table !== table) continue
+      if (held.seat === null) continue
+
+      seats[String(held.seat)] = held.id
+    }
+
+    this.sendAll({ t: 'seats', table, seats })
+  }
+
+  /**
    * Deals once every occupied seat has staked something.
    *
    * The only place the room waits for the whole table rather than relaying one
@@ -499,16 +638,31 @@ export class Room implements DurableObject {
     await this.armTurnClock(table, 'deal')
   }
 
-  /** Everyone at a table who has staked something this round, in seat order. */
-  private wagersAt(table: string): { id: string; amount: number }[] {
-    const staked: { id: string; amount: number }[] = []
+  /**
+   * Everyone at a table who has staked something this round, in seat order.
+   *
+   * Seat order, not arrival order, and the difference is the whole point of
+   * letting players choose. A table deals from one end round to the other, so
+   * the order the wagers go out in is the order the hands will be played — and
+   * if that is arrival order, the person who sat down first plays first
+   * wherever they happen to be sitting. Somebody at third base would take their
+   * turn before the player at first base, which is not a rule any table has.
+   *
+   * A player with no seat sorts last. That is craps, where there are no seats
+   * and nothing is dealt, and a client that never claimed one.
+   */
+  private wagersAt(table: string): { id: string; amount: number; seat: number | null }[] {
+    const staked: { id: string; amount: number; seat: number | null }[] = []
 
     for (const { id, socket } of this.queueFor(table)) {
       const held = socket.deserializeAttachment() as Attachment | null
-      if (held?.bet !== null && held?.bet !== undefined) staked.push({ id, amount: held.bet })
+      if (held?.bet !== null && held?.bet !== undefined) {
+        staked.push({ id, amount: held.bet, seat: held.seat })
+      }
     }
 
-    return staked
+    // Stable within a seat, so the queue still breaks ties for anyone unseated.
+    return staked.sort((a, b) => (a.seat ?? Infinity) - (b.seat ?? Infinity))
   }
 
   /**
@@ -519,7 +673,10 @@ export class Room implements DurableObject {
    * than sending three hundred and twelve of them — and it keeps the room from
    * ever holding a deck.
    */
-  private async dealRound(table: string, bets: { id: string; amount: number }[]): Promise<void> {
+  private async dealRound(
+    table: string,
+    bets: { id: string; amount: number; seat: number | null }[],
+  ): Promise<void> {
     this.sendAll({ t: 'deal', table, seed: seed32(), bets })
 
     // Cleared as the round starts, so the next gather begins from nobody.
@@ -531,6 +688,9 @@ export class Room implements DurableObject {
       }
     }
 
+    // The betting window has been satisfied rather than run out; leaving it
+    // pending would have it fire into the middle of the hand it just started.
+    await this.clearTurnClock(table, 'deal')
     await this.armTurnClock(table, 'turn')
   }
 
@@ -610,21 +770,73 @@ export class Room implements DurableObject {
   }
 
   /**
-   * Sets the alarm that rolls for a shooter who has gone quiet.
+   * Sets a clock, without disturbing anybody else's.
    *
-   * The alarm is the one thing here that can put the bill above zero, because
-   * it wakes a hibernating object on purpose. It is armed only while somebody
-   * holds the dice and cleared the moment nobody does — an alarm that can be
-   * set at an empty table is a rented server by another route.
+   * A Durable Object has exactly one alarm, and this room runs three kinds of
+   * clock across two tables. Holding "the" alarm as one table and one kind
+   * meant every new clock silently cancelled whatever was already pending —
+   * and, worse, `armRollTimeout` deletes the alarm outright whenever a table
+   * has nobody eligible to shoot, which is *always* true at blackjack.
+   *
+   * That was not theoretical. It shipped, and it read as the bet buttons not
+   * working: one player stakes, the deal window is armed, and the next thing
+   * anybody does at either table — sitting down, changing a jacket, arriving —
+   * re-announces a shooter, deletes the alarm and the table never deals. Not
+   * for thirty seconds. Ever.
+   *
+   * So the deadlines are a map and the alarm is set to the earliest of them.
+   * Each clock owns its own entry and can only ever cancel itself.
    */
   private async armTurnClock(table: string, kind: ExpiryKind): Promise<void> {
     try {
-      await this.state.storage.put('alarmTable', table)
-      await this.state.storage.put('alarmKind', kind)
-      await this.state.storage.setAlarm(Date.now() + ROLL_TIMEOUT_MS)
+      const deadlines = await this.deadlines()
+      deadlines[`${table}:${kind}`] = Date.now() + ROLL_TIMEOUT_MS
+      await this.saveDeadlines(deadlines)
     } catch {
       // Best-effort, like every other storage touch here. Losing the clock
       // costs a stalled seat; letting it throw would cost the whole relay.
+    }
+  }
+
+  /** Every pending clock, keyed `table:kind`. */
+  private async deadlines(): Promise<Record<string, number>> {
+    const stored = await this.state.storage.get('deadlines')
+    return typeof stored === 'object' && stored !== null
+      ? { ...(stored as Record<string, number>) }
+      : {}
+  }
+
+  /**
+   * Writes the clocks back and points the alarm at the soonest.
+   *
+   * Also the one place the alarm is cleared, and it clears it exactly when
+   * nothing is pending. An alarm left armed at an empty table is a rented
+   * server by another route — the cost model here is that a quiet room bills
+   * nothing at all.
+   */
+  private async saveDeadlines(deadlines: Record<string, number>): Promise<void> {
+    const times = Object.values(deadlines)
+
+    if (times.length === 0) {
+      await this.state.storage.delete('deadlines')
+      await this.state.storage.deleteAlarm()
+      return
+    }
+
+    await this.state.storage.put('deadlines', deadlines)
+    await this.state.storage.setAlarm(Math.min(...times))
+  }
+
+  /** Cancels one clock, leaving every other one alone. */
+  private async clearTurnClock(table: string, kind: ExpiryKind): Promise<void> {
+    try {
+      const deadlines = await this.deadlines()
+      if (!(`${table}:${kind}` in deadlines)) return
+
+      delete deadlines[`${table}:${kind}`]
+      await this.saveDeadlines(deadlines)
+    } catch {
+      // As above: a clock that outlives its table fires once and finds nobody.
     }
   }
 
@@ -638,13 +850,13 @@ export class Room implements DurableObject {
      */
     try {
       if (this.shooterAt(table) === null) {
-        await this.state.storage.deleteAlarm()
+        // Only this table's dice clock. It used to delete the alarm outright,
+        // which took the other table's deal window with it.
+        await this.clearTurnClock(table, 'roll')
         return
       }
 
-      await this.state.storage.put('alarmTable', table)
-      await this.state.storage.put('alarmKind', 'roll')
-      await this.state.storage.setAlarm(Date.now() + ROLL_TIMEOUT_MS)
+      await this.armTurnClock(table, 'roll')
     } catch {
       // No alarm. The table still plays; a vanished shooter just holds the dice
       // until somebody reloads.
@@ -659,29 +871,52 @@ export class Room implements DurableObject {
    * absent player had rolled it themselves.
    */
   async alarm(): Promise<void> {
-    let table: unknown = null
+    let deadlines: Record<string, number>
     try {
-      table = await this.state.storage.get('alarmTable')
+      deadlines = await this.deadlines()
     } catch {
       return
     }
-    if (typeof table !== 'string') return
-
-    let kind: unknown = 'roll'
-    try {
-      kind = await this.state.storage.get('alarmKind')
-    } catch {
-      // Fall through on 'roll', which is the older of the two behaviours.
-    }
 
     /*
-     * A turn that ran out, at a table where nobody is waiting on dice.
+     * Everything due, not merely the one that woke us.
      *
-     * The room says only that the clock expired. Each client applies its own
-     * rule — a stand, which can neither bust a hand the player might have kept
-     * nor spend money they did not stake. The room still does not know what
-     * standing is.
+     * The alarm is set to the soonest deadline, so ordinarily exactly one entry
+     * is ready — but two clocks set within a few milliseconds of each other
+     * share a wake-up, and the one not handled would sit there until something
+     * unrelated armed another alarm. A little slack, because an alarm fires
+     * around its time rather than on it.
      */
+    const now = Date.now() + 250
+    const due = Object.keys(deadlines).filter((key) => (deadlines[key] ?? Infinity) <= now)
+
+    for (const key of due) delete deadlines[key]
+
+    // Written back before anything is acted on: a handler that arms a fresh
+    // clock must not have it wiped by this same save.
+    try {
+      await this.saveDeadlines(deadlines)
+    } catch {
+      // The clock is lost either way; the relay carries on.
+    }
+
+    for (const key of due) {
+      const separator = key.lastIndexOf(':')
+      const table = key.slice(0, separator)
+      const kind = key.slice(separator + 1)
+      await this.fireTurnClock(table, kind)
+    }
+  }
+
+  /**
+   * One expired clock.
+   *
+   * The room says only that time ran out. What that means is the client's
+   * business — for a turn it is a stand, which can neither bust a hand the
+   * player might have kept nor spend money they did not stake. The room still
+   * does not know what standing is.
+   */
+  private async fireTurnClock(table: string, kind: string): Promise<void> {
     if (kind === 'deal') {
       // The betting window closed. Deal to whoever backed a hand; the rest sit
       // this one out and can bet again next round.
@@ -738,7 +973,11 @@ export class Room implements DurableObject {
      * `queueFor` by the time this runs and the next player is simply the head.
      */
     const table = attachment.identity?.table
-    if (typeof table === 'string') void this.tableEmptied(table)
+    if (typeof table === 'string') {
+      // Their stool is free, and saying so is what lets the next player take it.
+      this.announceSeats(table, ws)
+      void this.tableEmptied(table)
+    }
   }
 
   /**
@@ -764,7 +1003,11 @@ export class Room implements DurableObject {
 
     try {
       await this.state.storage.delete(`state:${table}`)
-      await this.state.storage.deleteAlarm()
+      // This table's clocks only. Deleting the alarm outright took the other
+      // table's pending deal with it.
+      await this.clearTurnClock(table, 'roll')
+      await this.clearTurnClock(table, 'turn')
+      await this.clearTurnClock(table, 'deal')
     } catch {
       // Best-effort, like every storage touch here. A state that outlives its
       // table is a bad round; a throw here would be a dead relay.

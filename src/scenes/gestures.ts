@@ -35,7 +35,13 @@ export interface GestureDefinition {
 }
 
 /** Arm at rest, hanging at the player's side. */
-export const REST_POSE: ArmPose = { shoulderPitch: 0, shoulderRoll: -0.12, elbowPitch: 0 }
+/*
+ * Roll is positive-outward on the right arm, which is the arm every gesture
+ * here drives. It was negative, which swung the arm across the body rather than
+ * away from it and buried the hand in the hip; every pose below is a delta from
+ * this, so they all inherited the error and all pick up the correction.
+ */
+export const REST_POSE: ArmPose = { shoulderPitch: 0, shoulderRoll: 0.12, elbowPitch: 0 }
 
 /** Smooth 0→1 ramp with zero velocity at both ends. */
 function smoothstep(edge0: number, edge1: number, x: number): number {

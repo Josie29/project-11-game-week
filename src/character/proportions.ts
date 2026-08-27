@@ -11,7 +11,41 @@
  * and longer in the leg, with a shorter torso. Overall height is held level
  * across all three so the follow camera does not need to know which one it is
  * looking at.
+ *
+ * The division between leg and torso is the second stylisation, and it moves
+ * the other way from the first. Anatomically the leg is about 1.6 times the
+ * torso, and at seven and a half heads that reads fine; under a head this large
+ * it reads as a small body on long legs, because the head has taken the space
+ * the torso would have had. Roughly four centimetres came off each leg and went
+ * into every torso.
+ *
+ * The one place this deliberately departs from that sheet is the head. The
+ * sheet is drawn at roughly seven and a half heads, which is life drawing, and
+ * at the size a figure occupies on the strip it reads as a suit with a pebble
+ * on top — there is no room on a 24cm head for a face anyone can see from the
+ * follow camera. `HEADS_TALL` below is the stylisation, and everything else in
+ * this table is derived from it.
  */
+
+/**
+ * How many head-heights tall a figure is.
+ *
+ * Five and a half: a stylised casual-game figure rather than a life study.
+ * This is the single number the whole table hangs off — the head takes its
+ * size from `STANDING_HEIGHT / HEADS_TALL`, and the torso and legs take what
+ * is left. Changing it changes the whole cast.
+ */
+export const HEADS_TALL = 5.5
+
+/**
+ * Total height, held across all three silhouettes.
+ *
+ * The follow camera, the stool height, the door triggers and every table
+ * anchor are tuned against this one number, so it does not move: the
+ * stylisation is spent on how the height is *divided up*, not on how tall
+ * anyone is.
+ */
+export const STANDING_HEIGHT = 1.77
 
 export enum Silhouette {
   Feminine = 'feminine',
@@ -20,11 +54,55 @@ export enum Silhouette {
 }
 
 export interface BodyProportions {
+  /**
+   * Which of the three this is.
+   *
+   * Self-identifying so that anything shaped by the silhouette can be derived
+   * from the body alone. The face is the case that needed it: `torsoParts`
+   * takes a body and what it is wearing, and had no way to ask which figure it
+   * was building — so all three wore one face, and the one control the designer
+   * opens on made no difference above the neck.
+   */
+  readonly silhouette: Silhouette
   readonly thigh: number
   readonly shin: number
   readonly torsoHeight: number
   readonly torsoWidth: number
+  /**
+   * Front to back, at the chest.
+   *
+   * Roughly three quarters of the width on every silhouette, and that ratio is
+   * the point. It was around three fifths, and every torso section was then
+   * squashed by it *again*, so the figure was a vertical plank from armpit to
+   * ankle in profile while the head above it was a solid ellipsoid — which
+   * reads worse than if both had been flat, because the head sets the
+   * expectation the body then fails. Nothing in a front view could show it.
+   */
   readonly torsoDepth: number
+  /**
+   * Half-width at the chest, and at the natural waist.
+   *
+   * These are what make the three builds three *shapes* rather than one shape
+   * at three sizes. They were both fractions of `torsoWidth`, so the only
+   * difference between the masculine figure and the feminine one below the
+   * shoulder was scale — the broad build was the narrow build enlarged, nip and
+   * all, which is not what separates them.
+   *
+   * The masculine figure is a V dropped onto a rectangle: the shoulders reach
+   * well past the chest, the chest is clearly wider than the waist, and the
+   * waist and hip are within a couple of centimetres of each other so there is
+   * no nip below the ribs at all. That last part is what separates *muscular*
+   * from *heavy* — a broad figure with the same hourglass as the narrow one is
+   * simply the narrow one enlarged, which is how the first pass at this came
+   * out. The feminine figure is the opposite in every respect: chest and hip
+   * near enough equal, with a deep nip between them.
+   *
+   * The hip is not here because it is not free: it is `hipWidth` plus the thigh
+   * hanging off it — see `hipRadius` — and a pelvis narrower than its own legs
+   * is a figure whose thighs step out sideways at the hip.
+   */
+  readonly chestWidth: number
+  readonly waistWidth: number
   /**
    * Half the distance between the shoulder joints.
    *
@@ -52,52 +130,61 @@ export interface BodyProportions {
 
 export const PROPORTIONS: Record<Silhouette, BodyProportions> = {
   [Silhouette.Feminine]: {
-    thigh: 0.45,
-    shin: 0.45,
-    torsoHeight: 0.56,
-    torsoWidth: 0.34,
-    torsoDepth: 0.21,
-    shoulderX: 0.212,
-    upperArm: 0.27,
-    forearm: 0.25,
-    hipWidth: 0.095,
-    neckHeight: 0.07,
-    headWidth: 0.19,
-    headHeight: 0.235,
-    headDepth: 0.195,
-    seatedHipY: 0.63,
+    silhouette: Silhouette.Feminine,
+    thigh: 0.415,
+    shin: 0.42,
+    torsoHeight: 0.575,
+    torsoWidth: 0.39,
+    torsoDepth: 0.292,
+    chestWidth: 0.212,
+    waistWidth: 0.148,
+    shoulderX: 0.248,
+    upperArm: 0.24,
+    forearm: 0.222,
+    hipWidth: 0.114,
+    neckHeight: 0.042,
+    headWidth: 0.272,
+    headHeight: 0.322,
+    headDepth: 0.276,
+    seatedHipY: 0.6,
   },
   [Silhouette.Masculine]: {
-    thigh: 0.42,
-    shin: 0.43,
-    torsoHeight: 0.62,
-    torsoWidth: 0.44,
-    torsoDepth: 0.25,
-    shoulderX: 0.262,
-    upperArm: 0.285,
-    forearm: 0.265,
-    hipWidth: 0.115,
-    neckHeight: 0.07,
-    headWidth: 0.2,
-    headHeight: 0.24,
-    headDepth: 0.2,
-    seatedHipY: 0.62,
+    silhouette: Silhouette.Masculine,
+    thigh: 0.378,
+    shin: 0.395,
+    torsoHeight: 0.632,
+    torsoWidth: 0.46,
+    torsoDepth: 0.344,
+    chestWidth: 0.242,
+    waistWidth: 0.204,
+    shoulderX: 0.292,
+    upperArm: 0.25,
+    forearm: 0.23,
+    hipWidth: 0.098,
+    neckHeight: 0.042,
+    headWidth: 0.298,
+    headHeight: 0.318,
+    headDepth: 0.294,
+    seatedHipY: 0.59,
   },
   [Silhouette.Androgynous]: {
-    thigh: 0.43,
-    shin: 0.44,
-    torsoHeight: 0.59,
-    torsoWidth: 0.39,
-    torsoDepth: 0.23,
-    shoulderX: 0.237,
-    upperArm: 0.278,
-    forearm: 0.258,
-    hipWidth: 0.105,
-    neckHeight: 0.07,
-    headWidth: 0.195,
-    headHeight: 0.238,
-    headDepth: 0.198,
-    seatedHipY: 0.625,
+    silhouette: Silhouette.Androgynous,
+    thigh: 0.393,
+    shin: 0.407,
+    torsoHeight: 0.603,
+    torsoWidth: 0.44,
+    torsoDepth: 0.328,
+    chestWidth: 0.22,
+    waistWidth: 0.178,
+    shoulderX: 0.272,
+    upperArm: 0.245,
+    forearm: 0.225,
+    hipWidth: 0.108,
+    neckHeight: 0.042,
+    headWidth: 0.285,
+    headHeight: 0.32,
+    headDepth: 0.285,
+    seatedHipY: 0.595,
   },
 }
 
@@ -214,8 +301,16 @@ export interface BodyMetrics {
   readonly totalHeight: number
 }
 
-/** Shoulders sit this far up the torso; matches the original rig. */
-const SHOULDER_TORSO_FRACTION = 0.86
+/**
+ * Shoulders sit this far up the torso; matches the original rig.
+ *
+ * Exported because the shoulder mass in `bodyParts.ts` has to be centred on
+ * exactly this height. Two constants in two files that quietly disagree is the
+ * trap this project has already been caught by twice — and here the symptom
+ * would be a shoulder floating above the joint the arm actually hangs from,
+ * which is the defect being fixed.
+ */
+export const SHOULDER_TORSO_FRACTION = 0.86
 
 export function metricsFor(silhouette: Silhouette): BodyMetrics {
   const body = PROPORTIONS[silhouette]

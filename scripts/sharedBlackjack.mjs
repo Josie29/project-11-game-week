@@ -1,4 +1,5 @@
 import { chromium } from 'playwright-core'
+import { requireQuietMachine } from './machineLoad.mjs'
 
 /*
  * Two players at one blackjack table, sharing one shoe.
@@ -14,6 +15,11 @@ import { chromium } from 'playwright-core'
  * Usage: node scripts/sharedBlackjack.mjs [baseUrl] [outPng]
  */
 
+// Two browser contexts on a software renderer, which is twice the most CPU-
+// hungry thing in the repository — and the assertions here are about *timing*,
+// so a loaded machine does not merely make it slow.
+requireQuietMachine('The shared blackjack check')
+
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const BASE = process.argv[2] ?? 'http://localhost:5182'
 const browser = await chromium.launch({ executablePath: CHROME })
@@ -24,13 +30,51 @@ const check = (label, ok, detail) => {
   if (!ok) failures.push(label)
 }
 
-async function open(name) {
+/*
+ * Each player takes a *named* stool.
+ *
+ * Without `?seat=` both links claim the same one, the room refuses the second
+ * player and their client stands them up — correct behaviour, and a check that
+ * would then be testing one player and an empty chair.
+ */
+async function open(name, seat) {
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 720 } })).newPage()
-  await page.goto(`${BASE}/?boot=casino&mp=1&time=21:00&freeze`, { waitUntil: 'networkidle' })
+  await page.goto(`${BASE}/?boot=casino&mp=1&seat=${seat}&time=21:00&freeze`, {
+    waitUntil: 'networkidle',
+  })
   await page.waitForSelector('canvas', { timeout: 20000 })
   await page.evaluate((n) => window.appearanceStore.getState().setPlayerName(n), name)
   return page
 }
+
+/*
+ * Stakes by clicking the button a player clicks.
+ *
+ * Deliberately not `sendBet`. This check used to reach past the panel straight
+ * into the presence store, which is exactly why it went on passing while the
+ * buttons themselves did nothing a player could see: a wager placed in a shared
+ * game changes nothing locally until the whole table is in, and nothing said so.
+ *
+ * @param slot 0, 1 or 2 — the $10, $50 and $100 chips.
+ */
+async function stake(page, slot) {
+  const clicked = await page.evaluate((index) => {
+    const button = document.querySelectorAll('.button--chip')[index]
+    if (!button || button.disabled) return false
+    button.click()
+    return true
+  }, slot)
+
+  check(`the $${[10, 50, 100][slot]} chip is clickable`, clicked)
+}
+
+/** What the panel is telling this player right now. */
+const prompt = (page) =>
+  page.evaluate(() => document.querySelector('.table-ui__prompt')?.textContent ?? '')
+
+/** Which stool each player holds, as the room settled it. */
+const seatMap = (page) =>
+  page.evaluate(() => window.presenceStore.getState().seats.blackjack ?? {})
 
 const view = (p) => p.evaluate(() => {
   const g = window.crapsStore ? window.blackjackStore.getState() : null
@@ -44,17 +88,44 @@ const view = (p) => p.evaluate(() => {
   }
 })
 
-const a = await open('Alice')
-const b = await open('Bob')
+// First base and third base, so nobody is sitting on anybody.
+const a = await open('Alice', 0)
+const b = await open('Bob', 4)
 await a.waitForTimeout(4000)
 
-// Both stake. The room deals only once the whole table is in.
-await a.evaluate(() => window.presenceStore.getState().sendBet(25))
+/*
+ * Two players, two stools.
+ *
+ * The bug this whole check exists downstream of: every player was drawn on the
+ * middle stool whatever seat they held, and before a round was dealt a seated
+ * peer had no seat at all — so two people at one table were rendered inside
+ * each other while they chose their stakes.
+ */
+const seats = await seatMap(a)
+const held = Object.keys(seats).sort()
+check('both are seated, on different stools', held.length === 2, JSON.stringify(seats))
+check('and both clients agree who is where', JSON.stringify(seats) === JSON.stringify(await seatMap(b)))
+
+// Both stake, by clicking. The room deals only once the whole table is in.
+await stake(a, 0)
 await a.waitForTimeout(1200)
 const halfway = await view(a)
 check('no deal until every seat has bet', halfway.phase === 'betting', halfway.phase)
 
-await b.evaluate(() => window.presenceStore.getState().sendBet(50))
+/*
+ * ...and the player who staked can see that they did.
+ *
+ * A shared wager goes to the room, so nothing local moves: no chips, no
+ * bankroll change, and the buttons sit there looking untouched. With nothing
+ * said, half a minute of waiting for a slow table is indistinguishable from the
+ * buttons being broken, which is exactly how it was reported.
+ */
+const waiting = await prompt(a)
+check('the panel says the wager is in', waiting.includes('in —'), waiting)
+check('and says who it is waiting for', waiting.includes('waiting for the table'), waiting)
+check('the other player is still asked to bet', (await prompt(b)).includes('Place your bet'))
+
+await stake(b, 1)
 await a.waitForTimeout(2500)
 
 const av = await view(a)
@@ -68,6 +139,18 @@ check('same shoe position', av.shoeIndex === bv.shoeIndex, `${av.shoeIndex} vs $
 check('same cards at every seat', JSON.stringify(av.seats) === JSON.stringify(bv.seats))
 check('seats are distinct hands', JSON.stringify(av.seats[0]) !== JSON.stringify(av.seats[1]))
 check('they hold different seats', av.mySeat !== bv.mySeat, `${av.mySeat} vs ${bv.mySeat}`)
+
+/*
+ * The engine's seats are compact; the stools are not.
+ *
+ * Two players at first base and third base are engine seats 0 and 1, and their
+ * cards belong at felt spots 0 and 4 with three empty spots between them. If
+ * this map were dropped the hands would be dealt into the middle of the table
+ * in front of nobody, which looks perfectly plausible until you notice the
+ * cards are not where the people are.
+ */
+const stools = await a.evaluate(() => window.blackjackStore.getState().seatStools)
+check('each hand knows its own stool', JSON.stringify(stools) === JSON.stringify(held.map(Number)), JSON.stringify(stools))
 
 // Out of turn is refused, identically, on both clients.
 const notMine = av.mySeat === av.active ? b : a

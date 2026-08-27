@@ -326,3 +326,87 @@ export function getBladeTexture(name: string, color: string): Texture {
   bladeCache.set(key, texture)
   return texture
 }
+
+const ACE_WIDTH = 512
+const ACE_HEIGHT = 614
+
+let aceCache: Texture | null = null
+
+/**
+ * The illuminated ace of spades that stands above the Golden Ace's marquee.
+ *
+ * Drawn on transparent ground and cut out with `alphaTest`, because the whole
+ * point of it is the silhouette: a spade on a rectangle is a playing card, and
+ * the reference has the shape itself standing free against the night sky with
+ * the tower visible either side of its shoulders.
+ *
+ * The spade is built from two circles and a triangle rather than a font glyph.
+ * A glyph would depend on a suit character rendering the same way on every
+ * machine, and this is the one piece of signage on the street whose shape *is*
+ * the brand.
+ */
+export function getAceTexture(): Texture {
+  if (aceCache) return aceCache
+
+  const ctx = createContext(ACE_WIDTH, ACE_HEIGHT)
+  const midX = ACE_WIDTH / 2
+
+  /** Traces the spade once, so it can be filled and stroked at three scales. */
+  const spade = (scale: number): void => {
+    const lobeR = 132 * scale
+    const lobeY = 250 * scale + (1 - scale) * 90
+    const tipY = 70 * scale + (1 - scale) * 90
+
+    ctx.beginPath()
+    // Two shoulders...
+    ctx.arc(midX - lobeR * 0.72, lobeY, lobeR, 0, Math.PI * 2)
+    ctx.arc(midX + lobeR * 0.72, lobeY, lobeR, 0, Math.PI * 2)
+    ctx.closePath()
+    ctx.fill()
+
+    // ...a point above them...
+    ctx.beginPath()
+    ctx.moveTo(midX, tipY)
+    ctx.lineTo(midX - lobeR * 1.72, lobeY + lobeR * 0.42)
+    ctx.lineTo(midX + lobeR * 1.72, lobeY + lobeR * 0.42)
+    ctx.closePath()
+    ctx.fill()
+
+    // ...and the stem under it.
+    const stemTop = lobeY + lobeR * 0.5
+    const stemBottom = stemTop + 150 * scale
+    ctx.beginPath()
+    ctx.moveTo(midX - 22 * scale, stemTop)
+    ctx.lineTo(midX + 22 * scale, stemTop)
+    ctx.lineTo(midX + 78 * scale, stemBottom)
+    ctx.lineTo(midX - 78 * scale, stemBottom)
+    ctx.closePath()
+    ctx.fill()
+  }
+
+  // Three concentric spades: a white outer glow edge, a gold band inside it and
+  // a near-black heart, which is exactly how the reference reads.
+  ctx.shadowColor = '#ffe9b0'
+  ctx.shadowBlur = 34
+  ctx.fillStyle = '#fff6dd'
+  spade(1)
+
+  ctx.shadowBlur = 0
+  ctx.fillStyle = '#d8a93c'
+  spade(0.9)
+
+  ctx.fillStyle = '#8c6a1e'
+  spade(0.82)
+
+  ctx.fillStyle = '#120d06'
+  spade(0.74)
+
+  // A gold hairline inside the black, so the middle does not read as a hole.
+  ctx.fillStyle = '#e8c163'
+  spade(0.6)
+  ctx.fillStyle = '#120d06'
+  spade(0.54)
+
+  aceCache = finish(ctx)
+  return aceCache
+}

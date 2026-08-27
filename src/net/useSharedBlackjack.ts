@@ -1,14 +1,32 @@
+import { useEffect, useMemo } from 'react'
 import type { PlayerAction } from '../games/blackjack/types'
 import { TableId } from '../scenes/casinoFloorLayout'
 import { useBlackjackStore } from '../store/useBlackjackStore'
 import { useGameStore } from '../store/useGameStore'
 import { usePresenceStore } from '../store/usePresenceStore'
 import { PlayMode, useSessionStore } from '../store/useSessionStore'
+import { claimRefused, takenSeats } from '../world/seating'
+
+/** Stable empties, so a selector does not return a new object every render. */
+const NO_SEATS: Readonly<Record<number, string>> = {}
+const NO_BETS: Readonly<Record<string, number>> = {}
 
 /** What the blackjack table needs to know about the people sitting at it. */
 export interface SharedBlackjack {
   /** True when the room deals this table, whether or not it is reachable now. */
   readonly shared: boolean
+  /**
+   * Stools somebody else is on, so they are not offered to this player.
+   *
+   * Empty when playing alone, which is what leaves every seat free and every
+   * capture of the room unchanged.
+   */
+  readonly takenSeats: ReadonlySet<number>
+  /** What this player has staked into a round that has not been dealt yet. */
+  readonly pendingBet: number
+  /** How many at the table have staked, and how many are being waited on. */
+  readonly staked: number
+  readonly seatedCount: number
   /** False while the socket is down; the table waits rather than dealing itself. */
   readonly connected: boolean
   /** True while watching a round this player did not bet into. */
@@ -39,8 +57,13 @@ export function useSharedBlackjack(): SharedBlackjack {
   const connected = usePresenceStore((state) => state.connected)
   const sendBet = usePresenceStore((state) => state.sendBet)
   const sendAction = usePresenceStore((state) => state.sendAction)
+  const selfId = usePresenceStore((state) => state.selfId)
+  const seatMap = usePresenceStore((state) => state.seats[TableId.Blackjack] ?? NO_SEATS)
+  const roomBets = usePresenceStore((state) => state.bets[TableId.Blackjack] ?? NO_BETS)
 
   const activeTable = useGameStore((state) => state.activeTable)
+  const activeSeat = useGameStore((state) => state.activeSeat)
+  const standUp = useGameStore((state) => state.standUp)
   const placeWager = useBlackjackStore((state) => state.placeWager)
   const takeAction = useBlackjackStore((state) => state.takeAction)
   const mySeatIndex = useBlackjackStore((state) => state.mySeatIndex)
@@ -70,8 +93,31 @@ export function useSharedBlackjack(): SharedBlackjack {
   // has a turn, because they have no hand to take one with.
   const isMyTurn = !shared || (!spectating && mySeatIndex === activeSeatIndex)
 
+  // Both of these are arithmetic over the room's map, and both live in
+  // `world/seating.ts` so they can be asserted — see the note at its head.
+  const seats = useMemo(() => takenSeats(seatMap, selfId), [seatMap, selfId])
+
+  /*
+   * The room turned the claim down, so put the player back on their feet.
+   *
+   * Left alone, they spend the round drawn inside whoever did get the stool,
+   * holding a panel that will never be given a turn.
+   */
+  const refused = shared && connected && claimRefused(seatMap, activeSeat, selfId)
+
+  useEffect(() => {
+    if (refused) standUp()
+  }, [refused, standUp])
+
+  const pendingBet = selfId === null ? 0 : (roomBets[selfId] ?? 0)
+
   return {
     shared,
+    takenSeats: seats,
+    pendingBet,
+    staked: Object.keys(roomBets).length,
+    // Everyone the room has seated, which is who the deal is waiting on.
+    seatedCount: Object.keys(seatMap).length,
     connected,
     spectating,
     isMyTurn,

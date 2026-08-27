@@ -168,6 +168,11 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
   const canSplitNow = isPlayerTurn && canSplit(game, mySeat) && bankroll >= (current?.bet ?? 0)
   const isBroke = bankroll <= 0 && isBetting
 
+  /** This player's stake is with the room, and the deal is on other people. */
+  const waitingForTable = table.shared && isBetting && table.pendingBet > 0
+  /** A shared table with no room. `wager` refuses; this is what says so. */
+  const offline = table.shared && !table.connected
+
   function handleLeave(): void {
     // Standing up abandons the hand, so clear the table for next time.
     resetRound()
@@ -184,6 +189,7 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
     // 1/2/3 pick a stake, so a hand can be played without touching the mouse.
     onBet: (slot) => {
       const amount = CHIP_DENOMINATIONS[slot]
+      if (waitingForTable || offline) return
       if (isBetting && amount !== undefined && amount <= bankroll) placeWager(amount)
     },
   })
@@ -265,13 +271,37 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
 
       {isBetting && !isBroke && (
           <>
-            <span className="table-ui__prompt">Place your bet</span>
+            {/*
+              What the click did.
+
+              At a shared table a wager is handed to the room and nothing local
+              changes until every seat is in — which can be half a minute, and
+              during which the bankroll does not move, no chips appear and the
+              buttons sit there looking exactly as they did. It read as the
+              buttons being broken, and the fix is to say what is happening:
+              your stake, and who the table is waiting for.
+            */}
+            <span className="table-ui__prompt">
+              {waitingForTable
+                ? `$${table.pendingBet} in — waiting for the table (${table.staked} of ${table.seatedCount})`
+                : offline
+                  ? 'Reconnecting to the table…'
+                  : 'Place your bet'}
+            </span>
             {CHIP_DENOMINATIONS.map((amount, index) => (
               <button
                 key={amount}
                 type="button"
                 className={`button button--chip button--chip-${amount}`}
-                disabled={amount > bankroll}
+                /*
+                 * Dead while the room has the wager, because a second click
+                 * would replace the first rather than adding to it — the room
+                 * holds one stake per player and the last one sent wins.
+                 * Dead while the socket is down for the reason `wager` already
+                 * refuses: betting locally is what forked two players into
+                 * separate games.
+                 */
+                disabled={amount > bankroll || waitingForTable || offline}
                 onClick={() => placeWager(amount)}
               >
                 ${amount} <kbd>{index + 1}</kbd>

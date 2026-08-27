@@ -3,9 +3,14 @@ import { useMemo, useRef } from 'react'
 import type { Group } from 'three'
 import { poseBuffer, usePresenceStore } from '../../store/usePresenceStore'
 import { INTERPOLATION_DELAY_MS, interpolateAt, type RemoteIdentity } from '../../world/presence'
-import { BLACKJACK_ORIGIN, CRAPS_ORIGIN, crapsRailSpot, TableId } from '../casinoFloorLayout'
-import { PLAYER_SEATS } from '../tableLayout'
-import { useBlackjackStore } from '../../store/useBlackjackStore'
+import { type SeatMap, seatOf } from '../../world/seating'
+import {
+  blackjackSeatFacing,
+  blackjackSeatSpot,
+  CRAPS_ORIGIN,
+  crapsRailSpot,
+  TableId,
+} from '../casinoFloorLayout'
 import { CasinoCharacter } from './CasinoCharacter'
 import { Nameplate } from './Nameplate'
 
@@ -24,16 +29,20 @@ import { Nameplate } from './Nameplate'
  *
  * A seated player deliberately sends no poses — that is what keeps the room
  * hibernating and the bill at zero — so there is nothing to interpolate and the
- * figure has to be placed rather than tracked. Their seat is already known from
- * the roster the deal was dealt against, and the stool that goes with it is
- * `PLAYER_SEATS[seat]` in the table's own frame.
+ * figure has to be placed rather than tracked.
+ *
+ * The stool comes from the room's seat map. It used to come from the roster the
+ * *deal* was dealt against, which does not exist until a round is dealt: two
+ * people who had sat down and were still choosing a stake had no seats at all,
+ * so both were drawn at their last walking pose — the patch of carpet beside
+ * the table they had each walked to, one inside the other.
  */
 function seatedAt(
   player: RemoteIdentity,
-  seatIds: readonly string[],
+  seats: SeatMap,
   crapsLineup: readonly string[],
   crapsShooter: string | null,
-): [number, number, number] | null {
+): { at: readonly [number, number, number]; facing: number } | null {
   if (!player.seated) return null
 
   /*
@@ -45,30 +54,39 @@ function seatedAt(
    */
   if (player.table === TableId.Craps) {
     const spot = crapsRailSpot(player.id, crapsShooter, crapsLineup)
-    return [CRAPS_ORIGIN[0] + spot[0], 0, CRAPS_ORIGIN[2] + spot[2]]
+    return {
+      at: [CRAPS_ORIGIN[0] + spot[0], 0, CRAPS_ORIGIN[2] + spot[2]],
+      // Square to the felt, which is the way everybody at the rail faces.
+      facing: Math.PI,
+    }
   }
 
   if (player.table !== TableId.Blackjack) return null
 
-  const seat = seatIds.indexOf(player.id)
-  const stool = seat === -1 ? undefined : PLAYER_SEATS[seat]
-  if (!stool) return null
+  const seat = seatOf(seats, player.id)
+  if (seat === null) return null
 
-  return [BLACKJACK_ORIGIN[0] + stool.x, 0, BLACKJACK_ORIGIN[2] + stool.z]
+  // Turned to the middle of the table, by the same function that turns the
+  // stool and the local player. At third base, square to the dealer seats
+  // somebody side-on to their own cards.
+  return { at: blackjackSeatSpot(seat), facing: blackjackSeatFacing(seat) }
 }
 
 /** Stable empty array, so a selector does not return a new one every render. */
 const NOBODY: readonly string[] = []
 
+/** The same, for a table nobody is sitting at. */
+const NO_SEATS: Readonly<Record<number, string>> = {}
+
 /** One remote figure, moved every frame from its own snapshot buffer. */
 function RemotePlayer({
   player,
-  seatIds,
+  seats,
   crapsLineup,
   crapsShooter,
 }: {
   player: RemoteIdentity
-  seatIds: readonly string[]
+  seats: SeatMap
   crapsLineup: readonly string[]
   crapsShooter: string | null
 }) {
@@ -92,12 +110,11 @@ function RemotePlayer({
      * the seat, which is beside the table rather than at it. Once they are in a
      * seat the seat is the truth.
      */
-    const seat = seatedAt(player, seatIds, crapsLineup, crapsShooter)
+    const seat = seatedAt(player, seats, crapsLineup, crapsShooter)
     if (seat) {
       group.visible = true
-      group.position.set(seat[0], 0, seat[2])
-      // Facing the dealer, which is the way the stool faces.
-      group.rotation.y = Math.PI
+      group.position.set(seat.at[0], 0, seat.at[2])
+      group.rotation.y = seat.facing
       speedRef.current = 0
       return
     }
@@ -148,8 +165,9 @@ function RemotePlayer({
  */
 export function RemotePlayers() {
   const peers = usePresenceStore((state) => state.peers)
-  // Who is in which seat, from the same roster the round was dealt against.
-  const seatIds = useBlackjackStore((state) => state.seatIds)
+  // Who is on which stool, as the room settled it — available from the moment
+  // somebody sits down, rather than only once a round has been dealt.
+  const seats = usePresenceStore((state) => state.seats[TableId.Blackjack] ?? NO_SEATS)
   // Who is at the craps rail, and who has the dice, so the figures line up.
   const crapsLineup = usePresenceStore((state) => state.lineups[TableId.Craps] ?? NOBODY)
   const crapsShooter = usePresenceStore((state) => state.shooters[TableId.Craps] ?? null)
@@ -164,7 +182,7 @@ export function RemotePlayers() {
         <RemotePlayer
           key={player.id}
           player={player}
-          seatIds={seatIds}
+          seats={seats}
           crapsLineup={crapsLineup}
           crapsShooter={crapsShooter}
         />

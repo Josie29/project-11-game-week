@@ -3,7 +3,13 @@ import { DoubleSide, RepeatWrapping } from 'three'
 import { dimHex, lerpHex } from '../../world/timeOfDay'
 import { getFacadeTexture } from '../facadeTexture'
 import { getBladeTexture, getMarqueeTexture } from '../signTexture'
-import { COLONNADE_OFFSETS, COLONNADE_OUT } from '../stripLayout'
+import {
+  COLONNADE_OFFSETS,
+  COLONNADE_OUT,
+  MARQUEE_CENTER_Y,
+  MARQUEE_HEIGHT,
+  MARQUEE_WIDTH,
+} from '../stripLayout'
 
 interface BuildingProps {
   position: readonly [number, number, number]
@@ -226,8 +232,8 @@ export function Building({
             actually looks like in the sun.
           */}
           {daylight > 0.02 && (
-            <mesh position={[litX + facing * 0.02, y + 4.4, z]} rotation={facadeRotation}>
-              <planeGeometry args={[depth * 0.98, depth * 0.245]} />
+            <mesh position={[litX + facing * 0.02, y + MARQUEE_CENTER_Y, z]} rotation={facadeRotation}>
+              <planeGeometry args={[MARQUEE_WIDTH, MARQUEE_HEIGHT]} />
               <meshBasicMaterial
                 color={WASH}
                 transparent
@@ -240,8 +246,8 @@ export function Building({
 
           {/* Marquee across the facade above the entrance. Sized generously and
               hung low, since it is the thing a player reads to find the door. */}
-          <mesh position={[litX, y + 4.4, z]} rotation={facadeRotation}>
-            <planeGeometry args={[depth * 0.98, depth * 0.245]} />
+          <mesh position={[litX, y + MARQUEE_CENTER_Y, z]} rotation={facadeRotation}>
+            <planeGeometry args={[MARQUEE_WIDTH, MARQUEE_HEIGHT]} />
             <meshBasicMaterial
               map={getMarqueeTexture(signName, neonColor)}
               color={signTint}

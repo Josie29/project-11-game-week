@@ -1,51 +1,211 @@
 import { PerspectiveCamera } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
-import { useRef } from 'react'
-import { Group } from 'three'
-import { useAppearanceStore } from '../store/useAppearanceStore'
+import { useMemo, useRef } from 'react'
+import {
+  DoubleSide,
+  Group,
+  MathUtils,
+  PerspectiveCamera as PerspectiveCameraImpl,
+  Vector3,
+} from 'three'
+import { resolveAppearance } from '../character/appearance'
+import { metricsFor } from '../character/proportions'
+import { useAppearanceStore, useFittedEquipped } from '../store/useAppearanceStore'
+import { useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
 import { CasinoCharacter } from './components/CasinoCharacter'
 import { useCanvasAspect } from '../world/useCanvasAspect'
+import { StageLighting } from './components/StageLighting'
+import { useOrbitInput } from './useOrbitInput'
 
 /*
  * The dressing-room stage.
  *
- * Framed to match `art/refs/character_sheet.png`: a flat dark backdrop, even
- * key light from the front, and hot pink and cyan rim lights behind the figure.
- * That combination is what makes a low-poly silhouette readable, and it is the
- * same trick the strip plays with its signage.
- *
  * There is no world here on purpose — no street, no casino, nothing to walk
  * into. The designer is a menu that happens to be rendered in 3D.
+ *
+ * It is a menu you can now pick up and turn, which is the change that matters.
+ * It used to be a fourteen-second turntable you could only watch, and `?freeze`
+ * pinned it at rotation zero — so every capture of a character in this
+ * project's history was taken from the front, and the ponytail that reads as a
+ * limb from behind survived months of regression shots. Drag to orbit, scroll
+ * to zoom, R to reset, and `?turn=` for a capture at a fixed angle.
  */
 
 /** Seconds for one full turn. Slow enough to read the back of an outfit. */
 const TURN_PERIOD = 14
 
+/**
+ * How long after letting go before the turntable picks up again.
+ *
+ * Long enough to study a hat without the figure walking out from under the
+ * cursor, short enough that the stage does not read as having seized. It eases
+ * back in rather than snapping, for the same reason.
+ */
+const IDLE_BEFORE_RESUME_MS = 4000
+
+/** How long the spin takes to come back up to speed once it does resume. */
+const RESUME_RAMP_MS = 1400
+
 const PLINTH_HEIGHT = 0.12
+
+/**
+ * Where the camera looks when it is stood well back, as a fraction of height.
+ *
+ * Just above the waist, so a full-length figure sits centred in frame.
+ */
+const FULL_LENGTH_TARGET = 0.56
+
+/**
+ * Distance at which the camera has finished rising to frame the head.
+ *
+ * Pulling in on a character creator should end up on the face — that is what
+ * the zoom is *for*, and it is the one thing the contact sheets cannot give:
+ * eight figures across a frame leaves each head about forty pixels, enough to
+ * say the hair is there and not enough to say it is right. Below this the look
+ * target is the head; above it, the whole figure.
+ */
+const HEAD_FRAMING_DISTANCE = 2.4
+
+const ORBIT_DEFAULTS = { yaw: 0, pitch: 0.06, distance: 4.3 }
+const ORBIT_LIMITS = {
+  minPitch: -0.45,
+  maxPitch: 0.95,
+  minDistance: 1.5,
+  maxDistance: 7,
+  // Unbounded: the whole point is to be able to walk round the back.
+  yawRange: null,
+}
 
 export function DesignerStage() {
   const appearance = useAppearanceStore((state) => state.appearance)
-  const equipped = useAppearanceStore((state) => state.equipped)
+  /*
+   * What is on the body, borrowed items included.
+   *
+   * It read `equipped` alone, which is why "Change your look" at the shop's
+   * mirror used to strip whatever you were trying on: opening the designer
+   * unmounts the shop, the fitting is handed back, and a gown you were standing
+   * in vanished with no warning. The fitting survives that now, and this shows
+   * it.
+   */
+  const equipped = useFittedEquipped()
+
+  const initialYaw = useGameStore((state) => state.designerYaw)
+  const initialPitch = useGameStore((state) => state.designerPitch)
+  const initialDistance = useGameStore((state) => state.designerDistance)
 
   const turntable = useRef<Group>(null)
   const portrait = useCanvasAspect() < 1
+  const cameraRef = useRef<PerspectiveCameraImpl>(null)
+  const target = useMemo(() => new Vector3(0, 1, 0), [])
+
+  /*
+   * The two heights the camera looks at, read off the figure being shown.
+   *
+   * Typed in, these would be two more constants that quietly disagree with
+   * `proportions.ts` the next time the stylisation moves — which is exactly how
+   * a pair of sunglasses ended up worn on a forehead.
+   */
+  const framing = useMemo(() => {
+    const metrics = metricsFor(resolveAppearance(appearance).silhouette)
+
+    return {
+      full: metrics.totalHeight * FULL_LENGTH_TARGET + PLINTH_HEIGHT,
+      head: metrics.headCenterY + PLINTH_HEIGHT,
+    }
+  }, [appearance])
+
+  /*
+   * The deep links win over the defaults, and are clamped by the same limits
+   * the pointer is. A `?pitch=` outside the orbit's own range would put the
+   * capture somewhere no player can reach, which makes it useless as evidence.
+   */
+  const defaults = useMemo(
+    () => ({
+      yaw: initialYaw,
+      pitch:
+        initialPitch === null
+          ? ORBIT_DEFAULTS.pitch
+          : MathUtils.clamp(initialPitch, ORBIT_LIMITS.minPitch, ORBIT_LIMITS.maxPitch),
+      distance:
+        initialDistance === null
+          ? ORBIT_DEFAULTS.distance
+          : MathUtils.clamp(
+              initialDistance,
+              ORBIT_LIMITS.minDistance,
+              ORBIT_LIMITS.maxDistance,
+            ),
+    }),
+    [initialYaw, initialPitch, initialDistance],
+  )
+  const { orbit, lastInputAt } = useOrbitInput(defaults, ORBIT_LIMITS)
+
+  /** The turntable's own contribution, kept apart from what the pointer set. */
+  const spin = useRef(0)
 
   useFrame((_state, delta) => {
-    if (!turntable.current) return
+    const camera = cameraRef.current
+    if (!camera) return
+
+    const paused = useTimeStore.getState().paused
 
     /*
-     * `?freeze` holds the turntable as well as the clock. Without this every
-     * capture of this scene lands on whatever angle the settle delay happened
-     * to reach, so two runs disagree and the regression check is worthless —
-     * the same reason the clock is freezable.
+     * `?freeze` holds the turntable as well as the clock, and holds it at
+     * whatever `?turn=` asked for rather than at zero. Without this every
+     * capture of this scene lands on the angle the settle delay happened to
+     * reach, so two runs disagree and the regression check is worthless — the
+     * same reason the clock is freezable.
      */
-    if (useTimeStore.getState().paused) {
-      turntable.current.rotation.y = 0
-      return
+    if (paused) {
+      spin.current = 0
+    } else {
+      const idleFor = performance.now() - lastInputAt.current
+
+      if (idleFor > IDLE_BEFORE_RESUME_MS) {
+        // Eases back up to speed instead of snapping into motion.
+        const ramp = Math.min(1, (idleFor - IDLE_BEFORE_RESUME_MS) / RESUME_RAMP_MS)
+        spin.current += ((delta * Math.PI * 2) / TURN_PERIOD) * ramp
+      }
     }
 
-    turntable.current.rotation.y += (delta * Math.PI * 2) / TURN_PERIOD
+    const yaw = orbit.current.yaw + spin.current
+    const { pitch, distance } = orbit.current
+
+    /*
+     * The look target rises as the camera comes in.
+     *
+     * Held at the waist from far away and at the head up close, easing between
+     * the two. Without it, zooming in on a face frames the collarbone and the
+     * head leaves the top of the screen — which is what made every head-level
+     * capture in the character audit a scripted drag rather than a link.
+     */
+    const closeness = MathUtils.clamp(
+      (HEAD_FRAMING_DISTANCE - distance) /
+        (HEAD_FRAMING_DISTANCE - ORBIT_LIMITS.minDistance),
+      0,
+      1,
+    )
+    target.y = MathUtils.lerp(framing.full, framing.head, closeness)
+
+    /*
+     * The camera orbits; the figure stays put.
+     *
+     * Turning the figure instead would turn its plinth and its lighting with
+     * it, and the rim lights are what make a dark garment readable at all.
+     */
+    const horizontal = Math.cos(pitch) * distance
+    camera.position.set(
+      target.x + Math.sin(yaw) * horizontal,
+      target.y + Math.sin(pitch) * distance + 0.15,
+      target.z + Math.cos(yaw) * horizontal,
+    )
+    camera.lookAt(target)
+
+    if (turntable.current) {
+      // Held level: the figure never turns, so a gesture or a hem reads the
+      // same however the camera has been moved.
+      turntable.current.rotation.y = MathUtils.lerp(turntable.current.rotation.y, 0, 0.2)
+    }
   })
 
   return (
@@ -53,28 +213,9 @@ export function DesignerStage() {
       <color attach="background" args={['#0a0714']} />
       <fog attach="fog" args={['#0a0714', 5.5, 12]} />
 
-      {/*
-        Pulled back far enough to fit a 1.8-tall figure with air above and
-        below, and aimed straight down -Z so the character faces the viewer.
-        The figure is offset right rather than the camera left: the control
-        panel occupies the left of the screen, and a centred figure sits behind
-        it.
-      */}
-      <PerspectiveCamera makeDefault position={[0, 1.02, 4.3]} fov={40} />
+      <PerspectiveCamera ref={cameraRef} makeDefault position={[0, 1.02, 4.3]} fov={40} />
 
-      {/* Key light, front and slightly high, so the face is not in shadow. */}
-      {/*
-        Brighter than the strip's rig on purpose. The palette runs to charcoal
-        and midnight, and under street lighting those garments read as one black
-        slab — which makes half the colour swatches look identical in the one
-        place the player is choosing between them.
-      */}
-      <ambientLight intensity={0.7} color="#8a93c8" />
-      <directionalLight position={[1.4, 3.2, 3]} intensity={2.2} castShadow />
-
-      {/* The two rim lights that separate the figure from the backdrop. */}
-      <pointLight position={[-1.9, 1.6, -1.5]} intensity={9} distance={7} color="#ff2d95" />
-      <pointLight position={[1.9, 1.6, -1.5]} intensity={9} distance={7} color="#22e0ff" />
+      <StageLighting />
 
       {/*
         Offset right of centre, because the control panel is on the left.
@@ -82,6 +223,10 @@ export function DesignerStage() {
         Only while it *is* on the left. On a phone the panel is a sheet across
         the bottom and the whole width is the figure's, so the same nudge just
         stands them off to one side of an empty stage.
+
+        The plinth travels with the figure. It stood at the world origin while
+        the offset was on the turntable alone, which put the character beside
+        their own plinth rather than on it.
       */}
       <group position={[portrait ? 0 : 0.48, 0, 0]}>
         <group ref={turntable} position={[0, PLINTH_HEIGHT, 0]}>
@@ -90,7 +235,7 @@ export function DesignerStage() {
 
         {/* Plinth. Gives the figure somewhere to stand and catches the rim light. */}
         <mesh position={[0, PLINTH_HEIGHT / 2, 0]} receiveShadow castShadow>
-          <cylinderGeometry args={[0.62, 0.68, PLINTH_HEIGHT, 32]} />
+          <cylinderGeometry args={[0.62, 0.68, PLINTH_HEIGHT, 40]} />
           <meshStandardMaterial color="#1b1730" roughness={0.6} metalness={0.2} />
         </mesh>
         <mesh position={[0, PLINTH_HEIGHT + 0.002, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -105,10 +250,14 @@ export function DesignerStage() {
         <meshStandardMaterial color="#120d1f" roughness={0.42} metalness={0.35} />
       </mesh>
 
-      {/* Backdrop, far enough back that the fog does most of the work. */}
-      <mesh position={[0, 3, -4.2]}>
-        <planeGeometry args={[24, 12]} />
-        <meshStandardMaterial color="#151030" roughness={0.95} />
+      {/*
+        Backdrop, as a cylinder rather than a plane.
+        The camera can walk all the way round now, and a flat panel behind the
+        figure meant three quarters of that orbit looked out into empty fog.
+      */}
+      <mesh position={[0, 5, 0]}>
+        <cylinderGeometry args={[9, 9, 14, 32, 1, true]} />
+        <meshBasicMaterial color="#171236" side={DoubleSide} />
       </mesh>
     </>
   )

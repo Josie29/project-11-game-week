@@ -1,6 +1,14 @@
 import { createGameFromShoe, createShoe, placeBet } from '../games/blackjack/engine'
 import { PlayerAction, Rank, Suit } from '../games/blackjack/types'
-import { Garment, HairStyle } from '../character/appearance'
+import { Garment, HairStyle, sanitizeAppearance } from '../character/appearance'
+import {
+  appearanceOverrides,
+  hasAppearanceOverride,
+  pitchRadians,
+  turnRadians,
+  wornItems,
+  zoomDistance,
+} from './appearanceLinks'
 import { Silhouette } from '../character/proportions'
 import { useAppearanceStore } from '../store/useAppearanceStore'
 import { useBlackjackStore } from '../store/useBlackjackStore'
@@ -8,7 +16,14 @@ import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
 import { PlayMode, useSessionStore } from '../store/useSessionStore'
 import { useTimeStore } from '../store/useTimeStore'
-import { AISLE_CENTER_X, TableId, WATER_COURT } from '../scenes/casinoFloorLayout'
+import { SLOT_ORDER } from '../character/catalog'
+import {
+  AISLE_CENTER_X,
+  DEFAULT_BLACKJACK_SEAT,
+  isBlackjackSeat,
+  TableId,
+  WATER_COURT,
+} from '../scenes/casinoFloorLayout'
 import {
   displayFor,
   ENTRANCE as SHOP_ENTRANCE,
@@ -152,6 +167,84 @@ function applyWardrobeShortcut(): void {
   }
 }
 
+/**
+ * Honours the appearance deep links: `?build=`, `?hair=`, `?haircolor=`,
+ * `?skin=`, `?garment=`, `?garmentcolor=` and `?wear=`.
+ *
+ * A modifier rather than a `?boot=` of its own, and for the same reason
+ * `?dressed` is one: what needs checking is a given hairstyle or item *in a
+ * given scene*. `?boot=designer&hair=ponytail&turn=180` is the capture that
+ * would have caught the ponytail this rebuild started from, and it is
+ * reachable only by composing the two.
+ *
+ * Items named by `?wear=` are granted rather than bought — the point is to look
+ * at the geometry, not to exercise the bankroll, and `equip` refuses anything
+ * unowned.
+ */
+function applyAppearanceShortcut(): void {
+  const params = new URLSearchParams(window.location.search)
+  if (!hasAppearanceOverride(params)) return
+
+  const wardrobe = useAppearanceStore.getState()
+  wardrobe.completeDesign()
+  wardrobe.setAppearance(
+    sanitizeAppearance({ ...wardrobe.appearance, ...appearanceOverrides(params) }),
+  )
+
+  if (!params.has('wear')) return
+
+  /*
+   * `?wear=` says what is on the figure, not what to add to it.
+   *
+   * It used to grant and equip what it named and leave whatever was already
+   * saved in place, which makes a per-item capture run accumulate: by the
+   * seventh item in an audit sweep the figure was in a hat, sunglasses, heels
+   * and a cane, and every shot after the first was of the wrong subject. A
+   * capture link has to be authoritative about the whole figure or it is not
+   * reproducible, which is the entire point of having one.
+   *
+   * `?wear=` with nothing after it is therefore a valid request: strip the
+   * figure. That is the capture that says what an item is worth wearing.
+   */
+  const wanted = wornItems(params)
+  for (const slot of SLOT_ORDER) {
+    useAppearanceStore.getState().unequip(slot)
+  }
+  useAppearanceStore.getState().clearFitting()
+
+  useAppearanceStore.setState({ owned: [...new Set([...wardrobe.owned, ...wanted])] })
+  for (const id of wanted) {
+    useAppearanceStore.getState().equip(id)
+  }
+}
+
+/**
+ * Honours `?turn=`, `?pitch=` and `?zoom=` by seeding the stage's orbit.
+ *
+ * `?turn=` was the single most overdue line in this file: `?freeze` pinned the
+ * turntable at rotation zero, so every regression capture of a character ever
+ * taken on this project was a front view — and the defect that started the
+ * character rebuild was a ponytail that only reads as wrong from behind.
+ *
+ * `?pitch=` and `?zoom=` are the same lesson learnt again one audit later. Half
+ * of what that audit found is only visible from above the figure, and the head
+ * is forty pixels tall at the stage's default distance, so both angles had to
+ * be reached by scripting a pointer drag and a wheel event against the canvas —
+ * which is a finding nobody can retake from a link.
+ */
+function applyOrbitShortcut(): void {
+  const params = new URLSearchParams(window.location.search)
+
+  const turn = turnRadians(params)
+  if (turn !== null) useGameStore.setState({ designerYaw: turn })
+
+  const pitch = pitchRadians(params)
+  if (pitch !== null) useGameStore.setState({ designerPitch: pitch })
+
+  const zoom = zoomDistance(params)
+  if (zoom !== null) useGameStore.setState({ designerDistance: zoom })
+}
+
 /** Honours `?look=DEGREES` by seeding the walking camera's orbit yaw. */
 function applyLookShortcut(): void {
   const look = new URLSearchParams(window.location.search).get('look')
@@ -278,12 +371,31 @@ function applyTimeShortcut(): void {
 export function applyBootShortcut(): void {
   applyTimeShortcut()
   applyWardrobeShortcut()
+  applyAppearanceShortcut()
+  applyOrbitShortcut()
   applyLookShortcut()
   applyTiltShortcut()
 
   const params = new URLSearchParams(window.location.search)
   const boot = params.get('boot')
   if (!boot) return
+
+  /**
+   * Which stool a blackjack link sits the player at. `?seat=`.
+   *
+   * Defaults to the one a lone player has always taken, so every existing
+   * capture frames exactly what it framed before seats could be chosen.
+   *
+   * It exists because two players at one table is now something that can be
+   * photographed and otherwise could not be: every `?boot=` link claims the
+   * same stool, the room refuses the second player, and the capture comes back
+   * as one player beside an empty chair — which is correct behaviour and a
+   * useless picture.
+   */
+  function bootSeat(search: URLSearchParams): number {
+    const seat = Number(search.get('seat'))
+    return isBlackjackSeat(seat) ? seat : DEFAULT_BLACKJACK_SEAT
+  }
 
   const known = [
     'welcome',
@@ -581,7 +693,7 @@ export function applyBootShortcut(): void {
     useAppearanceStore.getState().completeDesign()
     useGameStore.setState({ bankroll: 0, debt: 0 })
     useGameStore.getState().enterVenue(VenueId.GoldenAce)
-    useGameStore.getState().sitAt(TableId.Blackjack)
+    useGameStore.getState().sitAt(TableId.Blackjack, bootSeat(params))
     return
   }
 
@@ -591,7 +703,7 @@ export function applyBootShortcut(): void {
     useAppearanceStore.getState().completeDesign()
     useGameStore.setState({ bankroll: 0, debt: MARKER_AMOUNT })
     useGameStore.getState().enterVenue(VenueId.GoldenAce)
-    useGameStore.getState().sitAt(TableId.Blackjack)
+    useGameStore.getState().sitAt(TableId.Blackjack, bootSeat(params))
     return
   }
 
@@ -661,7 +773,7 @@ export function applyBootShortcut(): void {
     return
   }
 
-  useGameStore.getState().sitAt(TableId.Blackjack)
+  useGameStore.getState().sitAt(TableId.Blackjack, bootSeat(params))
 
   if (boot === 'split') {
     // Stack a pair of eights against a dealer sixteen, then let the rest of the

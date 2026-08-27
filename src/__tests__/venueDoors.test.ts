@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
+  BLACKJACK_SEAT_COUNT,
+  BLACKJACK_SEAT_RADIUS,
+  blackjackStandSpot,
+  CRAPS_PROMPT,
+  crapsPromptGap,
   EXIT_DOOR as CASINO_EXIT,
   EXIT_RADIUS as CASINO_EXIT_RADIUS,
-  SIT_RADII,
-  SIT_SPOTS,
-  TABLE_IDS,
+  isInside,
+  TABLE_FOOTPRINTS,
+  TableId,
   WALK_BOUNDS as CASINO_BOUNDS,
 } from '../scenes/casinoFloorLayout'
 import {
@@ -42,6 +47,24 @@ function gap(a: readonly number[], b: readonly number[]): number {
   return Math.hypot((a[0] ?? 0) - (b[0] ?? 0), (a[2] ?? 0) - (b[2] ?? 0))
 }
 
+/**
+ * The same, for a target stretched along x.
+ *
+ * Mirrors what `WalkingPlayer` actually measures, so a prompt asserted here to
+ * be clear of something is clear of it at runtime too. `halfLength` of zero is
+ * a circle, which is every prompt but one.
+ */
+function promptGap(
+  point: readonly number[],
+  target: { at: readonly number[]; halfLength?: number },
+): number {
+  const along = Math.max(
+    0,
+    Math.abs((point[0] ?? 0) - (target.at[0] ?? 0)) - (target.halfLength ?? 0),
+  )
+  return Math.hypot(along, (point[2] ?? 0) - (target.at[2] ?? 0))
+}
+
 /** How close a point can come to a room's walk bounds. */
 function reachDistance(
   point: readonly number[],
@@ -76,9 +99,33 @@ describe('the way out of a room', () => {
       exit: CASINO_EXIT,
       radius: CASINO_EXIT_RADIUS,
       bounds: CASINO_BOUNDS,
-      // Per table: craps reaches much further than blackjack, because you play
-      // it standing anywhere along five metres of rail.
-      seats: TABLE_IDS.map((table) => ({ at: SIT_SPOTS[table], radius: SIT_RADII[table] })),
+      /*
+       * Five stools and the craps rail.
+       *
+       * The stools are on this list individually because they are chosen
+       * individually — you walk up to the one you want. They may overlap each
+       * other, which is the clinic's rule and the reason the row is gapless;
+       * they may not overlap the rail or the door, which offer other things
+       * entirely.
+       *
+       * The rail carries a `halfLength`, because it is five metres of table
+       * rather than a spot, and a circle wide enough to cover it necessarily
+       * bulged that far past both ends as well — across the floor in front of
+       * the third-base stool, which is how walking up to a blackjack seat came
+       * to offer craps.
+       */
+      seats: [
+        ...Array.from({ length: BLACKJACK_SEAT_COUNT }, (_, seat) => ({
+          at: blackjackStandSpot(seat),
+          radius: BLACKJACK_SEAT_RADIUS,
+          halfLength: 0,
+        })),
+        {
+          at: CRAPS_PROMPT.center,
+          radius: CRAPS_PROMPT.radius,
+          halfLength: CRAPS_PROMPT.halfLength,
+        },
+      ],
     },
     {
       name: 'clinic',
@@ -132,7 +179,7 @@ describe('the way out of a room', () => {
     for (const room of rooms) {
       for (const seat of room.seats) {
         expect(
-          gap(room.exit, seat.at),
+          promptGap(room.exit, seat),
           `${room.name}: the exit and a seat are both on offer somewhere`,
         ).toBeGreaterThan(room.radius + seat.radius)
       }
@@ -151,6 +198,65 @@ describe('the way out of a room', () => {
 
     const wasRadius = 3
     expect(nearestSeat).toBeLessThan(wasRadius + CLINIC_SIT_RADIUS)
+  })
+
+  /*
+   * A stool and the craps rail offer different things, so they must not both
+   * be in range anywhere.
+   *
+   * This is the assertion the whole shape of the craps prompt exists for. The
+   * blackjack seats used to be one spot far out at x = -7.5, so nothing ever
+   * came near craps; spreading them across five stools puts third base within
+   * two and a half metres of the rail, and craps was a 3.2 circle centred at
+   * the shooter's end. Walking up to that stool was offered the wrong game.
+   */
+  it('never offers a blackjack stool and the craps rail at once', () => {
+    for (let seat = 0; seat < BLACKJACK_SEAT_COUNT; seat++) {
+      const stand = blackjackStandSpot(seat)
+
+      expect(
+        crapsPromptGap(stand[0], stand[2]),
+        `seat ${seat} stands inside the craps prompt`,
+      ).toBeGreaterThan(CRAPS_PROMPT.radius + BLACKJACK_SEAT_RADIUS)
+    }
+  })
+
+  /*
+   * ...and it has teeth. The circle craps used to carry fails it, which is what
+   * says the assertion above is measuring something rather than passing because
+   * everything is far apart anyway.
+   */
+  it('would reject the prompt shape that caused it', () => {
+    const wasSpot = [-2.4, 0, 3.2] as const
+    const wasRadius = 3.2
+
+    const nearest = Math.min(
+      ...Array.from({ length: BLACKJACK_SEAT_COUNT }, (_, seat) =>
+        gap(wasSpot, blackjackStandSpot(seat)),
+      ),
+    )
+
+    expect(nearest).toBeLessThan(wasRadius + BLACKJACK_SEAT_RADIUS)
+  })
+
+  /*
+   * Every stool has to be reachable, or it is a seat that cannot be taken.
+   *
+   * The table's own footprint is what the player is pushed out of, so a prompt
+   * that only reaches inside it can never fire — and the outer stools sit on an
+   * ellipse that curves back toward the room, which is exactly where an arc of
+   * prompts would have put them.
+   */
+  it('leaves every stool standable', () => {
+    for (let seat = 0; seat < BLACKJACK_SEAT_COUNT; seat++) {
+      const [x, , z] = blackjackStandSpot(seat)
+
+      expect(isInside(TABLE_FOOTPRINTS[TableId.Blackjack], x, z), `seat ${seat}`).toBe(false)
+      expect(x).toBeGreaterThanOrEqual(CASINO_BOUNDS.minX)
+      expect(x).toBeLessThanOrEqual(CASINO_BOUNDS.maxX)
+      expect(z).toBeGreaterThanOrEqual(CASINO_BOUNDS.minZ)
+      expect(z).toBeLessThanOrEqual(CASINO_BOUNDS.maxZ)
+    }
   })
 
   /*

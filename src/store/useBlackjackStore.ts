@@ -83,9 +83,25 @@ interface BlackjackStore {
   mySeatIndex: number
   /** Who is in which seat this round, in seat order, from the room's deal. */
   seatIds: readonly string[]
+  /**
+   * Which stool each dealt hand belongs to, in the same order as `seatIds`.
+   *
+   * The engine's seats are compact — only the people who bet get one — and the
+   * stools are not: two players can be sat at first base and third base with
+   * three empty stools between them. This is the map between the two, and it is
+   * what puts a hand on the felt in front of the person who staked it.
+   *
+   * Null entries mean a table with no stools, or a room too old to say. The
+   * felt falls back to dealing order, which is what it did before seats.
+   */
+  seatStools: readonly (number | null)[]
 
   /** Starts a shared round: one shoe from the room's seed, one wager per seat. */
-  applyDeal: (seed: number, bets: readonly { id: string; amount: number }[], selfId: string | null) => void
+  applyDeal: (
+    seed: number,
+    bets: readonly { id: string; amount: number; seat: number | null }[],
+    selfId: string | null,
+  ) => void
   /** Applies somebody's action, refusing it if it is not their turn. */
   applyAction: (senderId: string, action: PlayerAction) => void
   /** The turn clock ran out. Stand, which can neither bust nor spend. */
@@ -353,12 +369,14 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
 
     mySeatIndex: 0,
     seatIds: [],
+    seatStools: [],
 
     applyDeal: (seed, bets, selfId) => {
       cancelPending()
       cancelReveal()
 
       const seatIds = bets.map((bet) => bet.id)
+      const seatStools = bets.map((bet) => bet.seat)
 
       /*
        * `-1` when this player did not back a hand: they watch the round.
@@ -386,6 +404,7 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
       set({
         game: dealt,
         seatIds,
+        seatStools,
         mySeatIndex,
         roundId: get().roundId + 1,
         activeGesture: Gesture.PushChips,

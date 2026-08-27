@@ -18,6 +18,7 @@ import {
   seatedTarget,
   seatedView,
   TABLE_IDS,
+  TableId,
   waterfallHeadroom,
   waterfallSubtendedAngle,
 } from '../scenes/casinoFloorLayout'
@@ -30,6 +31,7 @@ import {
   mirrorSubtendedAngle,
 } from '../scenes/shopLayout'
 import { CHAIR_FOV, chairFov, chairSubtendedAngle } from '../scenes/clinicLayout'
+import { CENTER_SEAT, SEAT_SPOTS } from '../scenes/tableLayout'
 
 const degrees = (radians: number): number => (radians * 180) / Math.PI
 
@@ -172,10 +174,10 @@ describe('the desktop game is untouched', () => {
       expect(chairFov(aspect), `chair camera at aspect ${aspect}`).toBe(CHAIR_FOV)
 
       for (const table of TABLE_IDS) {
-        const target = seatedTarget(table, 0, 1, false)
-        expect(seatedView(table, target, aspect), `${table} seat at aspect ${aspect}`).toEqual(
-          SEATED_VIEW[table],
-        )
+        expect(
+          seatedView(table, CENTER_SEAT, 1, aspect),
+          `${table} seat at aspect ${aspect}`,
+        ).toMatchObject(SEATED_VIEW[table])
       }
     }
   })
@@ -222,13 +224,58 @@ describe('every hero subject fits on a phone', () => {
    */
   it('holds what is played on at both tables', () => {
     for (const table of TABLE_IDS) {
-      const target = seatedTarget(table, 0, 1, true)
-      const view = seatedView(table, target, PORTRAIT_ASPECT)
+      const view = seatedView(table, CENTER_SEAT, 1, PORTRAIT_ASPECT)
 
       expect(view.fov, `${table} needs a fish-eye`).toBeLessThan(MAX_FOV)
 
-      const subject = subtendedAngle(seatedCameraAt(view, target), seatedSubject(table))
+      const subject = subtendedAngle(
+        seatedCameraAt(view, view.target),
+        seatedSubject(table, CENTER_SEAT, 1),
+      )
       expect(fits(subject, view.fov), `${table} play area is cropped`).toBe(true)
     }
+  })
+
+  /*
+   * The same assertion from every stool at a full table, which is the case the
+   * portrait shot exists for and the one the middle seat cannot stand in for.
+   *
+   * A shot aimed at the centre of the felt holds a lone player's hands whatever
+   * it does with the seats; a player at first base is a metre and three quarters
+   * off that centre line, and on a screen holding about a third of the table
+   * that is the difference between reading your own cards and watching somebody
+   * else's. Nothing else would fail if `seatedTarget` stopped following the
+   * stool — the middle seat is where it makes no difference.
+   */
+  it('holds every stool at a full blackjack table', () => {
+    for (let stool = 0; stool < SEAT_SPOTS.length; stool += 1) {
+      const view = seatedView(TableId.Blackjack, stool, SEAT_SPOTS.length, PORTRAIT_ASPECT)
+
+      expect(view.fov, `stool ${stool} needs a fish-eye`).toBeLessThan(MAX_FOV)
+
+      const subject = subtendedAngle(
+        seatedCameraAt(view, view.target),
+        seatedSubject(TableId.Blackjack, stool, SEAT_SPOTS.length),
+      )
+      expect(fits(subject, view.fov), `stool ${stool} is cropped`).toBe(true)
+    }
+  })
+
+  /*
+   * And that it actually moves. The fit assertions above pass on a camera that
+   * ignores the stool entirely — the box it fits would simply be somewhere else
+   * in the frame, still inside it — so this is what says the shot is over the
+   * player's own spot rather than merely containing it.
+   */
+  it('follows the stool, further on a phone than on a desktop', () => {
+    const spot = SEAT_SPOTS[0]!
+    const centre = seatedTarget(TableId.Blackjack, CENTER_SEAT, 1, true)[0]
+
+    const phone = seatedTarget(TableId.Blackjack, 0, SEAT_SPOTS.length, true)[0]
+    const desktop = seatedTarget(TableId.Blackjack, 0, SEAT_SPOTS.length, false)[0]
+
+    expect(phone).toBeCloseTo(spot.x)
+    expect(desktop).toBeGreaterThan(phone)
+    expect(desktop).toBeLessThan(centre)
   })
 })

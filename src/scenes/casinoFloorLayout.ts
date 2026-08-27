@@ -19,8 +19,13 @@ import {
   subtendedAngle,
 } from '../world/camera'
 import {
+  CENTER_SEAT,
   CHIP_ROW_Z,
   DEALER_ROW_Z,
+  ownsTheFelt,
+  PLAYER_SEATS,
+  SEAT_CHIP_GAP,
+  SEAT_SPLIT_OFFSET,
   SEAT_SPOTS,
   SPLIT_OFFSET,
   TABLE_TOP_Y as FELT_TOP_Y,
@@ -74,36 +79,172 @@ export const TABLE_FOOTPRINTS: Record<TableId, Footprint> = {
   [TableId.Craps]: { minX: -2.85, maxX: 2.85, minZ: -2.0, maxZ: 2.0 },
 }
 
+/* --------------------------------------------------- the blackjack seats */
+
 /**
- * Where you stand to be offered a place, on each table's player side.
+ * How many places the blackjack table has: one per stool, and no more.
+ *
+ * Derived from the stools rather than chosen beside them, because a table with
+ * six places and five stools is a player sitting on the floor. This is also
+ * what caps the table — the room allows more sockets than that, and a sixth
+ * player has nowhere to be put.
+ */
+export const BLACKJACK_SEAT_COUNT = PLAYER_SEATS.length
+
+/**
+ * The stool a lone player takes.
+ *
+ * The centre one, because that is where every solo player has sat since the
+ * table was single-player. Every `?boot=` link claims it, so every capture of a
+ * hand still frames exactly what it framed before seats could be chosen.
+ *
+ * Taken from the felt rather than restated: `CENTER_SEAT` is the stool whose
+ * betting spot is on the centre line, and that is the whole reason a lone
+ * player there can be dealt across the width of the table. Two numbers here
+ * would let the default seat and the only seat the solo layout fits drift apart.
+ */
+export const DEFAULT_BLACKJACK_SEAT = CENTER_SEAT
+
+/** Proximity ids, one per stool, in the order they play. */
+export const BLACKJACK_SEAT_IDS: readonly string[] = Array.from(
+  { length: BLACKJACK_SEAT_COUNT },
+  (_, index) => `blackjack-seat-${index}`,
+)
+
+/** The seat a proximity id names, or -1 when it names something else. */
+export function blackjackSeatFromId(id: string): number {
+  return BLACKJACK_SEAT_IDS.indexOf(id)
+}
+
+/**
+ * Whether a seat index is one this table actually has.
+ *
+ * Total, because a seat index arrives off the wire like everything else a peer
+ * sends: a claim on seat 900 has to read as no claim rather than as a hole in
+ * the seat map.
+ */
+export function isBlackjackSeat(seat: unknown): seat is number {
+  return typeof seat === 'number' && Number.isInteger(seat) && seat >= 0 && seat < BLACKJACK_SEAT_COUNT
+}
+
+/** Clamps anything into a seat this table has. */
+function clampSeat(seat: number): number {
+  return isBlackjackSeat(seat) ? seat : DEFAULT_BLACKJACK_SEAT
+}
+
+/** Where a given stool stands, in world space. */
+export function blackjackSeatSpot(seat: number): readonly [number, number, number] {
+  const stool = PLAYER_SEATS[clampSeat(seat)]!
+  return [BLACKJACK_ORIGIN[0] + stool.x, 0, BLACKJACK_ORIGIN[2] + stool.z]
+}
+
+/**
+ * How far back from the table the player stands to be offered a stool.
+ *
+ * A straight row rather than the arc the stools sit on. The stools follow the
+ * felt's ellipse, and the floor behind them does not: an arc of prompts puts
+ * the outer two inside the table's own footprint, which is precisely the floor
+ * the player is pushed out of, so those two seats could never be offered at all.
+ *
+ * The value is the spot blackjack has always used, so the centre seat's
+ * approach — and everything tuned against it, including the walkthrough — is
+ * where it was.
+ */
+export const BLACKJACK_STAND_Z = 4.3
+
+/**
+ * Which way a stool faces: at the middle of the table.
+ *
+ * The player sitting on it takes the same value rather than its own, because a
+ * figure and the chair under it facing different ways is exactly the kind of
+ * thing two hand-written numbers eventually do. Square to the dealer is right
+ * for the middle seat only — at third base it seats the player side-on to their
+ * own cards, looking down the empty end of the felt.
+ */
+export function blackjackSeatFacing(seat: number): number {
+  const stool = PLAYER_SEATS[clampSeat(seat)]!
+  /*
+   * Negating a zero gives `-0`, and `atan2(-0, -z)` is -π where `atan2(0, -z)`
+   * is +π. The same rotation either way, but the middle seat is the one every
+   * capture of a hand was taken against and it should keep returning the exact
+   * value that shipped rather than its negative twin.
+   */
+  const towardCenterX = stool.x === 0 ? 0 : -stool.x
+  return Math.atan2(towardCenterX, -stool.z)
+}
+
+/** Where the player stands to be offered a given stool. */
+export function blackjackStandSpot(seat: number): readonly [number, number, number] {
+  const stool = PLAYER_SEATS[clampSeat(seat)]!
+  return [BLACKJACK_ORIGIN[0] + stool.x, 0, BLACKJACK_STAND_Z]
+}
+
+/**
+ * Wide enough that the row of stools has no dead patches between them.
+ *
+ * The clinic's recliners again, and deliberately overlapping for the same
+ * reason: circular prompts along a row cannot be both non-overlapping and
+ * gapless, and gapless is what matters. `WalkingPlayer` reports the nearest, so
+ * a point between two stools resolves to the one being walked up to.
+ *
+ * Overlap is only safe between prompts offering the *same* kind of thing. A
+ * stool and the craps rail offer different things, and `venueDoors.test.ts`
+ * keeps those apart.
+ */
+export const BLACKJACK_SEAT_RADIUS = 1.05
+
+/**
+ * Where you stand to be offered a place at craps, as a *segment*.
+ *
+ * A circle is the wrong shape for five metres of table. Sized as one it needed
+ * a 3.2 radius to be walkable into anywhere along its length — and a 3.2 circle
+ * at the shooter's end reaches two metres past the end of the table, across the
+ * floor in front of the blackjack table's third-base stool. Walking up to that
+ * stool was offered craps. Measured to the rail instead, the prompt stops where
+ * the table does.
+ *
+ * The half-length is the table's own, less a little: it has to be walkable into
+ * as well as accurate, because the room is crossed in strides of roughly two
+ * metres on a slow renderer and a window narrower than a stride is one a stride
+ * steps over.
+ */
+export const CRAPS_PROMPT = {
+  center: [0, 0, 3.2] as readonly [number, number, number],
+  halfLength: 2.2,
+  radius: 1.5,
+} as const
+
+/**
+ * How far a point is from the craps prompt, measured to the segment.
+ *
+ * Shared with `WalkingPlayer`, which applies the same rule to any target
+ * carrying a `halfLength`. Two implementations of one shape is the disagreement
+ * nobody thinks to look for, so the layout module owns it and the test holds
+ * both to it.
+ */
+export function crapsPromptGap(x: number, z: number): number {
+  const [centerX, , centerZ] = CRAPS_PROMPT.center
+  // Zero anywhere along the segment itself; grows only past either end.
+  const along = Math.max(0, Math.abs(x - centerX) - CRAPS_PROMPT.halfLength)
+  return Math.hypot(along, z - centerZ)
+}
+
+/**
+ * Where the player is put back when they stand up.
+ *
+ * Lined up with the exit: from here the way out is a straight walk back with no
+ * sideways correction to overshoot. Blackjack's is the centre stool's approach —
+ * standing up from any other seat uses `blackjackStandSpot`, so you are left
+ * standing behind the stool you were actually on.
  *
  * The craps spot is off to one end of the near rail rather than the middle of
  * it, because that is where the shooter stands: they throw the length of the
  * table, so standing them at the centre would have them lobbing the dice
  * sideways into the nearest wall.
- *
- * This is also where the player is put back on standing up, so it is lined up
- * with the exit: from here the way out is a straight walk back, with no
- * sideways correction to overshoot.
  */
 export const SIT_SPOTS: Record<TableId, readonly [number, number, number]> = {
-  [TableId.Blackjack]: [-7.5, 0, 4.3],
+  [TableId.Blackjack]: blackjackStandSpot(DEFAULT_BLACKJACK_SEAT),
   [TableId.Craps]: [-2.4, 0, 3.2],
-}
-
-/**
- * How close you have to be for the prompt to appear, per table.
- *
- * Craps reaches further because the table does: it is over five metres end to
- * end and you play it standing anywhere along the rail, so a radius sized for a
- * blackjack seat only offers it from one spot on a very long side. It also has
- * to be walkable *into* — the room is crossed in strides of roughly two metres
- * on a slow renderer, and a target you can only be offered inside a two-metre
- * window is one a single stride steps over.
- */
-export const SIT_RADII: Record<TableId, number> = {
-  [TableId.Blackjack]: 1.8,
-  [TableId.Craps]: 3.2,
 }
 
 
@@ -116,7 +257,8 @@ export const SIT_RADII: Record<TableId, number> = {
  * the dice are released, so the throw reads as theirs.
  */
 export const SEATS: Record<TableId, readonly [number, number, number]> = {
-  [TableId.Blackjack]: [-7.5, 0, 2.95],
+  // Derived, not written down twice: the stool a lone player takes.
+  [TableId.Blackjack]: blackjackSeatSpot(DEFAULT_BLACKJACK_SEAT),
   [TableId.Craps]: [-1.75, 0, 1.58],
 }
 
@@ -699,34 +841,54 @@ export const SEATED_TARGET: Record<TableId, Point3> = {
 }
 
 /**
- * What the seated camera looks at, given who is sitting where.
+ * How far the wide shot leans toward the player's own betting spot.
  *
- * `followSeat` is the narrow-screen case and nothing else. A desktop shot holds
- * the whole table and aiming at the middle of it is right for every seat; a
- * phone holds about a third of it, and aiming at the middle means the player at
- * first base watches somebody else's cards while their own are off the side of
- * the screen. Solo tables are unaffected either way — there is one seat and it
- * is on the centre line.
+ * Part of the way, not all of it: the dealer, the shoe and the other players
+ * are the rest of what the shot is of, and a camera locked square onto one
+ * stool is a portrait of a hand with no table around it. A phone has no room
+ * for that compromise and snaps the whole way instead — see `seatedTarget`.
+ */
+const SEAT_LEAN = 0.7
+
+/**
+ * What the seated camera looks at, given which stool the player took.
+ *
+ * The argument is which **stool**, not which of the engine's seats, on the same
+ * rule as `handAnchor` — a table with two people at first base and third base
+ * has two engine seats and five felt spots, and the camera belongs over the
+ * cards the local player actually staked.
+ *
+ * How far it follows depends on the shape of the screen. A desktop shot holds
+ * the whole table, so it leans by `SEAT_LEAN` and keeps the room in frame. A
+ * phone holds about a third of the table, and leaning means the player at first
+ * base still watches somebody else's cards with their own off the side of the
+ * screen — so it goes the whole way.
+ *
+ * A lone player at the middle stool is the case both skip: they own the felt,
+ * their hands are laid out about the centre line, and the design target is
+ * already over them.
  *
  * @param table Which table.
- * @param seatIndex The local player's seat, or negative when spectating.
- * @param seatCount How many seats are in play; one for a solo table.
- * @param followSeat Whether to move the shot to the local seat.
+ * @param stool Which of `SEAT_SPOTS` the player is at, or negative if nowhere.
+ * @param seatCount How many hands are in play; one for a solo table.
+ * @param portrait Whether the shot must follow the seat the whole way.
  * @returns The look target, table-local.
  */
 export function seatedTarget(
   table: TableId,
-  seatIndex: number,
+  stool: number,
   seatCount: number,
-  followSeat: boolean,
+  portrait: boolean,
 ): Point3 {
   const design = SEATED_TARGET[table]
-  if (table === TableId.Craps || !followSeat || seatCount <= 1 || seatIndex < 0) return design
+  if (table === TableId.Craps || stool < 0 || ownsTheFelt(stool, seatCount)) return design
 
-  const spot = SEAT_SPOTS[seatIndex]
+  const spot = SEAT_SPOTS[stool]
   if (!spot) return design
 
-  return [spot.x, design[1], design[2]]
+  const x = portrait ? spot.x : design[0] + (spot.x - design[0]) * SEAT_LEAN
+
+  return [x, design[1], design[2]]
 }
 
 /**
@@ -756,16 +918,27 @@ const SEAT_PULLBACK_LIMIT = 8
  * the dealer's row at the back, the player's chips at the front, and the widest
  * a split ever spreads across.
  *
- * On a shared table this is the *local* player's own area — `seatedTarget`
- * moves the shot to their seat rather than the middle of the table, so the far
- * seats are what runs off the sides. That is the trade this whole shot makes:
- * the cards you are playing are legible, and the strangers either side of you
- * may not be on screen.
+ * On a shared table this is the *local* player's own area, and it has to move
+ * with them: `seatedTarget` aims the shot at their stool, and a box left at the
+ * middle of the table would have the pullback fitting a piece of felt the
+ * camera is no longer pointed at. The far seats are what runs off the sides
+ * instead, which is the trade this whole shot makes — the cards you are playing
+ * are legible, and the strangers either side of you may not be on screen.
+ *
+ * The box is the same one `handAnchor` lays hands out in, which is why it takes
+ * the same two arguments: a lone player at the middle stool owns the felt and
+ * spreads splits across all of it, and everybody else gets their own spot.
  *
  * @param table Which table.
+ * @param stool Which of `SEAT_SPOTS` the player is at.
+ * @param seatCount How many hands are in play; one for a solo table.
  * @returns The corners of the box, table-local, at felt height.
  */
-export function seatedSubject(table: TableId): readonly Point3[] {
+export function seatedSubject(
+  table: TableId,
+  stool: number,
+  seatCount: number,
+): readonly Point3[] {
   if (table === TableId.Craps) {
     // The whole pit: the dice come to rest anywhere in it, and a roll the
     // player cannot see is the one thing this shot may not do.
@@ -777,11 +950,23 @@ export function seatedSubject(table: TableId): readonly Point3[] {
     ]
   }
 
+  const spot = SEAT_SPOTS[stool]
+  if (ownsTheFelt(stool, seatCount) || !spot) {
+    return [
+      [-SPLIT_OFFSET, FELT_TOP_Y, DEALER_ROW_Z],
+      [SPLIT_OFFSET, FELT_TOP_Y, DEALER_ROW_Z],
+      [-SPLIT_OFFSET, FELT_TOP_Y, CHIP_ROW_Z],
+      [SPLIT_OFFSET, FELT_TOP_Y, CHIP_ROW_Z],
+    ]
+  }
+
+  const nearZ = spot.z + SEAT_CHIP_GAP
+
   return [
-    [-SPLIT_OFFSET, FELT_TOP_Y, DEALER_ROW_Z],
-    [SPLIT_OFFSET, FELT_TOP_Y, DEALER_ROW_Z],
-    [-SPLIT_OFFSET, FELT_TOP_Y, CHIP_ROW_Z],
-    [SPLIT_OFFSET, FELT_TOP_Y, CHIP_ROW_Z],
+    [spot.x - SEAT_SPLIT_OFFSET, FELT_TOP_Y, DEALER_ROW_Z],
+    [spot.x + SEAT_SPLIT_OFFSET, FELT_TOP_Y, DEALER_ROW_Z],
+    [spot.x - SEAT_SPLIT_OFFSET, FELT_TOP_Y, nearZ],
+    [spot.x + SEAT_SPLIT_OFFSET, FELT_TOP_Y, nearZ],
   ]
 }
 
@@ -819,17 +1004,27 @@ export function seatedCameraAt(
  * what `seatedSubject` actually spans from there, so the felt fills the same
  * share of a phone's frame as it does of a desktop's.
  *
+ * The target and the subject are both derived here rather than passed in, on
+ * the rule this project already keeps for a camera and the geometry it has to
+ * agree with. They are two views of the same fact — where the local player is
+ * sitting — and a caller that computed one and forgot the other would fit the
+ * shot to a piece of felt the camera is not pointed at, which is not something
+ * a later reader would think to check.
+ *
  * @param table Which table.
- * @param target What the camera looks at, table-local — `seatedTarget`, which
- *   varies with the seat on a shared table.
+ * @param stool Which of `SEAT_SPOTS` the player is at, or negative if nowhere.
+ * @param seatCount How many hands are in play; one for a solo table.
  * @param aspect Viewport width divided by height.
- * @returns The field of view in degrees, plus the orbit to seat the camera on.
+ * @returns The look target, the field of view, and the orbit to seat the
+ *   camera on.
  */
 export function seatedView(
   table: TableId,
-  target: Point3,
+  stool: number,
+  seatCount: number,
   aspect: number,
 ): {
+  readonly target: Point3
   readonly fov: number
   readonly yaw: number
   readonly pitch: number
@@ -837,7 +1032,8 @@ export function seatedView(
   readonly maxDistance: number
 } {
   const design = SEATED_VIEW[table]
-  const subject = seatedSubject(table)
+  const target = seatedTarget(table, stool, seatCount, aspect < 1)
+  const subject = seatedSubject(table, stool, seatCount)
   const [originX, , originZ] = tableOrigin(table)
 
   const fovAt = (seat: {
@@ -849,7 +1045,7 @@ export function seatedView(
   // What the shot would need to open to as composed. Landscape windows are
   // already wide enough, so they never leave this branch and the desktop game
   // is untouched by everything below it.
-  if (fovAt(design) === design.fov) return design
+  if (fovAt(design) === design.fov) return { ...design, target }
 
   /*
    * Otherwise step back until the shot fits without a fish-eye.
@@ -865,7 +1061,7 @@ export function seatedView(
    * screen and much too far once the craps rail's controls became a sheet and
    * the canvas above it stopped being a slot.
    */
-  let best = { ...design, fov: fovAt(design) }
+  let best = { ...design, target, fov: fovAt(design) }
 
   for (
     let distance = design.distance;
@@ -889,7 +1085,7 @@ export function seatedView(
     if (!inRoom) break
 
     const fov = fovAt(seat)
-    best = { ...seat, fov, maxDistance: Math.max(design.maxDistance, distance) }
+    best = { ...seat, target, fov, maxDistance: Math.max(design.maxDistance, distance) }
     if (fov <= SEAT_TARGET_FOV) break
   }
 
@@ -922,10 +1118,19 @@ export function clearsFloor(x: number, z: number, radius: number): boolean {
 
   for (const table of TABLE_IDS) {
     if (footprintsOverlap(spread, TABLE_FOOTPRINTS[table])) return false
-
-    const [sitX, , sitZ] = SIT_SPOTS[table]
-    if (Math.hypot(sitX - x, sitZ - z) < SIT_RADII[table] + radius) return false
   }
+
+  /*
+   * Every place a player stands to be offered a seat, not just one per table.
+   * Blackjack has five of them now, and a palm in front of the third-base stool
+   * is exactly the bug this function exists to catch.
+   */
+  for (let seat = 0; seat < BLACKJACK_SEAT_COUNT; seat++) {
+    const [standX, , standZ] = blackjackStandSpot(seat)
+    if (Math.hypot(standX - x, standZ - z) < BLACKJACK_SEAT_RADIUS + radius) return false
+  }
+
+  if (crapsPromptGap(x, z) < CRAPS_PROMPT.radius + radius) return false
 
   const [doorX, , doorZ] = EXIT_DOOR
   return Math.hypot(doorX - x, doorZ - z) >= EXIT_RADIUS + radius

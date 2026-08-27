@@ -1,3 +1,4 @@
+import { LAMP_HEIGHT } from '../stripLayout'
 /**
  * Sidewalk dressing: palms and street lamps.
  *
@@ -92,7 +93,7 @@ export function StreetLamp({ position, neonLevel = 1, daylight = 0 }: StreetLamp
   return (
     <group position={[x, y, z]}>
       <mesh position={[0, 2.2, 0]} castShadow>
-        <cylinderGeometry args={[0.07, 0.11, 4.4, 8]} />
+        <cylinderGeometry args={[0.07, 0.11, LAMP_HEIGHT, 8]} />
         <meshStandardMaterial color={post} roughness={0.8} metalness={0.3} />
       </mesh>
       <mesh position={[0, 4.5, 0]}>
