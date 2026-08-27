@@ -3,7 +3,7 @@ import { useLayoutEffect, useMemo } from 'react'
 import { BackSide, RepeatWrapping } from 'three'
 import { useAppearanceStore } from '../store/useAppearanceStore'
 import { useGameStore } from '../store/useGameStore'
-import { usePresenceStore } from '../store/usePresenceStore'
+import { useLeaderboardStore } from '../store/useLeaderboardStore'
 import { useTimeStore } from '../store/useTimeStore'
 import { leaderboardRows } from '../world/leaderboard'
 import { VENUES, VenueKind } from '../world/venues'
@@ -291,7 +291,8 @@ function SurfaceDaylight() {
  * road: a render-nothing owner of one texture side effect.
  *
  * Mounted once even though two boards draw it — they share the one texture,
- * so a second updater would be a second painter of the same canvas. Solo and
+ * so a second updater would be a second painter of the same canvas. The roster is the shared leaderboard room's —
+ * everyone online, whichever venue they are in. Solo and
  * suppressed sessions have an empty roster, and the merge in `leaderboardRows`
  * then shows exactly the local player, which is the decided behaviour rather
  * than a fallback.
@@ -299,12 +300,14 @@ function SurfaceDaylight() {
 function LeaderboardStandings() {
   const bankroll = useGameStore((state) => state.bankroll)
   const name = useAppearanceStore((state) => state.playerName)
-  const peers = usePresenceStore((state) => state.peers)
-  const selfId = usePresenceStore((state) => state.selfId)
+  const standings = useLeaderboardStore((state) => state.standings)
+  const selfId = useLeaderboardStore((state) => state.selfId)
 
   useLayoutEffect(() => {
-    setLeaderboardRows(leaderboardRows({ id: selfId ?? 'self', name, bankroll }, Object.values(peers)))
-  }, [bankroll, name, peers, selfId])
+    setLeaderboardRows(
+      leaderboardRows({ id: selfId ?? 'self', name, bankroll }, Object.values(standings)),
+    )
+  }, [bankroll, name, standings, selfId])
 
   return null
 }

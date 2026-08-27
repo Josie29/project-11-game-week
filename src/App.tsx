@@ -5,6 +5,7 @@ import { useMemo } from 'react'
 import { appearanceOverrides } from './dev/appearanceLinks'
 import { parseSheetKind } from './dev/contactSheet'
 import { DevBridge } from './dev/DevBridge'
+import { useLeaderboardRoom } from './net/useLeaderboardRoom'
 import { usePresenceRoom } from './net/usePresenceRoom'
 import { PlayFov } from './scenes/components/PlayFov'
 import { RemotePlayers } from './scenes/components/RemotePlayers'
@@ -56,6 +57,9 @@ export function App() {
   // Joins whichever room the player is standing in, and leaves it on the way
   // out. A no-op when multiplayer is unconfigured.
   usePresenceRoom()
+  // And the one room everybody shares, so the high-rollers boards can rank
+  // players who are inside a venue. Same switches, one fixed room.
+  useLeaderboardRoom()
   const atChair = useGameStore((state) => state.atChair)
   const atMirror = useGameStore((state) => state.atMirror)
   const atCheckout = useGameStore((state) => state.atCheckout)

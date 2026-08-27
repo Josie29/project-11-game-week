@@ -7,6 +7,7 @@ import { useAppearanceStore } from './store/useAppearanceStore'
 import { useBlackjackStore } from './store/useBlackjackStore'
 import { useCrapsStore } from './store/useCrapsStore'
 import { useSessionStore } from './store/useSessionStore'
+import { useLeaderboardStore } from './store/useLeaderboardStore'
 import { poseBuffer, usePresenceStore } from './store/usePresenceStore'
 import { useGameStore } from './store/useGameStore'
 import { INTERPOLATION_DELAY_MS, interpolateAt } from './world/presence'
@@ -37,6 +38,9 @@ if (import.meta.env.DEV) {
   bridge.gameStore = useGameStore
   bridge.appearanceStore = useAppearanceStore
   bridge.presenceStore = usePresenceStore
+  // Exposed so a harness can assert who the high-rollers boards are ranking —
+  // the standings come from their own room, not the presence roster.
+  bridge.leaderboardStore = useLeaderboardStore
   /*
    * Exposed so a harness can change the play mode mid-session, which is the one
    * thing no `?boot=` link can express: the links set up a starting state, and

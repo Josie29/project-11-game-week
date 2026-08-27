@@ -134,8 +134,11 @@ interface PresenceStore {
  * `?mp=1` opts back in, and exists for exactly one caller: `npm run
  * multiplayer`, which needs `?boot=strip` to skip the first-run designer *and*
  * needs the socket. Dev-only, so always false in a production build.
+ *
+ * Exported so the leaderboard's own connection obeys the same rule — a shot of
+ * a junction must not have live strangers ranked across its billboard.
  */
-function isPresenceSuppressed(): boolean {
+export function isPresenceSuppressed(): boolean {
   if (!import.meta.env.DEV) return false
 
   const params = new URLSearchParams(window.location.search)

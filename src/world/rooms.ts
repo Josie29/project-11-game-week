@@ -21,6 +21,17 @@ import { VenueId } from './venues'
 /** The street. */
 export const STRIP_ROOM = 'strip'
 
+/**
+ * The one room everybody is in at once, for the high-rollers boards.
+ *
+ * The exception to "same room means you can see each other", on purpose: the
+ * boards rank everyone *online*, and presence rooms are venue-scoped, so a
+ * blackjack winner inside the Golden Ace would fall off a board read from the
+ * strip's roster. Every client keeps a second, pose-less connection here and
+ * announces only its identity; nothing ever draws this roster as figures.
+ */
+export const LEADERBOARD_ROOM = 'leaderboard'
+
 /** Bounds per room, so an arriving pose can be clamped without a scene. */
 const BOUNDS: Readonly<Record<string, WalkBounds>> = {
   [STRIP_ROOM]: STREET_BOUNDS,
