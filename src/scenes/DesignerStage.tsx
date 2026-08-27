@@ -5,6 +5,7 @@ import { Group } from 'three'
 import { useAppearanceStore } from '../store/useAppearanceStore'
 import { useTimeStore } from '../store/useTimeStore'
 import { CasinoCharacter } from './components/CasinoCharacter'
+import { useCanvasAspect } from '../world/useCanvasAspect'
 
 /*
  * The dressing-room stage.
@@ -28,6 +29,7 @@ export function DesignerStage() {
   const equipped = useAppearanceStore((state) => state.equipped)
 
   const turntable = useRef<Group>(null)
+  const portrait = useCanvasAspect() < 1
 
   useFrame((_state, delta) => {
     if (!turntable.current) return
@@ -74,7 +76,14 @@ export function DesignerStage() {
       <pointLight position={[-1.9, 1.6, -1.5]} intensity={9} distance={7} color="#ff2d95" />
       <pointLight position={[1.9, 1.6, -1.5]} intensity={9} distance={7} color="#22e0ff" />
 
-      <group position={[0.48, 0, 0]}>
+      {/*
+        Offset right of centre, because the control panel is on the left.
+
+        Only while it *is* on the left. On a phone the panel is a sheet across
+        the bottom and the whole width is the figure's, so the same nudge just
+        stands them off to one side of an empty stage.
+      */}
+      <group position={[portrait ? 0 : 0.48, 0, 0]}>
         <group ref={turntable} position={[0, PLINTH_HEIGHT, 0]}>
           <CasinoCharacter appearance={appearance} equipped={equipped} />
         </group>

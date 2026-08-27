@@ -20,7 +20,9 @@
     "worker:deploy": "wrangler deploy --config worker/wrangler.toml",
     "mode-toggle": "node scripts/modeToggle.mjs",
     "shared-craps": "node scripts/sharedCraps.mjs",
-    "shared-blackjack": "node scripts/sharedBlackjack.mjs"
+    "shared-blackjack": "node scripts/sharedBlackjack.mjs",
+    "shots:mobile": "SHOTS_VIEWPORT=390x844 node scripts/shots.mjs",
+    "walkthrough:touch": "node scripts/walkthrough.mjs --touch"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.8",

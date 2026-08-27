@@ -19,6 +19,7 @@ import {
   seatedCrownY,
   SeatedLegs,
 } from '../character/proportions'
+import { fovToFit, subtendedAngle } from '../world/camera'
 import type { Footprint } from './casinoFloorLayout'
 
 /** The room is smaller and meaner than the casino floor. That is the point. */
@@ -217,9 +218,41 @@ export function trayAt(index: number): readonly [number, number, number] {
 export const CHAIR_CAMERA_OFFSET: readonly [number, number, number] = [2.7, 1.68, 1.72]
 export const CHAIR_CAMERA_TARGET: readonly [number, number, number] = [0.3, 1.14, -0.2]
 
-/** Where the chair camera sits, in world space. */
-export function chairCameraAt(index: number): readonly [number, number, number] {
-  const [x, y, z] = CHAIR_CAMERA_OFFSET
+/**
+ * The same seat for a phone held upright.
+ *
+ * Further out along +x and a little higher, and deliberately *not* further
+ * along +z: the fourth recliner sits at `CHAIR_Z[3]`, and pulling back on the
+ * camera's own axis would put the shot for that one chair inside the far wall.
+ * The room is wide and shallow, so the width is where the distance is.
+ *
+ * The offset does two jobs at once and the second is easy to miss — the draw
+ * line has to keep crossing the view rather than pointing down it, which is the
+ * bug that cost two attempts here. `clinicRoutine.test.ts` asserts that from
+ * this camera as well as the landscape one.
+ */
+export const PORTRAIT_CHAIR_CAMERA_OFFSET: readonly [number, number, number] = [5.8, 1.9, 1.72]
+
+/**
+ * The chair shot's field of view, as composed for a landscape window.
+ *
+ * Out here with the offset it belongs to, for the reason the offset is out
+ * here: what this camera can see is a fact about the camera *and* the shape of
+ * the window, and only one of those was ever written down.
+ */
+export const CHAIR_FOV = 44
+
+/**
+ * Where the chair camera sits, in world space.
+ *
+ * @param index Which recliner.
+ * @param portrait Whether to use the narrow-screen seat.
+ */
+export function chairCameraAt(
+  index: number,
+  portrait = false,
+): readonly [number, number, number] {
+  const [x, y, z] = portrait ? PORTRAIT_CHAIR_CAMERA_OFFSET : CHAIR_CAMERA_OFFSET
   return [CHAIR_X + x, y, (CHAIR_Z[index] ?? 0) + z]
 }
 
@@ -227,6 +260,63 @@ export function chairCameraAt(index: number): readonly [number, number, number] 
 export function chairCameraTarget(index: number): readonly [number, number, number] {
   const [x, y, z] = CHAIR_CAMERA_TARGET
   return [CHAIR_X + x, y, (CHAIR_Z[index] ?? 0) + z]
+}
+
+/**
+ * How high above the floor the donor's head reaches, reclined.
+ *
+ * Only the framing uses this — the figure is drawn from `proportions.ts` — but
+ * a shot sized against the chair alone frames a chair with somebody's head off
+ * the top of it.
+ */
+const RECLINED_HEIGHT = 1.5
+
+/**
+ * What the chair shot has to hold: the recliner, the donor on it, the tray
+ * their arm rests on, and the bag the line runs to.
+ *
+ * The bag and the tray are the two ends of the draw line, so a shot that holds
+ * both holds the whole procedure — which is the only thing happening in this
+ * room and the only reason anybody is looking at it.
+ *
+ * @param index Which recliner.
+ * @returns The corners of the box, world space.
+ */
+export function chairSubject(index: number): readonly (readonly [number, number, number])[] {
+  const [x, , z] = chairPosition(index)
+
+  const corners: (readonly [number, number, number])[] = []
+  for (const cornerX of [x - CHAIR_FOOTPRINT_HALF_X, x + CHAIR_FOOTPRINT_HALF_X]) {
+    for (const cornerZ of [z - CHAIR_FOOTPRINT_HALF_Z, z + CHAIR_FOOTPRINT_HALF_Z]) {
+      corners.push([cornerX, 0, cornerZ], [cornerX, RECLINED_HEIGHT, cornerZ])
+    }
+  }
+
+  return [...corners, trayAt(index), ivBagAt(index)]
+}
+
+/**
+ * How wide that subject sits across the chair shot, in radians.
+ *
+ * @param index Which recliner.
+ * @param portrait Whether to measure from the narrow-screen seat.
+ */
+export function chairSubtendedAngle(index: number, portrait = false): number {
+  return subtendedAngle(chairCameraAt(index, portrait), chairSubject(index))
+}
+
+/**
+ * The chair camera's field of view for a viewport shape.
+ *
+ * `CHAIR_FOV` unchanged on any landscape window, asserted rather than assumed.
+ *
+ * @param aspect Viewport width divided by height.
+ * @returns A vertical field of view, in degrees.
+ */
+export function chairFov(aspect: number): number {
+  // Every recliner is the same shot translated, so any index measures it.
+  const portrait = aspect < 1
+  return fovToFit(chairSubtendedAngle(0, portrait), aspect, CHAIR_FOV)
 }
 
 /** The check-in desk, by the door. */

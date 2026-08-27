@@ -7,6 +7,8 @@ import { useGameStore } from '../../store/useGameStore'
 import { Control } from '../../world/controls'
 import { useOrbitInput } from '../useOrbitInput'
 import { setLocalTransform } from '../../net/localTransform'
+import { moveVector } from '../../world/touchInput'
+import { getTouchMove } from '../../world/touchMove'
 import { CasinoCharacter } from './CasinoCharacter'
 import { CAMERA_LOOK_HEIGHT } from '../../world/camera'
 
@@ -279,21 +281,33 @@ export function WalkingPlayer({
     const sinYaw = Math.sin(yaw)
     const cosYaw = Math.cos(yaw)
 
-    // Movement axes derived from where the camera is looking, so "forward" is
-    // always away from the viewer regardless of how far the camera has swung.
-    const forwardInput = (forward ? 1 : 0) - (back ? 1 : 0)
-    const rightInput = (right ? 1 : 0) - (left ? 1 : 0)
+    /*
+     * Movement axes derived from where the camera is looking, so "forward" is
+     * always away from the viewer regardless of how far the camera has swung.
+     *
+     * The keys and the on-screen stick are added rather than switched between:
+     * with no stick the result is a unit vector or nothing, which is the
+     * behaviour that shipped, arithmetically rather than by a branch nobody
+     * tests. With a thumb halfway over, the player walks at half speed.
+     */
+    const move = moveVector(
+      (right ? 1 : 0) - (left ? 1 : 0),
+      (forward ? 1 : 0) - (back ? 1 : 0),
+      getTouchMove(),
+    )
 
     const direction = moveDirection.current.set(
-      -sinYaw * forwardInput + cosYaw * rightInput,
+      -sinYaw * move.y + cosYaw * move.x,
       0,
-      -cosYaw * forwardInput - sinYaw * rightInput,
+      -cosYaw * move.y - sinYaw * move.x,
     )
-    const isMoving = direction.lengthSq() > 0
-    speedRef.current = isMoving ? WALK_SPEED : 0
+    const isMoving = move.magnitude > 0
+    speedRef.current = isMoving ? WALK_SPEED * move.magnitude : 0
 
     if (isMoving) {
-      direction.normalize().multiplyScalar(WALK_SPEED * Math.min(delta, MAX_STEP_SECONDS))
+      direction
+        .normalize()
+        .multiplyScalar(speedRef.current * Math.min(delta, MAX_STEP_SECONDS))
 
       // Walked in substeps, resolving collisions after each. See `MAX_SUBSTEP`.
       const distance = Math.hypot(direction.x, direction.z)

@@ -2,7 +2,15 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      `viewport-fit=cover` so the game draws under the notch and the home
+      indicator; the HUD pads itself back out with `env(safe-area-inset-*)`.
+      Without it a phone letterboxes the canvas in black at both ends.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <title>Neon Strip</title>
   </head>
   <body>

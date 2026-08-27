@@ -8,6 +8,7 @@ import { WINDOW_DISPLAY } from '../character/windowDisplay'
 import { useAppearanceStore, useFittedEquipped } from '../store/useAppearanceStore'
 import { useGameStore } from '../store/useGameStore'
 import { INTERACT_KEY } from '../world/controls'
+import { useCanvasAspect } from '../world/useCanvasAspect'
 import { getVenue, type VenueId } from '../world/venues'
 import { PROPORTIONS, Silhouette } from '../character/proportions'
 import { Accessory } from './components/character/Accessory'
@@ -35,6 +36,7 @@ import {
   DESK_FACING,
   DESK_RADIUS,
   DESK_STAND,
+  checkoutFov,
   DISPLAYS,
   displayId,
   displayItemId,
@@ -42,6 +44,7 @@ import {
   EXIT_RADIUS,
   EYEWEAR_CASE,
   FITTING,
+  fittingFov,
   FITTING_HEIGHT,
   FITTING_RADIUS,
   Fixture,
@@ -321,6 +324,7 @@ function DisplayFixture({ display, index, owned }: {
  */
 function MirrorCamera() {
   const cameraRef = useRef<PerspectiveCameraImpl>(null)
+  const aspect = useCanvasAspect()
   const target = useMemo(() => new Vector3(...MIRROR_CAMERA_TARGET), [])
 
   useFrame(() => {
@@ -328,7 +332,12 @@ function MirrorCamera() {
   })
 
   return (
-    <PerspectiveCamera ref={cameraRef} makeDefault fov={42} position={[...MIRROR_CAMERA_AT]} />
+    <PerspectiveCamera
+      ref={cameraRef}
+      makeDefault
+      fov={fittingFov(aspect)}
+      position={[...MIRROR_CAMERA_AT]}
+    />
   )
 }
 
@@ -342,13 +351,21 @@ function MirrorCamera() {
  */
 function DeskCamera() {
   const cameraRef = useRef<PerspectiveCameraImpl>(null)
+  const aspect = useCanvasAspect()
   const target = useMemo(() => new Vector3(...DESK_CAMERA_TARGET), [])
 
   useFrame(() => {
     cameraRef.current?.lookAt(target)
   })
 
-  return <PerspectiveCamera ref={cameraRef} makeDefault fov={42} position={[...DESK_CAMERA_AT]} />
+  return (
+    <PerspectiveCamera
+      ref={cameraRef}
+      makeDefault
+      fov={checkoutFov(aspect)}
+      position={[...DESK_CAMERA_AT]}
+    />
+  )
 }
 
 /**

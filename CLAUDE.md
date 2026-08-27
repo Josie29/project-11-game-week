@@ -95,6 +95,41 @@ integer arithmetic. Never as decimals.
 
 ## Visual work
 
+**A field of view is vertical, so the shape of the window is part of the
+geometry.** `three` states `fov` vertically: at 1600x900 a 45-degree camera
+sees 72.7 degrees across, and on a 390x844 phone the same camera sees 21.7.
+Every subtended-angle measure in this project was written against the first
+number without saying so, and they are all *floors* — "wide enough to read".
+Portrait needs a ceiling as well, and there was not one: the shop's mirror is
+24.4 degrees wide and its camera showed 20 across a phone, so the one surface
+the fitting scene exists for was cropped at both edges with every test passing.
+`frameWidth`, `fovToFit` and `playFov` in `src/world/camera.ts` are that
+ceiling, and `camera.test.ts` holds every hero subject to it.
+
+Two corollaries, both earned:
+
+- **A panel over a fixed-camera scene is a crop, and no camera can see it.**
+  The first portrait pass framed the mirror perfectly and put the character
+  behind the fitting panel. Chasing it with a moved camera found no position
+  that worked. The fix was to stop overlaying: on a phone those panels are
+  sheets, `.stage` insets the canvas above them, and the scene is composed for
+  the rectangle it actually gets — which also makes that rectangle 390x464
+  rather than 390x844, and is most of why neither shop camera needed moving at
+  all. `SHEET_FRACTION` lives in `src/world/viewport.ts` and is published to CSS
+  as `--sheet`, so the panel and the canvas cannot disagree about where the fold
+  is.
+- **Cameras size themselves against the canvas, never the window.** Once a
+  sheet is up those are two different rectangles — `useCanvasAspect`, not
+  `useLayout`.
+
+**Where a camera cannot be opened wide enough, move it — and derive how far.**
+Blackjack's felt spans 53 degrees of the seated view and craps' spans 64, and no
+field of view a phone can hold without a fish-eye fits either. `seatedView`
+steps back until the shot fits, flattening the pitch as the camera climbs so it
+stays under the ceiling and inside the walls. A hand-picked pullback is what was
+there first, and 10.5 metres was right for a full-height phone screen and much
+too far the moment the craps rail's controls became a sheet.
+
 ## Delivering a feature
 
 A feature is not delivered until it has been driven and deployed. Both, every
@@ -287,6 +322,16 @@ changed the fix from geometry to a hex value.
 
 ## Interaction
 
+**On a phone, the prompt *is* the accept key.** The game only ever offers one
+thing at a time and the card on screen already names it and the verb, which is
+what makes it the honest button — `useActionKey` listens for the tap as well as
+the key, so all four scenes that accept an offer are unchanged. Two things this
+cost: the card has to clear the on-screen stick (it did not, and the one control
+the whole model rests on was also the only one a thumb could not reach), and the
+standing hint has to keep naming the room's targets in both modes. "at a chair
+or the door" is what tells somebody there are chairs, and it is what
+`walkthrough.mjs` asserts on to know which room it is in.
+
 **Nothing happens to the player because they walked somewhere.** Proximity
 offers; F accepts. One key for every offer — a table, a recliner, a venue door,
 the way back out — because only one is ever in range at a time, and the prompt on
@@ -454,13 +499,22 @@ npm run dev         # vite, port 5180 by convention
 npm test            # vitest
 npm run typecheck   # tsc --noEmit, strict + exactOptionalPropertyTypes
 npm run build
-npm run shot <url> <out.png> [settleMs] [keys]
+npm run shot <url> <out.png> [settleMs] [keys] [WIDTHxHEIGHT]
+npm run shots:mobile            # the same scene list at 390x844, touch on
+npm run walkthrough:touch [url] # the same beats, driven by thumb
 npm run locate <url> [prefix]   # world positions of named objects
 npm run multiplayer [baseUrl]   # two players at once; needs the worker running
 npm run worker:dev              # the presence worker, locally
 npm run worker:deploy           # the presence worker, to Cloudflare
 npm run typecheck:worker
 ```
+
+`npm run walkthrough --touch` drives the same twenty beats on a phone: a
+portrait viewport, and every key replaced by the on-screen control that does the
+same job. Only `walk` and `press` know the difference, so every assertion and
+every capture is shared — a phone build that reaches the same beats is a phone
+build that works, and nothing else can say so. `npm run shots:mobile` renders
+the whole scene list at 390x844 for the same reason.
 
 `npm run multiplayer` drives two browser *contexts* — separate `localStorage`,
 so genuinely two players — and asserts each sees the other, by name, moving.

@@ -22,6 +22,7 @@
  */
 
 import { CATALOG } from '../character/catalog'
+import { fovToFit, subtendedAngle } from '../world/camera'
 import type { Footprint } from './casinoFloorLayout'
 
 export type Anchor2D = readonly [number, number]
@@ -139,6 +140,19 @@ export const MIRROR_RADIUS = 2.6
  */
 export const MIRROR_CAMERA_AT: readonly [number, number, number] = [2.1, 1.95, 1.0]
 export const MIRROR_CAMERA_TARGET: readonly [number, number, number] = [0, 1.35, MIRROR[1]]
+
+/**
+ * The fitting shot's field of view, as composed for a landscape window.
+ *
+ * Down here with the camera it belongs to rather than as a literal in
+ * `ShopInterior.tsx`, on the same rule as the position above it — and for a
+ * sharper reason than that rule was first written for. `three` states a field
+ * of view vertically, so on a phone held upright this camera sees twenty
+ * degrees across and the mirror is twenty-four wide: the one surface the whole
+ * scene exists to show would have been cropped at both edges, and no capture at
+ * 1600x900 could ever have said so.
+ */
+export const FITTING_FOV = 42
 
 /* ----------------------------------------------------------------- counter */
 
@@ -259,6 +273,9 @@ export const DESK_RADIUS = 1.6
  */
 export const DESK_CAMERA_AT: readonly [number, number, number] = [-1.35, 2.4, -0.6]
 export const DESK_CAMERA_TARGET: readonly [number, number, number] = [3.05, 1.15, 1.55]
+
+/** The checkout shot's field of view, as composed for a landscape window. */
+export const CHECKOUT_FOV = 42
 
 /* ------------------------------------------------------------------- doors */
 
@@ -625,22 +642,26 @@ export function footprintCorners(footprint: Footprint): Anchor2D[] {
  * anyone can see their reflection in it.
  */
 export function mirrorSubtendedAngle(): number {
-  const [cx, cy, cz] = MIRROR_CAMERA_AT
-  const [my, mz] = [MIRROR_CAMERA_TARGET[1], MIRROR[1]]
+  const height = MIRROR_CAMERA_TARGET[1]
 
-  const toEdge = (edgeX: number): readonly [number, number, number] => [
-    edgeX - cx,
-    my - cy,
-    mz - cz,
-  ]
+  return subtendedAngle(MIRROR_CAMERA_AT, [
+    [MIRROR[0] - MIRROR_WIDTH / 2, height, MIRROR[1]],
+    [MIRROR[0] + MIRROR_WIDTH / 2, height, MIRROR[1]],
+  ])
+}
 
-  const left = toEdge(MIRROR[0] - MIRROR_WIDTH / 2)
-  const right = toEdge(MIRROR[0] + MIRROR_WIDTH / 2)
-
-  const dot = left[0] * right[0] + left[1] * right[1] + left[2] * right[2]
-  const lengths = Math.hypot(...left) * Math.hypot(...right)
-
-  return Math.acos(Math.min(1, Math.max(-1, dot / lengths)))
+/**
+ * The fitting camera's field of view for a viewport shape.
+ *
+ * `FITTING_FOV` unchanged on any landscape window — asserted in
+ * `shopLayout.test.ts`, so the desktop shot is the one that shipped — and wide
+ * enough to hold the whole mirror on a phone.
+ *
+ * @param aspect Viewport width divided by height.
+ * @returns A vertical field of view, in degrees.
+ */
+export function fittingFov(aspect: number): number {
+  return fovToFit(mirrorSubtendedAngle(), aspect, FITTING_FOV)
 }
 
 /**
@@ -653,22 +674,21 @@ export function mirrorSubtendedAngle(): number {
  * people standing next to a post.
  */
 export function counterSubtendedAngle(): number {
-  const [cx, cy, cz] = DESK_CAMERA_AT
-
   // The customer-facing edge, which is the one the shot has to hold.
-  const toEnd = (endZ: number): readonly [number, number, number] => [
-    COUNTER.minX - cx,
-    COUNTER_HEIGHT - cy,
-    endZ - cz,
-  ]
+  return subtendedAngle(DESK_CAMERA_AT, [
+    [COUNTER.minX, COUNTER_HEIGHT, COUNTER.minZ],
+    [COUNTER.minX, COUNTER_HEIGHT, COUNTER.maxZ],
+  ])
+}
 
-  const near = toEnd(COUNTER.minZ)
-  const far = toEnd(COUNTER.maxZ)
-
-  const dot = near[0] * far[0] + near[1] * far[1] + near[2] * far[2]
-  const lengths = Math.hypot(...near) * Math.hypot(...far)
-
-  return Math.acos(Math.min(1, Math.max(-1, dot / lengths)))
+/**
+ * The checkout camera's field of view for a viewport shape.
+ *
+ * @param aspect Viewport width divided by height.
+ * @returns A vertical field of view, in degrees.
+ */
+export function checkoutFov(aspect: number): number {
+  return fovToFit(counterSubtendedAngle(), aspect, CHECKOUT_FOV)
 }
 
 /**

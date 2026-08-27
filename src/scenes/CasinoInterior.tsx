@@ -1,11 +1,13 @@
 import { PerspectiveCamera } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { PerspectiveCamera as PerspectiveCameraImpl, Vector3 } from 'three'
 import { DEALER_APPEARANCE } from '../character/appearance'
 import { useAppearanceStore } from '../store/useAppearanceStore'
+import { useBlackjackStore } from '../store/useBlackjackStore'
 import { useGameStore } from '../store/useGameStore'
 import { INTERACT_KEY } from '../world/controls'
+import { useCanvasAspect } from '../world/useCanvasAspect'
 import { getVenue, type VenueId } from '../world/venues'
 import {
   CAMERA_BOUNDS,
@@ -14,6 +16,8 @@ import {
   EXIT_RADIUS,
   SEATS,
   SIT_RADII,
+  seatedTarget,
+  seatedView,
   SIT_SPOTS,
   STANDING_TABLES,
   TABLE_FOOTPRINTS,
@@ -40,60 +44,19 @@ interface CasinoInteriorProps {
 }
 
 
-/**
- * Where each table's camera looks, in that table's own local frame.
- *
- * These are the values the fixed camera used before the tables moved into a
- * room. The tables are translated and never rotated, so the world target is
- * just this plus the table's origin — which is what keeps the seated framing
- * identical to what shipped.
- */
-const LOCAL_TARGETS: Record<TableId, readonly [number, number, number]> = {
-  // Roughly the middle of the felt.
-  [TableId.Blackjack]: [0.15, 1.05, 0.45],
-  /*
-   * The craps table's printed layout is the game, so the camera looks at the
-   * middle of it. Aimed a little past centre toward the boxman, because the
-   * control bar covers the lower third of the screen and the pass line — the
-   * biggest, most bet-on marking on the felt — sits on the near edge.
-   */
-  [TableId.Craps]: [0, 1.05, 0.04],
-}
-
-/*
- * Opening view, as an orbit rather than a position. Both closer and steeper
- * than the original fixed shot: at the old distance and eyeline a card was
- * about sixty pixels wide and seen near edge-on, which is legible in principle
- * and a squint in practice. The cards should be readable before anyone touches
- * the controls.
- */
-const DEFAULT_YAW = -0.2925
-const DEFAULT_PITCH = 0.52
-const DEFAULT_DISTANCE = 5.8
-/*
- * Further back and less steep than blackjack's. The craps table is over five
- * metres end to end now — more than twice its old width — and at the previous
- * distance both ends of the layout were off the sides of the screen.
- */
-const CRAPS_DISTANCE = 5.9
-const CRAPS_PITCH = 0.82
-/*
- * Swung off the shooter's shoulder rather than square to the table. Square on,
- * the standing player is directly between the camera and the felt and reads as
- * a dark mass at the bottom of the frame; from here they stand in profile at
- * the near left, and the table runs away from them in the direction they throw.
- */
-const CRAPS_YAW = 0.0
-
 /*
  * Limits. The near limit is set by the seated player, not by taste: closer than
  * this and the camera ends up inside their head, because they sit a good way
  * back from the felt. The pitch floor keeps the view above the rail, and the
  * yaw range lets you swing right around the player's side of the table without
  * ending up behind the dealer looking into the void.
+ *
+ * The seat itself — yaw, pitch, distance and field of view — is no longer here.
+ * It moved to `SEATED_VIEW` in `casinoFloorLayout.ts` when a test had to be able
+ * to work out whether the cards are actually on screen, which on a narrow
+ * window is not a property of the camera alone.
  */
 const MIN_DISTANCE = 4.3
-const MAX_DISTANCE = 9.5
 /*
  * Pitch floor is about readability, not taste. The cards lie flat on the felt,
  * so at a low enough eyeline they go edge-on and vanish — the first version
@@ -120,29 +83,57 @@ const DESIRED = new Vector3()
 function TableCamera({ table }: { table: TableId }) {
   const cameraRef = useRef<PerspectiveCameraImpl>(null)
   const defaultCamera = useThree((state) => state.camera)
+  const aspect = useCanvasAspect()
+  const portrait = aspect < 1
 
-  const isCraps = table === TableId.Craps
+  /*
+   * Which seat is ours, and how many there are.
+   *
+   * Only blackjack has seats, and only a shared table has more than one — the
+   * store reports index 0 of 1 for a solo game, which `seatedTarget` treats as
+   * the centre line it has always been.
+   */
+  const mySeatIndex = useBlackjackStore((state) => state.mySeatIndex)
+  const seatCount = useBlackjackStore((state) => Math.max(1, state.seatIds.length))
+
+  const localTarget = useMemo(
+    () => seatedTarget(table, mySeatIndex, seatCount, portrait),
+    [table, mySeatIndex, seatCount, portrait],
+  )
+
+  const view = useMemo(
+    () => seatedView(table, localTarget, aspect),
+    [table, localTarget, aspect],
+  )
 
   const target = useMemo(() => {
     const [originX, , originZ] = tableOrigin(table)
-    const [localX, localY, localZ] = LOCAL_TARGETS[table]
-    return new Vector3(originX + localX, localY, originZ + localZ)
-  }, [table])
+    return new Vector3(originX + localTarget[0], localTarget[1], originZ + localTarget[2])
+  }, [table, localTarget])
 
   const { orbit } = useOrbitInput(
-    {
-      yaw: isCraps ? CRAPS_YAW : DEFAULT_YAW,
-      pitch: isCraps ? CRAPS_PITCH : DEFAULT_PITCH,
-      distance: isCraps ? CRAPS_DISTANCE : DEFAULT_DISTANCE,
-    },
+    { yaw: view.yaw, pitch: view.pitch, distance: view.distance },
     {
       minPitch: MIN_PITCH,
       maxPitch: MAX_PITCH,
       minDistance: MIN_DISTANCE,
-      maxDistance: MAX_DISTANCE,
+      maxDistance: view.maxDistance,
       yawRange: YAW_RANGE,
     },
   )
+
+  /*
+   * Re-seat the orbit when the shot itself changes shape.
+   *
+   * `useOrbitInput` seeds from its defaults once, at mount, which is right —
+   * they are a starting point the player then drags away from. Turning a phone
+   * sideways mid-hand changes the field of view as a prop and would otherwise
+   * leave the camera at the distance the *other* orientation was composed for,
+   * which is the one combination that frames neither.
+   */
+  useEffect(() => {
+    orbit.current = { yaw: view.yaw, pitch: view.pitch, distance: view.distance }
+  }, [orbit, view.yaw, view.pitch, view.distance])
 
   useFrame((_state, delta) => {
     const camera = cameraRef.current ?? defaultCamera
@@ -162,7 +153,7 @@ function TableCamera({ table }: { table: TableId }) {
     camera.lookAt(target)
   })
 
-  return <PerspectiveCamera ref={cameraRef} makeDefault fov={45} />
+  return <PerspectiveCamera ref={cameraRef} makeDefault fov={view.fov} />
 }
 
 /** The blackjack table with its stools, placed on the floor. */

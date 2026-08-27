@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, type CSSProperties, type ReactNode } from 'react'
 import { findItem } from '../character/catalog'
 import { approvalTotal, isFitting, onApproval } from '../character/fitting'
 import { STANDING_TABLES, TABLE_LABELS } from '../scenes/casinoFloorLayout'
@@ -8,8 +8,85 @@ import { Location, useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
 import { SettingsPanel } from './SettingsPanel'
 import { INTERACT_LABEL, SETTINGS_KEY, SETTINGS_LABEL } from '../world/controls'
+import { fireInteract } from '../world/interact'
+import { useLayout } from '../world/useLayout'
 import { getVenue, VenueKind } from '../world/venues'
 import { daylightAt, formatClock } from '../world/timeOfDay'
+
+/**
+ * How the player says yes: the key, or the tap.
+ *
+ * "Press F" on a phone is an instruction nobody can follow, and it appeared in
+ * all eight prompts. The verb after it stays where it was — "Tap to sit",
+ * "Tap again to leave it behind" — so each prompt still says what accepting
+ * actually does.
+ */
+function Accept() {
+  const { touch } = useLayout()
+
+  if (touch) return <>Tap</>
+
+  return (
+    <>
+      Press <kbd>{INTERACT_LABEL}</kbd>
+    </>
+  )
+}
+
+/**
+ * The standing hint, in the parts that vary and the parts that do not.
+ *
+ * The middle of it — "at a chair or the door" — is the *room*, and it is the
+ * same sentence whichever way the player is holding the thing. That is not
+ * tidiness: it is the only part of this line that carries information rather
+ * than instruction, it is what tells somebody walking into the clinic that
+ * there are chairs in it, and it is what `walkthrough.mjs` asserts on to know
+ * which room it is standing in. A touch build that dropped it would be a build
+ * where nothing checks the player ever arrived.
+ *
+ * @param targets What is worth walking up to in this room.
+ * @param touch Whether there is a keyboard.
+ */
+function walkHint(targets: string, touch: boolean): string {
+  return touch
+    ? `Stick to walk \u00b7 tap ${targets} \u00b7 drag to look \u00b7 pinch to zoom`
+    : `WASD to walk \u00b7 ${INTERACT_LABEL} ${targets} \u00b7 drag to look \u00b7 R to reset`
+}
+
+/**
+ * One offer, and what accepting it will do.
+ *
+ * A `div` with a mouse and a `button` with a thumb, because on a phone this
+ * *is* the accept key: `F` does not exist there, and the game only ever offers
+ * one thing at a time, which is exactly what makes the prompt itself the
+ * honest button. It already names the thing and the verb.
+ *
+ * `.hud` is `pointer-events: none` so the canvas underneath keeps the drags;
+ * the tappable variant opts itself back in.
+ */
+function Prompt({
+  children,
+  style,
+}: {
+  children: ReactNode
+  style?: CSSProperties | undefined
+}) {
+  const { touch } = useLayout()
+
+  if (!touch) {
+    return (
+      <div className="hud__prompt" style={style}>
+        {children}
+      </div>
+    )
+  }
+
+  return (
+    <button type="button" className="hud__prompt hud__prompt--tap" style={style} onClick={fireInteract}>
+      {children}
+    </button>
+  )
+}
 
 /** Persistent overlay: bankroll, clock, movement hint, and the door prompt. */
 export function Hud() {
@@ -33,6 +110,7 @@ export function Hud() {
   const owned = useAppearanceStore((state) => state.owned)
   const fitting = useAppearanceStore((state) => state.fitting)
   const minuteOfDay = useTimeStore((state) => state.minuteOfDay)
+  const { touch } = useLayout()
   const settingsOpen = useSessionStore((state) => state.settingsOpen)
   const toggleSettings = useSessionStore((state) => state.toggleSettings)
 
@@ -115,9 +193,7 @@ export function Hud() {
       <time className="hud__clock">{formatClock(minuteOfDay)}</time>
 
       {location === Location.Strip && (
-        <div className="hud__hint">
-          WASD to walk &middot; F at a door &middot; drag to look &middot; R to reset
-        </div>
+        <div className="hud__hint">{walkHint('at a door', touch)}</div>
       )}
 
       {location === Location.Interior && (
@@ -129,12 +205,14 @@ export function Hud() {
             door itself.
           */}
           {seated
-            ? 'Drag to look · scroll to zoom · R to reset'
+            ? touch
+              ? 'Drag to look · pinch to zoom'
+              : 'Drag to look · scroll to zoom · R to reset'
             : atClinic
-              ? 'WASD to walk · F at a chair or the door · drag to look · R to reset'
+              ? walkHint('at a chair or the door', touch)
               : shopping
-                ? 'WASD to walk · F at a rail, the mirror, the till or the door · drag to look · R to reset'
-                : 'WASD to walk · F at a table or the door · drag to look · R to reset'}
+                ? walkHint('at a rail, the mirror, the till or the door', touch)
+                : walkHint('at a table or the door', touch)}
         </div>
       )}
 
@@ -145,26 +223,26 @@ export function Hud() {
         whose prompt therefore never painted at all.
       */}
       {nearbyTable !== null && activeTable === null && (
-        <div className="hud__prompt">
+        <Prompt>
           <strong>{TABLE_LABELS[nearbyTable]}</strong>
           <span>
             {/* You stand at craps and sit at blackjack, and the prompt should
                 say which — offering a seat at a table that has none is the kind
                 of small lie that makes the rest read as approximate. */}
-            Press <kbd>{INTERACT_LABEL}</kbd> to{' '}
+            <Accept /> to{' '}
             {STANDING_TABLES.has(nearbyTable) ? 'take the rail' : 'sit'}
           </span>
-        </div>
+        </Prompt>
       )}
 
       {/* The same offer at a recliner. Without it the chairs look like scenery. */}
       {nearbyChair !== null && atChair === null && (
-        <div className="hud__prompt">
+        <Prompt>
           <strong>Donation chair</strong>
           <span>
-            Press <kbd>{INTERACT_LABEL}</kbd> to sit
+            <Accept /> to sit
           </span>
-        </div>
+        </Prompt>
       )}
 
       {/*
@@ -173,23 +251,23 @@ export function Hud() {
         the only two things that say either.
       */}
       {display !== null && !atMirror && !atCheckout && (
-        <div className="hud__prompt">
+        <Prompt>
           <strong>{display.name}</strong>
           <span>
-            {owned.includes(display.id) ? 'Yours' : `$${display.price.toLocaleString()}`} · Press{' '}
-            <kbd>{INTERACT_LABEL}</kbd> to {wearing ? 'take it off' : 'try it on'}
+            {owned.includes(display.id) ? 'Yours' : `$${display.price.toLocaleString()}`} ·{' '}
+            <Accept /> to {wearing ? 'take it off' : 'try it on'}
           </span>
-        </div>
+        </Prompt>
       )}
 
       {/* The mirror: where you look at what you have on, not where you pay. */}
       {nearbyMirror && !atMirror && (
-        <div className="hud__prompt">
+        <Prompt>
           <strong>The fitting mirror</strong>
           <span>
-            Press <kbd>{INTERACT_LABEL}</kbd> to see yourself
+            <Accept /> to see yourself
           </span>
-        </div>
+        </Prompt>
       )}
 
       {/*
@@ -198,13 +276,13 @@ export function Hud() {
         on whether you are standing there in $1,420 of unpaid clothes or none.
       */}
       {nearbyDesk && !atCheckout && (
-        <div className="hud__prompt">
+        <Prompt>
           <strong>Checkout</strong>
           <span>
             {isFitting(fitting) ? `$${owing.toLocaleString()} to pay · ` : 'Nothing to pay for · '}
-            Press <kbd>{INTERACT_LABEL}</kbd> to step up
+            <Accept /> to step up
           </span>
-        </div>
+        </Prompt>
       )}
 
       {/*
@@ -215,25 +293,25 @@ export function Hud() {
         leaving, and says what walking out would cost you.
       */}
       {nearbyExit && (
-        <div className="hud__prompt">
+        <Prompt>
           <strong>{heldAtDoor ? 'The clerk clears her throat' : 'Out to the strip'}</strong>
           <span>
             {heldAtDoor ? (
               <>
-                ${owing.toLocaleString()} of that is not yours · Press <kbd>{INTERACT_LABEL}</kbd>{' '}
+                ${owing.toLocaleString()} of that is not yours · <Accept />{' '}
                 again to leave it behind
               </>
             ) : (
               <>
-                Press <kbd>{INTERACT_LABEL}</kbd> to step out
+                <Accept /> to step out
               </>
             )}
           </span>
-        </div>
+        </Prompt>
       )}
 
       {nearby && (
-        <div className="hud__prompt" style={{ borderColor: nearby.neonColor }}>
+        <Prompt style={{ borderColor: nearby.neonColor }}>
           <strong style={{ color: nearby.neonColor }}>{nearby.name}</strong>
           {/*
             "Closed tonight" was written when the strip was permanently dark.
@@ -253,7 +331,7 @@ export function Hud() {
                   is, which is the part that has to vary; the action line says
                   what the key does, which does not.
                 */}
-                Press <kbd>{INTERACT_LABEL}</kbd> to enter
+                <Accept /> to enter
               </>
             ) : daylightAt(minuteOfDay) > 0.5 ? (
               'Closed today'
@@ -261,7 +339,7 @@ export function Hud() {
               'Closed tonight'
             )}
           </span>
-        </div>
+        </Prompt>
       )}
 
       {/* Last, so it layers over every prompt above rather than under them. */}
