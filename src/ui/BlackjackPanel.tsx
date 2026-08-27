@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import {
   activeHand,
   canDouble,
@@ -12,6 +13,7 @@ import { type Hand, PlayerAction, RoundOutcome, RoundPhase } from '../games/blac
 import { useSharedBlackjack } from '../net/useSharedBlackjack'
 import { useBlackjackStore } from '../store/useBlackjackStore'
 import { useGameStore } from '../store/useGameStore'
+import { secondsUntilDeal } from '../world/dealClock'
 import { MARKER_AMOUNT } from '../world/money'
 import { getVenue, type VenueId } from '../world/venues'
 import { useTableHotkeys } from './useTableHotkeys'
@@ -173,6 +175,43 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
   /** A shared table with no room. `wager` refuses; this is what says so. */
   const offline = table.shared && !table.connected
 
+  /*
+   * A gather is running: somebody has staked and the room's deal clock is
+   * armed. The deadline belongs to the whole table, not just whoever staked —
+   * the player it presses hardest is the one who has *not* bet yet, because
+   * it is how long they have before the round deals past them.
+   */
+  const gatherRunning = table.shared && isBetting && table.betClockStartedAt !== null
+
+  /*
+   * Seconds until the room deals to whoever has staked, or null with no clock
+   * to read — a player who sat down mid-gather missed the bet broadcasts, and
+   * no number is better than a wrong one.
+   *
+   * A quarter-second interval so a boundary is never crossed by more than a
+   * blink; `setState` with the same whole second is a no-op re-render, so this
+   * only paints when the number actually changes. The count visibly restarts
+   * when another player stakes, because the room restarts its window the same
+   * way.
+   */
+  const [dealCountdown, setDealCountdown] = useState<number | null>(null)
+  const betClockStartedAt = table.betClockStartedAt
+  useEffect(() => {
+    if (!gatherRunning || betClockStartedAt === null) {
+      setDealCountdown(null)
+      return
+    }
+
+    const update = () =>
+      setDealCountdown(secondsUntilDeal(betClockStartedAt, performance.now()))
+    update()
+    const ticker = setInterval(update, 250)
+    return () => clearInterval(ticker)
+  }, [gatherRunning, betClockStartedAt])
+
+  /** `— deals in Ns` while the gather runs, empty otherwise. */
+  const countdownSuffix = dealCountdown === null ? '' : ` — deals in ${dealCountdown}s`
+
   function handleLeave(): void {
     // Standing up abandons the hand, so clear the table for next time.
     resetRound()
@@ -283,10 +322,12 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
             */}
             <span className="table-ui__prompt">
               {waitingForTable
-                ? `$${table.pendingBet} in — waiting for the table (${table.staked} of ${table.seatedCount})`
+                ? `$${table.pendingBet} in — waiting for the table (${table.staked} of ${table.seatedCount})${countdownSuffix}`
                 : offline
                   ? 'Reconnecting to the table…'
-                  : 'Place your bet'}
+                  : // The same clock, from the other side: whoever has not
+                    // staked is the one the deadline is really for.
+                    `Place your bet${countdownSuffix}`}
             </span>
             {CHIP_DENOMINATIONS.map((amount, index) => (
               <button

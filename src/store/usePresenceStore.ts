@@ -85,6 +85,16 @@ interface PresenceStore {
    * click one until the whole table is in, which can be half a minute.
    */
   bets: Readonly<Record<string, Readonly<Record<string, number>>>>
+  /**
+   * When the latest wager landed, per table, on `performance.now()`.
+   *
+   * The face of the room's deal clock: the worker re-arms its own window on
+   * exactly this event, so "latest bet plus `DEAL_WINDOW_MS`" is the deadline
+   * without the deadline ever crossing the wire. Lives and dies with `bets` —
+   * stamped where a bet lands, cleared where the deal clears them — so the
+   * two cannot disagree about whether a gather is running.
+   */
+  betClocks: Readonly<Record<string, number>>
   /** This player's own id in the room, so the HUD can say "your roll". */
   selfId: string | null
   /** Asks the room to throw. It refuses unless it is this player's turn. */
@@ -147,6 +157,7 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     shooters: {},
     seats: {},
     bets: {},
+    betClocks: {},
     selfId: null,
 
     requestRoll: () => connection?.requestRoll(),
@@ -216,8 +227,13 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
          */
         onDeal: (table, seed, bets) => {
           if (table !== TableId.Blackjack) return
-          // The gather is over; the chips on the felt are the dealt hands now.
-          set((state) => ({ bets: { ...state.bets, [table]: {} } }))
+          // The gather is over; the chips on the felt are the dealt hands now,
+          // and the deal clock they were counting against is spent with them.
+          set((state) => {
+            const betClocks = { ...state.betClocks }
+            delete betClocks[table]
+            return { bets: { ...state.bets, [table]: {} }, betClocks }
+          })
           useBlackjackStore.getState().applyDeal(seed, bets, usePresenceStore.getState().selfId)
         },
 
@@ -236,6 +252,10 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
         onBet: (table, id, amount) =>
           set((state) => ({
             bets: { ...state.bets, [table]: { ...(state.bets[table] ?? {}), [id]: amount } },
+            // Every bet restarts the room's deal window, so every bet restarts
+            // the face shown for it — a countdown that visibly resets when a
+            // second player stakes is telling the truth.
+            betClocks: { ...state.betClocks, [table]: performance.now() },
           })),
 
         onSeats: (table, seats) => set((state) => ({ seats: { ...state.seats, [table]: seats } })),
