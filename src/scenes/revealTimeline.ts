@@ -20,12 +20,12 @@ export const FLIP_DURATION_MS = 650
 /**
  * The gap between every card and the one before it, drawn or dealt.
  *
- * A flat second, deliberately without acceleration: a fixed interval puts a
- * seven-card dealer hand past six seconds, and that cost is accepted for a deal
- * slow enough to be dramatic. The opening deal takes its stagger from this same
- * number, so the round is paced by one constant.
+ * A flat beat and a half, deliberately without acceleration: a fixed interval
+ * puts a seven-card dealer hand past eight seconds, and that cost is accepted
+ * for a deal slow enough to be dramatic. The opening deal takes its stagger
+ * from this same number, so the round is paced by one constant.
  */
-export const DRAW_INTERVAL_MS = 1000
+export const DRAW_INTERVAL_MS = 1500
 
 /** Cards dealt face down at the start of a round: the dealer's hole card. */
 const OPENING_CARDS = 2
@@ -59,6 +59,44 @@ export function openingDealAt(
   const circuit = seatCount + 1
   const slot = cardIndex * circuit + (isDealer ? seatCount : seatIndex)
   return slot * DRAW_INTERVAL_MS
+}
+
+/*
+ * The dealer's opening move, timed here and drawn by the table.
+ *
+ * A casino dealer's first card goes down face down. The second card is not
+ * simply placed: the dealer uses it to lever the first card face up, then
+ * tucks it — still face down — beside the new upcard as the hole. The engine
+ * knows nothing of this; `dealerHand[0]` is the upcard and `dealerHand[1]` the
+ * hole throughout, and only the choreography below decides when each is seen.
+ */
+
+/** The hole card's travel from the shoe to the upcard's edge, before it turns it. */
+export const WEDGE_PAUSE_MS = 450
+
+/** The hole card's slide from the wedge to its own spot, once the upcard is over. */
+export const HOLE_TUCK_MS = 250
+
+/** When the face-down upcard is levered face up, in ms after the deal. */
+export function openingUpcardFlipAt(seatCount: number): number {
+  // Only once the second card has arrived to do the levering.
+  return openingDealAt(1, 0, seatCount, true) + WEDGE_PAUSE_MS
+}
+
+/** When the hole card leaves the wedge for its own spot: the flip is finished. */
+export function openingHoleRestAt(seatCount: number): number {
+  return openingUpcardFlipAt(seatCount) + FLIP_DURATION_MS
+}
+
+/**
+ * When the felt is settled and a reveal may begin.
+ *
+ * The reveal is scheduled from settlement, and a dealt natural settles the
+ * instant the deal lands — unoffset, the hole card was being commanded face up
+ * before it had even reached the wedge. `startReveal` holds itself behind this.
+ */
+export function openingDealEndsAt(seatCount: number): number {
+  return openingHoleRestAt(seatCount) + HOLE_TUCK_MS
 }
 
 export interface RevealTimeline {

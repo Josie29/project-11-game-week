@@ -10,6 +10,7 @@ import {
   DEALER_DEPTH,
   DEALER_RACK,
   dealerCardPlacement,
+  dealerHoleWedge,
   DISCARD_POSITION,
   HALF_WIDTH,
   ownsTheFelt,
@@ -27,7 +28,12 @@ import {
   TABLE_TOP_Y,
 } from '../tableLayout'
 import { ownSeat } from '../../world/seating'
-import { FLIP_DURATION_MS, openingDealAt } from '../revealTimeline'
+import {
+  FLIP_DURATION_MS,
+  openingDealAt,
+  openingHoleRestAt,
+  openingUpcardFlipAt,
+} from '../revealTimeline'
 import { getFeltTexture } from '../tableTexture'
 import { ChipStack } from './ChipStack'
 import { ChipStash } from './ChipStash'
@@ -265,16 +271,29 @@ export function BlackjackTable() {
       */}
       {game.dealerHand.slice(0, dealerCardsShown).map((card, index) => {
         const at = dealerCardPlacement(index, Math.min(dealerCardsShown, game.dealerHand.length))
+        /*
+         * The casino hole-card move. The first card is dealt face down; the
+         * second pauses on its edge — the wedge — levers it face up, then
+         * slides home face down as the hole. Both moments are pure timings in
+         * `revealTimeline`, so a test can hold their order.
+         */
+        const isUpcard = index === 0
+        const isHole = index === 1
+        const wedge = dealerHoleWedge(2)
         return (
           <PlayingCard
             key={`dealer-${index}-${card.rank}${card.suit}`}
             card={card}
             // The hole card waits for its beat in the reveal, not for settlement.
-            faceUp={index !== 1 || holeCardUp}
-            // Turned slowly and deliberately; the rest of the deal stays brisk.
-            flipDurationMs={index === 1 ? HOLE_FLIP_MS : DEAL_FLIP_MS}
+            faceUp={!isHole || holeCardUp}
+            // The upcard is levered over at the wedge's pace; the hole card
+            // gets the slow reveal turn; the rest of the deal stays brisk.
+            flipDurationMs={isUpcard || isHole ? HOLE_FLIP_MS : DEAL_FLIP_MS}
             position={isClearing ? DISCARD_POSITION : [at.x, at.y, at.z]}
             delay={dealDelay(index, 0, seatCount, true)}
+            faceUpAt={isUpcard ? openingUpcardFlipAt(seatCount) / 1000 : 0}
+            via={isHole && !isClearing ? [wedge.x, wedge.y, wedge.z] : undefined}
+            viaUntil={isHole ? openingHoleRestAt(seatCount) / 1000 : 0}
             seatIndex={index}
           />
         )

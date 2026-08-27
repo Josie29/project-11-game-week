@@ -15,7 +15,7 @@ import {
 } from '../games/blackjack/engine'
 import { type GameState, PlayerAction, RoundPhase } from '../games/blackjack/types'
 import { Gesture } from '../scenes/gestures'
-import { revealTimeline } from '../scenes/revealTimeline'
+import { openingDealEndsAt, revealTimeline } from '../scenes/revealTimeline'
 import { type RunningSequence, runSequence } from './sequence'
 import { useGameStore } from './useGameStore'
 
@@ -186,6 +186,16 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
    */
   let reveal: RunningSequence | null = null
 
+  /**
+   * When the current round's opening cards started their deal animation.
+   *
+   * The reveal below is scheduled from settlement, and a dealt natural settles
+   * the instant the deal lands — unoffset, the hole card was commanded face up
+   * before it had even left the shoe. Stamped at both deal sites (`placeBet`
+   * and `applyDeal`) so `startReveal` can hold itself behind the felt.
+   */
+  let dealtAt = 0
+
   function cancelReveal(): void {
     reveal?.cancel()
     reveal = null
@@ -200,16 +210,24 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
 
     const timeline = revealTimeline(settled.dealerHand.length)
 
+    // Never mid-deal: a natural settles at the deal itself, and a quick stand
+    // can land while cards are still leaving the shoe. After normal play the
+    // deal is long finished and this is zero.
+    const dealRemaining = Math.max(
+      0,
+      openingDealEndsAt(settled.seats.length) - (performance.now() - dealtAt),
+    )
+
     reveal = runSequence(
       [
-        { at: timeline.holeFlipAt, run: () => set({ holeCardUp: true }) },
+        { at: dealRemaining + timeline.holeFlipAt, run: () => set({ holeCardUp: true }) },
         ...timeline.drawAt.map((at, index) => ({
-          at,
+          at: dealRemaining + at,
           // Index 0 is the third card, since two are already on the table.
           run: () => set({ dealerCardsShown: index + 3 }),
         })),
         {
-          at: timeline.completeAt,
+          at: dealRemaining + timeline.completeAt,
           run: () => {
             set({ revealComplete: true })
 
@@ -296,6 +314,7 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
 
       // Push the chips out first; the cards follow once they land.
       useGameStore.getState().adjustBankroll(-amount)
+      dealtAt = performance.now()
       set({
         game: placeBet(game, amount),
         roundId: get().roundId + 1,
@@ -401,6 +420,7 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
       const mine = mySeatIndex < 0 ? 0 : (bets[mySeatIndex]?.amount ?? 0)
       if (mine > 0) useGameStore.getState().adjustBankroll(-mine)
 
+      dealtAt = performance.now()
       set({
         game: dealt,
         seatIds,
