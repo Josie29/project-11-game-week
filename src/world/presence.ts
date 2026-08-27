@@ -77,6 +77,14 @@ export interface RemoteIdentity {
    * a casino holds two tables and "seated" cannot tell them apart.
    */
   readonly table: TableId | null
+  /**
+   * Chips in hand, for the high-rollers boards at the ends of the strip.
+   *
+   * Whole dollars, like every number the HUD prints. Zero when absent so a
+   * client talking to a worker that predates the field still renders — a peer
+   * showing $0 for a minute is cosmetic; a peer failing to parse is not.
+   */
+  readonly bankroll: number
 }
 
 /**
@@ -272,5 +280,9 @@ export function sanitizeRemoteIdentity(raw: unknown, fallbackId: string): Remote
     equipped: sanitizeEquipped(candidate.equipped, owned),
     seated: candidate.seated === true,
     table: sanitizeTable(candidate.table),
+    // Floored to a whole dollar: the board must never print what the HUD
+    // cannot. The cap is arbitrary but a peer claiming a trillion dollars is
+    // lying in a way that would also break the board's column layout.
+    bankroll: Math.floor(clamp(finite(candidate.bankroll, 0), 0, 1e9)),
   }
 }

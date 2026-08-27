@@ -27,6 +27,8 @@ interface JoinMessage {
   readonly owned?: unknown
   readonly equipped?: unknown
   readonly seated?: unknown
+  /** Chips in hand, relayed verbatim for the strip's high-rollers boards. */
+  readonly bankroll?: unknown
   readonly table?: unknown
   readonly seat?: unknown
   /** A secret the client keeps per tab, so its player id survives reconnects. */
@@ -444,6 +446,9 @@ export class Room implements DurableObject {
           owned: message.owned,
           equipped: message.equipped,
           seated: message.seated === true,
+          // Relayed for the strip's high-rollers boards. Verbatim on the usual
+          // rule: every client re-sanitizes on receipt.
+          bankroll: message.bankroll,
           table: typeof message.table === 'string' ? message.table : null,
         }
         /*

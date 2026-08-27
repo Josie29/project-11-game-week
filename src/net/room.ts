@@ -87,6 +87,8 @@ export interface LocalIdentity {
   readonly owned: readonly string[]
   readonly equipped: unknown
   readonly seated: boolean
+  /** Chips in hand, whole dollars, for the high-rollers boards. */
+  readonly bankroll: number
   /** Which table they are standing at, for the shooter queue. */
   readonly table: TableId | null
   /**
@@ -171,6 +173,7 @@ export function joinRoom(
         owned: current.owned,
         equipped: current.equipped,
         seated: current.seated,
+        bankroll: current.bankroll,
         table: current.table,
         seat: current.seat,
       }),

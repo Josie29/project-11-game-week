@@ -20,6 +20,7 @@ const IDENTITY: LocalIdentity = {
   owned: [],
   equipped: {},
   seated: false,
+  bankroll: 500,
   table: null,
   seat: null,
 }
@@ -267,5 +268,27 @@ describe('the welcome roster', () => {
     // The snapshot went through `onRoster` alone — a second copy through
     // `onIdentity` would put the ghost straight back into a merged map.
     expect(identified).toEqual([])
+  })
+})
+
+describe('the bankroll on the wire', () => {
+  // Catches the bug where the high-rollers boards show every peer at $0
+  // because the join payload never carried the money in the first place.
+  it('sends the bankroll in the join', () => {
+    join('strip')
+    FakeSocket.instances[0]?.fireOpen()
+
+    expect(FakeSocket.instances[0]?.lastJoin()?.bankroll).toBe(500)
+  })
+
+  // Catches the bug where a peer wins a hand and every other billboard keeps
+  // painting their old number until they walk through a door.
+  it('re-announces when the bankroll changes', () => {
+    const connection = join('strip')
+    FakeSocket.instances[0]?.fireOpen()
+
+    connection.announce({ ...IDENTITY, bankroll: 750 })
+
+    expect(FakeSocket.instances[0]?.lastJoin()?.bankroll).toBe(750)
   })
 })

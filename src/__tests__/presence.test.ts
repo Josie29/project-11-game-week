@@ -293,3 +293,29 @@ describe('sanitizeTable', () => {
     expect(atTheRail.table).toBe(TableId.Craps)
   })
 })
+
+describe('sanitizeRemoteIdentity bankroll', () => {
+  // The load-bearing compatibility case: a worker that predates the field
+  // strips it from every join, and a client that rejected the absence would
+  // turn a cosmetic $0 into a peer who fails to render at all.
+  it('defaults a missing bankroll to zero', () => {
+    expect(sanitizeRemoteIdentity({ id: 'a' }, 'a').bankroll).toBe(0)
+  })
+
+  it('passes a real bankroll through whole', () => {
+    expect(sanitizeRemoteIdentity({ id: 'a', bankroll: 12450 }, 'a').bankroll).toBe(12450)
+  })
+
+  // The billboard prints this number: a peer's hand-edited localStorage must
+  // not put NaN, minus a million, or $62.50 up in lights over the strip.
+  it('coerces junk to a number the board can print', () => {
+    expect(sanitizeRemoteIdentity({ id: 'a', bankroll: Number.NaN }, 'a').bankroll).toBe(0)
+    expect(sanitizeRemoteIdentity({ id: 'a', bankroll: Infinity }, 'a').bankroll).toBe(0)
+    expect(sanitizeRemoteIdentity({ id: 'a', bankroll: -500 }, 'a').bankroll).toBe(0)
+    expect(sanitizeRemoteIdentity({ id: 'a', bankroll: 62.5 }, 'a').bankroll).toBe(62)
+    expect(sanitizeRemoteIdentity({ id: 'a', bankroll: '750' }, 'a').bankroll).toBe(750)
+    expect(sanitizeRemoteIdentity({ id: 'a', bankroll: {} }, 'a').bankroll).toBe(0)
+    // A liar's trillion is capped rather than painted across the column.
+    expect(sanitizeRemoteIdentity({ id: 'a', bankroll: 1e12 }, 'a').bankroll).toBe(1e9)
+  })
+})
