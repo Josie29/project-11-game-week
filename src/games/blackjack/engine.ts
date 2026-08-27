@@ -578,8 +578,10 @@ function splitActiveHand(state: GameState): GameState {
 /**
  * Acts on behalf of one named seat, and refuses if it is not that seat's turn.
  *
- * Casino blackjack runs one player at a time, starting at first base — the
- * dealer's left — and moving clockwise to third base. `advanceOrResolve`
+ * Casino blackjack runs one player at a time, first base — the dealer's left —
+ * round to third base. The engine plays its seats in ascending index and knows
+ * nothing of stools; which stool is engine seat 0 is decided by the order the
+ * room broadcast the wagers (`worker/playOrder.ts`). `advanceOrResolve`
  * already enforces the order; this enforces *who is asking*, which is the half
  * that only matters once more than one person is at the table.
  *

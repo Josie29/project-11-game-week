@@ -13,6 +13,10 @@
  * shared type would hide the fact that an old client can talk to a new server.
  */
 
+// The one import, and it is the worker's own: the play-order comparator lives
+// beside this file so a vitest in `src/__tests__` can pin its direction.
+import { byPlayOrder } from './playOrder'
+
 /** How the client identifies itself and what it looks like. */
 interface JoinMessage {
   readonly t: 'join'
@@ -651,17 +655,16 @@ export class Room implements DurableObject {
   }
 
   /**
-   * Everyone at a table who has staked something this round, in seat order.
+   * Everyone at a table who has staked something this round, in play order.
    *
-   * Seat order, not arrival order, and the difference is the whole point of
+   * Play order, not arrival order, and the difference is the whole point of
    * letting players choose. A table deals from one end round to the other, so
    * the order the wagers go out in is the order the hands will be played — and
    * if that is arrival order, the person who sat down first plays first
-   * wherever they happen to be sitting. Somebody at third base would take their
-   * turn before the player at first base, which is not a rule any table has.
+   * wherever they happen to be sitting, which is not a rule any table has.
    *
-   * A player with no seat sorts last. That is craps, where there are no seats
-   * and nothing is dealt, and a client that never claimed one.
+   * The direction itself — first base is the *highest* stool number — lives in
+   * `byPlayOrder`, where a unit test can hold it.
    */
   private wagersAt(table: string): { id: string; amount: number; seat: number | null }[] {
     const staked: { id: string; amount: number; seat: number | null }[] = []
@@ -673,8 +676,7 @@ export class Room implements DurableObject {
       }
     }
 
-    // Stable within a seat, so the queue still breaks ties for anyone unseated.
-    return staked.sort((a, b) => (a.seat ?? Infinity) - (b.seat ?? Infinity))
+    return staked.sort(byPlayOrder)
   }
 
   /**

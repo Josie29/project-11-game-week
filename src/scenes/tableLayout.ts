@@ -34,6 +34,40 @@ export const TABLE_TOP_Y = 1
 export const CARD_WIDTH = 0.34
 export const CARD_HEIGHT = 0.48
 
+/**
+ * How far apart a fanned hand's cards sit, centre to centre, at full spread.
+ *
+ * Less than a card's width on purpose — a fan overlaps — which is also why
+ * every fanned hand needs `CARD_LIFT_STEP`: overlapping quads on one plane
+ * z-fight.
+ */
+export const CARD_SPACING = CARD_WIDTH * 0.82
+
+/**
+ * How much higher each successive card in a hand sits than the one before.
+ *
+ * Cards in a fan overlap, and two overlapping quads on the same plane flicker:
+ * the depth buffer resolves about 0.01mm at this camera distance, so any two
+ * cards that can overlap in plan view must differ in height by more than that.
+ * 0.8mm per card is far above the threshold and invisible at table scale.
+ *
+ * Hands at one seat can overlap each other too (a resplit's columns sit closer
+ * than a card is wide), so a hand's cards are additionally offset by a fraction
+ * of a step per hand — see `SPLIT_HAND_LIFT` — keeping every overlappable pair
+ * of cards on its own plane.
+ */
+export const CARD_LIFT_STEP = 0.0008
+
+/**
+ * The per-hand share of `CARD_LIFT_STEP` separating split hands' cards.
+ *
+ * Any divisor above the most hands a seat can hold keeps `cardIndex +
+ * handIndex * SPLIT_HAND_LIFT` unique per card, so no two cards anywhere at a
+ * seat share a plane. The smallest resulting gap is a quarter step — 0.2mm,
+ * still well clear of what the depth buffer can resolve.
+ */
+export const SPLIT_HAND_LIFT = 1 / 4
+
 /** Anything resting on the felt sits a hair above it to avoid z-fighting. */
 export const SURFACE_Y = TABLE_TOP_Y + 0.016
 
@@ -80,18 +114,19 @@ export const SHOE_MOUTH: readonly [number, number, number] = [-1.36, TABLE_TOP_Y
 export const DISCARD_TRAY: readonly [number, number, number] = [2.05, TABLE_TOP_Y, -0.2]
 
 /**
- * The five seats, **in the order they play**.
+ * The five stools, numbered ascending in x — the player's left to right.
  *
- * Index 0 is first base and index 4 is third base, because casino blackjack
- * runs one player at a time from the dealer's left round to the dealer's right.
- * The engine takes the seats in ascending index order, so this array is the
- * only thing that makes its turn order and the room's furniture agree.
+ * Numbering, not play order: seat numbers go over the wire, so which stool a
+ * number means must never change. The order the seats *play* is the room's
+ * `byPlayOrder` in `worker/playOrder.ts` — first base first, and first base is
+ * the dealer's left, which is the *highest* index here: the dealer stands at
+ * negative z facing the players, putting their left at positive x. From the
+ * player's camera the round therefore starts at the right-hand stool and walks
+ * left, as a real table plays.
  *
- * Which side is the dealer's left is not a matter of opinion here: `SHOE_POSITION`
- * sits at their left at x = -1.62 and `DISCARD_TRAY` at their right at x = 2.05.
- * First base is therefore the most negative x, and this array must stay sorted
- * that way — `blackjackSeats.test.ts` holds it, because reversing it would deal
- * the table backwards in a way no screenshot would show.
+ * This array must stay sorted ascending in x — `blackjackSeats.test.ts` holds
+ * both that and the play direction, because flipping either deals the table
+ * backwards in a way no screenshot would show.
  */
 export const PLAYER_SEATS: readonly { readonly x: number; readonly z: number }[] = [
   { x: -2.6, z: 2.5 },
@@ -277,7 +312,7 @@ export function handAnchorX(handIndex: number, handCount: number): number {
 export const SHARED_ROW_Z = 0.84
 
 /**
- * Where each seat's cards sit, first base to third base.
+ * Where each seat's cards sit, one betting spot per stool.
  *
  * Same order as `PLAYER_SEATS`, so the stool and the betting spot in front of
  * it belong to the same seat index — asserted, because a player sitting behind
@@ -339,13 +374,31 @@ export const SEAT_SPOTS: readonly { readonly x: number; readonly z: number }[] =
 ]
 
 /**
+ * The distance between neighbouring betting spots, at its narrowest.
+ *
+ * The narrowest, because the spots are not evenly spaced — the middle gaps are
+ * a centimetre tighter than the outer ones — and everything clamped by a
+ * seat's share of the felt has to fit the seat with the least of it. Derived
+ * from the spots themselves so the clamps below cannot disagree with where
+ * the seats actually are.
+ */
+export const SEAT_PITCH = SEAT_SPOTS.slice(1).reduce(
+  (narrowest, spot, index) => Math.min(narrowest, spot.x - SEAT_SPOTS[index]!.x),
+  Infinity,
+)
+
+/** Daylight a clamped layout keeps between itself and whatever bounds it. */
+const FAN_CLEARANCE = 0.02
+
+/**
  * How far a shared seat's split hands sit from its own spot.
  *
- * A quarter of the solo value, because a lone player owns the whole felt and a
- * seat at a full table owns about a fifth of it. Wide enough to read as two
- * hands, narrow enough that a resplit at the outer seats stays on the table.
+ * Derived, not chosen: as far out as a card-wide column can sit while its edge
+ * stays clear of the seat boundary. Any further and two neighbouring seats'
+ * split hands meet edge to edge — which is exactly what the hand-picked 0.26
+ * that used to live here did across the table's narrower middle gaps.
  */
-export const SEAT_SPLIT_OFFSET = 0.26
+export const SEAT_SPLIT_OFFSET = SEAT_PITCH / 2 - CARD_WIDTH / 2 - FAN_CLEARANCE
 
 /**
  * How far behind a seat's cards its chips sit, on a shared table.
@@ -402,4 +455,123 @@ export function seatAnchor(stool: number, handIndex: number, handCount: number):
       : -SEAT_SPLIT_OFFSET + handIndex * ((SEAT_SPLIT_OFFSET * 2) / (handCount - 1))
 
   return { x: spot.x + spread, z: spot.z, chipZ: spot.z + SEAT_CHIP_GAP }
+}
+
+/**
+ * How far each card past the first steps toward the dealer in a split hand.
+ *
+ * Split hands cascade in depth rather than fanning sideways, the way a real
+ * dealer lays them: a seat is `SEAT_PITCH` wide and a card `CARD_WIDTH`, so
+ * two sideways fans of any size cannot fit and a cascaded column never
+ * widens at all — cross-seat clearance holds by construction, at any card
+ * count.
+ */
+export const SPLIT_CASCADE_Z = 0.12
+
+/**
+ * The nearest a cascaded card's centre may come to the dealer's row: the
+ * dealer's cards reach half a length toward the player and the cascading card
+ * half a length back, plus daylight.
+ */
+const CASCADE_FLOOR_Z = DEALER_ROW_Z + CARD_HEIGHT + 2 * FAN_CLEARANCE
+
+/** Steps a cascade may take before it must hold; later cards stack in place. */
+const CASCADE_MAX_STEPS = Math.floor((SHARED_ROW_Z - CASCADE_FLOOR_Z) / SPLIT_CASCADE_Z)
+
+/** One card's centre on the cloth. */
+export interface CardPlacement {
+  readonly x: number
+  readonly y: number
+  readonly z: number
+}
+
+/**
+ * Centre-to-centre spacing for a fan that must stay inside `halfBudget` of
+ * its anchor, card edges included. Full `CARD_SPACING` until the hand grows
+ * enough to need tightening.
+ */
+export function fanSpacing(cardCount: number, halfBudget: number): number {
+  if (cardCount <= 1) return CARD_SPACING
+  const fits = (2 * (halfBudget - CARD_WIDTH / 2)) / (cardCount - 1)
+  return Math.min(CARD_SPACING, Math.max(0, fits))
+}
+
+/** Every card in a hand lifted clear of every other it could overlap. */
+function cardY(handIndex: number, cardIndex: number): number {
+  return SURFACE_Y + (cardIndex + handIndex * SPLIT_HAND_LIFT) * CARD_LIFT_STEP
+}
+
+/** An x-fan of `cardCount` cards centred on `anchorX`. */
+function fanPlacements(
+  anchorX: number,
+  z: number,
+  handIndex: number,
+  cardCount: number,
+  halfBudget: number,
+): CardPlacement[] {
+  const spacing = fanSpacing(cardCount, halfBudget)
+  return Array.from({ length: cardCount }, (_, index) => ({
+    x: anchorX + (index - (cardCount - 1) / 2) * spacing,
+    y: cardY(handIndex, index),
+    z,
+  }))
+}
+
+/**
+ * Where each of a hand's cards sits at a shared seat.
+ *
+ * One hand fans sideways, clamped to its seat's half-pitch so even a long
+ * hand never crosses into the neighbouring seat — unclamped, a four-card fan
+ * already did. Split hands become fixed-x columns at the `seatAnchor` spread
+ * and cascade toward the dealer instead, holding short of the dealer's row.
+ */
+export function seatCardPlacements(
+  stool: number,
+  handIndex: number,
+  handCount: number,
+  cardCount: number,
+): CardPlacement[] {
+  const anchor = seatAnchor(stool, handIndex, handCount)
+
+  if (handCount <= 1) {
+    return fanPlacements(anchor.x, anchor.z, handIndex, cardCount, SEAT_PITCH / 2 - FAN_CLEARANCE)
+  }
+
+  return Array.from({ length: cardCount }, (_, index) => ({
+    x: anchor.x,
+    y: cardY(handIndex, index),
+    z: anchor.z - Math.min(index, CASCADE_MAX_STEPS) * SPLIT_CASCADE_Z,
+  }))
+}
+
+/**
+ * Where each of a hand's cards sits for the lone player who owns the felt.
+ *
+ * Always a fan — the solo layout has `SPLIT_OFFSET` of room per hand, so the
+ * clamp only bites on hands too long to see in play — bounded by half the gap
+ * to the neighbouring hand once there is one.
+ */
+export function soloCardPlacements(
+  handIndex: number,
+  handCount: number,
+  cardCount: number,
+): CardPlacement[] {
+  const anchor = soloAnchor(handIndex, handCount)
+  const neighbourBudget =
+    handCount <= 1 ? SPLIT_OFFSET : SPLIT_OFFSET / (handCount - 1) - FAN_CLEARANCE
+  // The felt is an ellipse, and the solo layout spends enough of its width
+  // that a long outer hand can fan past the rail: the edge here is wherever
+  // the cloth is narrowest across the card's own depth — its near corner.
+  const feltAcross = HALF_WIDTH * Math.sqrt(1 - ((anchor.z + CARD_HEIGHT / 2) / PLAYER_DEPTH) ** 2)
+  const feltBudget = feltAcross - Math.abs(anchor.x) - FAN_CLEARANCE
+  return fanPlacements(anchor.x, anchor.z, handIndex, cardCount, Math.min(neighbourBudget, feltBudget))
+}
+
+/** The dealer's fan: centred on the table, lifted per card like any other. */
+export function dealerCardPlacement(index: number, count: number): CardPlacement {
+  return {
+    x: (index - (count - 1) / 2) * CARD_SPACING,
+    y: cardY(0, index),
+    z: DEALER_ROW_Z,
+  }
 }

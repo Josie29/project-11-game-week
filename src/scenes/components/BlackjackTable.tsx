@@ -9,7 +9,7 @@ import { chipBreakdown, stackHeight } from '../chipLayout'
 import {
   DEALER_DEPTH,
   DEALER_RACK,
-  DEALER_ROW_Z,
+  dealerCardPlacement,
   DISCARD_POSITION,
   HALF_WIDTH,
   ownsTheFelt,
@@ -17,20 +17,22 @@ import {
   PAYOUT_NUDGE_Z,
   PLAYER_DEPTH,
   seatAnchor,
+  seatCardPlacements,
   seatChipsOrigin,
   SLAB_THICKNESS,
   soloAnchor,
+  soloCardPlacements,
   STASH_ORIGIN,
   SURFACE_Y,
   TABLE_TOP_Y,
 } from '../tableLayout'
 import { ownSeat } from '../../world/seating'
-import { FLIP_DURATION_MS } from '../revealTimeline'
+import { DRAW_INTERVAL_MS, FLIP_DURATION_MS } from '../revealTimeline'
 import { getFeltTexture } from '../tableTexture'
 import { ChipStack } from './ChipStack'
 import { ChipStash } from './ChipStash'
 import { DealerKit } from './DealerKit'
-import { CARD_WIDTH, PlayingCard } from './PlayingCard'
+import { PlayingCard } from './PlayingCard'
 
 /*
  * The table's footprint and every anchor on it now live in `../tableLayout`,
@@ -39,16 +41,12 @@ import { CARD_WIDTH, PlayingCard } from './PlayingCard'
  * the edge, a payout off the felt — and none showed up until a screenshot.
  */
 
-/** Cards rest a hair above the felt so they never z-fight with it. */
-const CARD_Y = SURFACE_Y
-
 /** Stable empties, so a selector does not return a new object every render. */
 const NO_BETS: Readonly<Record<string, number>> = {}
 const NO_SEATS: Readonly<Record<number, string>> = {}
 
-const CARD_SPACING = CARD_WIDTH * 0.82
-/** A touch more deliberate than a machine-gun deal. */
-const DEAL_STAGGER = 0.26
+/** Every opening card a full beat after the last — the reveal's own pace. */
+const DEAL_STAGGER = DRAW_INTERVAL_MS / 1000
 const HIT_DELAY = 0.06
 
 /** Cards turn as they are dealt; only the hole card gets the slow treatment. */
@@ -70,10 +68,6 @@ function createTableShape(): Shape {
 function dealDelay(index: number, isDealer: boolean): number {
   if (index >= 2) return HIT_DELAY
   return index * DEAL_STAGGER * 2 + (isDealer ? DEAL_STAGGER : 0)
-}
-
-function cardX(index: number, count: number): number {
-  return (index - (count - 1) / 2) * CARD_SPACING
 }
 
 /** The dealer's chip rack, with chips standing on edge in their troughs. */
@@ -264,23 +258,22 @@ export function BlackjackTable() {
         entire hand in one step, so without gating on `dealerCardsShown` every
         drawn card would land in the same frame.
       */}
-      {game.dealerHand.slice(0, dealerCardsShown).map((card, index) => (
-        <PlayingCard
-          key={`dealer-${index}-${card.rank}${card.suit}`}
-          card={card}
-          // The hole card waits for its beat in the reveal, not for settlement.
-          faceUp={index !== 1 || holeCardUp}
-          // Turned slowly and deliberately; the rest of the deal stays brisk.
-          flipDurationMs={index === 1 ? HOLE_FLIP_MS : DEAL_FLIP_MS}
-          position={
-            isClearing
-              ? DISCARD_POSITION
-              : [cardX(index, Math.min(dealerCardsShown, game.dealerHand.length)), CARD_Y, DEALER_ROW_Z]
-          }
-          delay={dealDelay(index, true)}
-          seatIndex={index}
-        />
-      ))}
+      {game.dealerHand.slice(0, dealerCardsShown).map((card, index) => {
+        const at = dealerCardPlacement(index, Math.min(dealerCardsShown, game.dealerHand.length))
+        return (
+          <PlayingCard
+            key={`dealer-${index}-${card.rank}${card.suit}`}
+            card={card}
+            // The hole card waits for its beat in the reveal, not for settlement.
+            faceUp={index !== 1 || holeCardUp}
+            // Turned slowly and deliberately; the rest of the deal stays brisk.
+            flipDurationMs={index === 1 ? HOLE_FLIP_MS : DEAL_FLIP_MS}
+            position={isClearing ? DISCARD_POSITION : [at.x, at.y, at.z]}
+            delay={dealDelay(index, true)}
+            seatIndex={index}
+          />
+        )
+      })}
 
       {/*
         Wagers the room is still gathering, before anything has been dealt.
@@ -308,11 +301,17 @@ export function BlackjackTable() {
           ? soloAnchor(handIndex, seat.hands.length)
           : seatAnchor(stoolOf(seatIndex), handIndex, seat.hands.length)
         const anchorX = at.x
+        // Each card's own spot: a fan for one hand, cascaded columns for a
+        // split. The anchor above still places the chips and the ring.
+        const cardSpots = solo
+          ? soloCardPlacements(handIndex, seat.hands.length, hand.cards.length)
+          : seatCardPlacements(stoolOf(seatIndex), handIndex, seat.hands.length, hand.cards.length)
         /*
          * Marks the hand being played, and at a shared table that means the
          * seat as well: only one person acts at a time, first base round to
-         * third base, so the ring is the whole answer to "who are we waiting
-         * for" rather than half of it.
+         * third base — the player's right through to their left — so the ring
+         * is the whole answer to "who are we waiting for" rather than half of
+         * it.
          */
         const isActive =
           seatIndex === game.activeSeatIndex &&
@@ -341,21 +340,20 @@ export function BlackjackTable() {
 
         return (
           <group key={`seat-${seatIndex}-hand-${handIndex}`}>
-            {hand.cards.map((card, index) => (
-              <PlayingCard
-                key={`player-${handIndex}-${index}-${card.rank}${card.suit}`}
-                card={card}
-                faceUp
-                flipDurationMs={DEAL_FLIP_MS}
-                position={
-                  isClearing
-                    ? DISCARD_POSITION
-                    : [anchorX + cardX(index, hand.cards.length), CARD_Y, at.z]
-                }
-                delay={dealDelay(index, false)}
-                seatIndex={index + 1}
-              />
-            ))}
+            {hand.cards.map((card, index) => {
+              const spot = cardSpots[index]!
+              return (
+                <PlayingCard
+                  key={`player-${handIndex}-${index}-${card.rank}${card.suit}`}
+                  card={card}
+                  faceUp
+                  flipDurationMs={DEAL_FLIP_MS}
+                  position={isClearing ? DISCARD_POSITION : [spot.x, spot.y, spot.z]}
+                  delay={dealDelay(index, false)}
+                  seatIndex={index + 1}
+                />
+              )
+            })}
 
             {/* The wager, pushed out from the stash when the bet was placed. */}
             <ChipStack amount={hand.bet} position={chipTarget} origin={home} />

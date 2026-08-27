@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FLIP_DURATION_MS, revealTimeline } from '../scenes/revealTimeline'
+import { DRAW_INTERVAL_MS, FLIP_DURATION_MS, revealTimeline } from '../scenes/revealTimeline'
 
 describe('revealTimeline', () => {
   // The whole point of the sequence. If a drawn card could land before the hole
@@ -29,6 +29,22 @@ describe('revealTimeline', () => {
     }
   })
 
+  /*
+   * Issue #3: the deal is paced at exactly one card per second, with no
+   * acceleration. A decay crept in once before to shorten long hands; this
+   * pins the flat interval so it cannot creep back.
+   */
+  it('spaces every draw exactly one interval apart, the first included', () => {
+    for (const cardCount of [3, 4, 5, 7]) {
+      const { holeFlipAt, drawAt } = revealTimeline(cardCount)
+
+      expect(drawAt[0]!).toBe(holeFlipAt + DRAW_INTERVAL_MS)
+      for (let index = 1; index < drawAt.length; index++) {
+        expect(drawAt[index]! - drawAt[index - 1]!).toBe(DRAW_INTERVAL_MS)
+      }
+    }
+  })
+
   it('draws cards in strictly increasing order', () => {
     const { drawAt } = revealTimeline(6)
 
@@ -51,11 +67,13 @@ describe('revealTimeline', () => {
 
   /*
    * The worst realistic case: a dealer drawing several small cards up to
-   * seventeen. This is a five-minute demo, so even the long tail has to stay
-   * watchable rather than becoming a pause the presenter has to talk over.
+   * seventeen. Six-plus seconds is the accepted price of the flat one-second
+   * deal (issue #3) — but the `blackjack-dealer-draws` capture waits a fixed
+   * 7500ms, so if this ever grows past that bound the screenshot silently
+   * truncates a hand mid-reveal.
    */
-  it('keeps even a long dealer hand under four seconds', () => {
-    expect(revealTimeline(7).completeAt).toBeLessThan(4000)
+  it('keeps even a long dealer hand inside the capture window', () => {
+    expect(revealTimeline(7).completeAt).toBeLessThan(7000)
   })
 
   it('treats a degenerate card count as the opening two', () => {
