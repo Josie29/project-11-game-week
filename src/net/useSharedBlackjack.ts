@@ -24,6 +24,11 @@ export interface SharedBlackjack {
   readonly takenSeats: ReadonlySet<number>
   /** What this player has staked into a round that has not been dealt yet. */
   readonly pendingBet: number
+  /**
+   * When the gather's latest wager landed, on `performance.now()`, or null
+   * before anyone has staked. The room deals `DEAL_WINDOW_MS` after this.
+   */
+  readonly betClockStartedAt: number | null
   /** How many at the table have staked, and how many are being waited on. */
   readonly staked: number
   readonly seatedCount: number
@@ -60,6 +65,9 @@ export function useSharedBlackjack(): SharedBlackjack {
   const selfId = usePresenceStore((state) => state.selfId)
   const seatMap = usePresenceStore((state) => state.seats[TableId.Blackjack] ?? NO_SEATS)
   const roomBets = usePresenceStore((state) => state.bets[TableId.Blackjack] ?? NO_BETS)
+  const betClockStartedAt = usePresenceStore(
+    (state) => state.betClocks[TableId.Blackjack] ?? null,
+  )
 
   const activeTable = useGameStore((state) => state.activeTable)
   const activeSeat = useGameStore((state) => state.activeSeat)
@@ -115,6 +123,7 @@ export function useSharedBlackjack(): SharedBlackjack {
     shared,
     takenSeats: seats,
     pendingBet,
+    betClockStartedAt,
     staked: Object.keys(roomBets).length,
     // Everyone the room has seated, which is who the deal is waiting on.
     seatedCount: Object.keys(seatMap).length,
