@@ -13,6 +13,8 @@
  * shared type would hide the fact that an old client can talk to a new server.
  */
 
+import { resolveDiceHolder } from './dice'
+
 /** How the client identifies itself and what it looks like. */
 interface JoinMessage {
   readonly t: 'join'
@@ -177,6 +179,20 @@ interface Attachment {
    * interprets.
    */
   canShoot: boolean
+  /**
+   * Whether this player is the one holding the dice at their table.
+   *
+   * State, not a derivation. The shooter used to be re-derived from `canShoot`
+   * on every announcement, and `canShoot` follows the line bet — absent before
+   * the come-out, cleared the moment it resolves — so the dice silently walked
+   * to the next player mid-hand. Held here, they move only when a seven-out
+   * passes them, the holder leaves, or the holder changes table.
+   *
+   * On the attachment for the reason everything here is: a hibernating object
+   * keeps its sockets and loses its memory, and dice held in a `Map` would be
+   * loose again after the first lull.
+   */
+  holdsDice: boolean
 }
 
 export interface Env {
@@ -297,6 +313,7 @@ export class Room implements DurableObject {
       // Nobody is eligible until they say so, so an empty table hands the dice
       // to nobody rather than to whoever happens to be standing closest.
       canShoot: false,
+      holdsDice: false,
     }
     server.serializeAttachment(attachment)
 
@@ -354,6 +371,17 @@ export class Room implements DurableObject {
           attachment.tookTableAt = Date.now()
         }
         /*
+         * Changing table is one of the three things allowed to move the dice:
+         * a shooter who walks away has given them up, exactly as if they had
+         * left the room. The eligibility claim goes with them — it was about a
+         * line bet at the table they are no longer at, and the client re-sends
+         * it if they come back.
+         */
+        if (previousTable !== attachment.identity.table) {
+          attachment.holdsDice = false
+          attachment.canShoot = false
+        }
+        /*
          * The claim is resolved before the welcome goes out, so the map the new
          * arrival receives already says whether they got the seat they asked
          * for. Refused, they are simply seatless and their client puts them back
@@ -405,6 +433,9 @@ export class Room implements DurableObject {
         if (typeof joinedTable === 'string') this.announceSeats(joinedTable)
         if (previousTable !== null && previousTable !== joinedTable) {
           this.announceSeats(previousTable)
+          // If they were the shooter there, the pair they dropped has to land
+          // in somebody else's hand before that table notices it is waiting.
+          await this.announceShooter(previousTable)
         }
         return
       }
@@ -433,6 +464,10 @@ export class Room implements DurableObject {
           // they were already at the front of.
           if (table !== attachment.identity.table) {
             attachment.tookTableAt = table === null ? null : Date.now()
+            // Same rule as the join path: walking away from a table gives up
+            // the dice and the line-bet claim that came with standing there.
+            attachment.holdsDice = false
+            attachment.canShoot = false
           }
           const previousTable = typeof attachment.identity.table === 'string'
             ? attachment.identity.table
@@ -452,6 +487,8 @@ export class Room implements DurableObject {
           if (table !== null) this.announceSeats(table)
           if (previousTable !== null && previousTable !== table) {
             this.announceSeats(previousTable)
+            // Dropped dice have to be handed on, exactly as on the join path.
+            await this.announceShooter(previousTable)
           }
         }
         return
@@ -490,8 +527,9 @@ export class Room implements DurableObject {
 
         attachment.canShoot = message.ready === true
         ws.serializeAttachment(attachment)
-        // Becoming eligible can hand somebody the dice, and giving up the last
-        // line bet at the table can take them away from everybody.
+        // Becoming eligible can pick a loose pair of dice up. It can no longer
+        // put one down: possession is held state, so a line bet resolving —
+        // which is all `ready: false` ever means — leaves the shooter alone.
         void this.announceShooter(table)
         return
       }
@@ -706,19 +744,46 @@ export class Room implements DurableObject {
     await this.armTurnClock(table, 'turn')
   }
 
-  /** Whoever currently holds the dice at a table, or null if nobody is there. */
+  /** Whoever holds the dice at a table, handing out a loose pair if nobody does. */
   private shooterAt(table: string): { id: string; socket: WebSocket } | null {
     /*
-     * The first player in line who says they can take a turn, not simply the
-     * first in line. Somebody standing at the rail with nothing on the line is
-     * skipped rather than left holding dice they are not allowed to throw.
+     * The holder if there is one, else the first player in line who says they
+     * can take a turn. `resolveDiceHolder` holds the actual rule: possession
+     * beats eligibility, because eligibility is a line bet and a line bet
+     * vanishes mid-hand every time it resolves.
      */
-    for (const place of this.queueFor(table)) {
-      const held = place.socket.deserializeAttachment() as Attachment | null
-      if (held?.canShoot) return place
+    const line = this.queueFor(table)
+    const holderId = resolveDiceHolder(
+      line.map((place) => {
+        const held = place.socket.deserializeAttachment() as Attachment | null
+        return {
+          id: place.id,
+          holdsDice: held?.holdsDice === true,
+          canShoot: held?.canShoot === true,
+        }
+      }),
+    )
+
+    /*
+     * The decision is written back before it is used, which is what makes the
+     * dice state rather than a coincidence: the next call finds a holder and
+     * keeps them, whatever their line bet has done in the meantime. The sweep
+     * covers everyone at the table, not just the capped line, so a stale flag
+     * beyond the cut cannot surface as a second pair later.
+     */
+    for (const socket of this.state.getWebSockets()) {
+      const held = socket.deserializeAttachment() as Attachment | null
+      if (!held?.identity || held.identity.table !== table) continue
+
+      const holds = held.id === holderId
+      if (held.holdsDice !== holds) {
+        held.holdsDice = holds
+        socket.serializeAttachment(held)
+      }
     }
 
-    return null
+    if (holderId === null) return null
+    return line.find((place) => place.id === holderId) ?? null
   }
 
   /**
@@ -752,6 +817,9 @@ export class Room implements DurableObject {
     if (typeof table !== 'string') return
     if (this.shooterAt(table)?.id !== attachment.id) return
 
+    // The one deliberate handover: the dice are let go here and nowhere else
+    // a player is still standing at the table.
+    attachment.holdsDice = false
     // Sending them to the back is the whole rotation: the queue is ordered by
     // when each player took the table, so a fresh stamp is last place.
     attachment.tookTableAt = Date.now()
@@ -981,11 +1049,26 @@ export class Room implements DurableObject {
 
     /*
      * If the shooter is the one who left, the dice have to move before anybody
-     * notices they are gone. The socket is already closing, so it is out of
-     * `queueFor` by the time this runs and the next player is simply the head.
+     * notices they are gone — leaving is one of the three things allowed to
+     * move them.
+     *
+     * Let go on the attachment first, not left to the queue noticing the
+     * socket is gone. The production runtime drops a closing socket from
+     * `getWebSockets` before this runs; miniflare still shows it, and a
+     * lingering holder would simply be re-elected. The handover must not
+     * depend on which runtime it is standing in.
      */
     const table = attachment.identity?.table
     if (typeof table === 'string') {
+      if (attachment.holdsDice || attachment.canShoot) {
+        attachment.holdsDice = false
+        attachment.canShoot = false
+        try {
+          ws.serializeAttachment(attachment)
+        } catch {
+          // A socket too far gone to write to is also gone from the queue.
+        }
+      }
       // Their stool is free, and saying so is what lets the next player take it.
       this.announceSeats(table, ws)
       void this.tableEmptied(table)
