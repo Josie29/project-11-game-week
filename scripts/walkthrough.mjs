@@ -57,6 +57,22 @@ const SETTLE_MS = 2000
  */
 const DOOR_BURST_MS = 500
 
+/**
+ * Burst length for a leg that walks until a prompt appears.
+ *
+ * Shorter under the stick, because the stick carries further. A key press has
+ * to reach a listener and the walk ramps from it; the stick is held at full
+ * travel from the first frame of the burst, and a measured six bursts of half a
+ * second moved 2.3 units by thumb against 1.6 by keyboard. The same 700 ms that
+ * arrives at the craps rail on a desktop steps clean over its prompt on a
+ * phone, and `walkUntil` only looks between bursts — so the leg walks the
+ * length of the room and fails having been offered the table mid-stride.
+ *
+ * This is `DOOR_BURST_MS`'s argument applied to prompts in general: a window
+ * you have to *end* a burst inside is a window a long burst can cross.
+ */
+const WALK_BURST_MS = TOUCH ? DOOR_BURST_MS : 700
+
 await rm(outDir, { recursive: true, force: true })
 await mkdir(outDir, { recursive: true })
 
@@ -263,7 +279,7 @@ async function isVisible(text) {
  * order of magnitude between runs, so the same hold lands somewhere different
  * every time. Stepping and checking is slower and does not care.
  */
-async function walkUntil(keys, text, { burstMs = 700, bursts = 30 } = {}) {
+async function walkUntil(keys, text, { burstMs = WALK_BURST_MS, bursts = 30 } = {}) {
   for (let i = 0; i < bursts; i++) {
     if (await isVisible(text)) return
     await walk(keys, burstMs)
@@ -284,7 +300,7 @@ async function walkUntil(keys, text, { burstMs = 700, bursts = 30 } = {}) {
  * the count walking around inside) is right on its own. Unlike `walkUntil` this
  * never throws: not arriving is one of the two expected outcomes.
  */
-async function walkAtMost(keys, text, { burstMs = 700, bursts = 20 } = {}) {
+async function walkAtMost(keys, text, { burstMs = WALK_BURST_MS, bursts = 20 } = {}) {
   for (let i = 0; i < bursts; i++) {
     if (await isVisible(text)) return
     await walk(keys, burstMs)
@@ -306,7 +322,7 @@ async function walkAtMost(keys, text, { burstMs = 700, bursts = 20 } = {}) {
  *
  * Naming one fixture made that a failure. Naming the row makes it a walk.
  */
-async function walkUntilAny(keys, texts, { burstMs = 700, bursts = 30 } = {}) {
+async function walkUntilAny(keys, texts, { burstMs = WALK_BURST_MS, bursts = 30 } = {}) {
   for (let i = 0; i < bursts; i++) {
     for (const text of texts) {
       if (await isVisible(text)) return text
