@@ -7,6 +7,9 @@ import { useGameStore } from '../store/useGameStore'
 import { usePresenceStore } from '../store/usePresenceStore'
 import { PlayMode, useSessionStore } from '../store/useSessionStore'
 
+/** Stable empty array, so the selector does not hand back a new one each render. */
+const EMPTY: readonly string[] = []
+
 /** What the craps table needs to know about the people around it. */
 export interface SharedCraps {
   /** True when the room owns the dice, whether or not it is reachable now. */
@@ -41,11 +44,12 @@ export interface SharedCraps {
 export function useSharedCraps(): SharedCraps {
   const mode = useSessionStore((state) => state.mode)
   const connected = usePresenceStore((state) => state.connected)
-  const shooterId = usePresenceStore((state) => state.shooterId)
+  // Read per table, so the blackjack lineup cannot answer a craps question.
+  const shooterId = usePresenceStore((state) => state.shooters[TableId.Craps] ?? null)
   const selfId = usePresenceStore((state) => state.selfId)
   const requestRoll = usePresenceStore((state) => state.requestRoll)
   const sendReady = usePresenceStore((state) => state.sendReady)
-  const lineup = usePresenceStore((state) => state.lineup)
+  const lineup = usePresenceStore((state) => state.lineups[TableId.Craps] ?? EMPTY)
   const peers = usePresenceStore((state) => state.peers)
   const passDice = usePresenceStore((state) => state.passDice)
   const publishTable = usePresenceStore((state) => state.publishTable)

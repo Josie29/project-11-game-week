@@ -1174,3 +1174,10 @@ kbd {
 .settings__unsaved {
   color: var(--color-neon-gold);
 }
+
+/* Said out loud, because an empty spot explains nothing on its own. */
+.blackjack__sitting-out {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--color-neon-gold);
+}

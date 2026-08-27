@@ -184,7 +184,7 @@ const MAX_AT_TABLE = 8
  * still there. It is two words rather than a rule — throw, or say the turn is
  * over — and which one applies is chosen by the client that armed the clock.
  */
-type ExpiryKind = 'roll' | 'turn'
+type ExpiryKind = 'roll' | 'turn' | 'deal'
 
 /**
  * How long the holder of the dice has to roll before the room rolls for them.
@@ -391,7 +391,7 @@ export class Room implements DurableObject {
         // time, rather than five stacks appearing at the moment of the deal.
         this.sendAll({ t: 'bet', table, id: attachment.id, amount })
 
-        void this.dealIfEverybodyHasBet(table)
+        void this.dealWhenTheTableIsReady(table)
         return
       }
 
@@ -428,10 +428,20 @@ export class Room implements DurableObject {
       case 'state': {
         const table = attachment.identity?.table
         if (typeof table !== 'string') return
-        // Stored without being read. The clients agree what is in here; the
-        // room only has to hand it to whoever arrives next.
+        /*
+         * Stored, and deliberately **not** relayed.
+         *
+         * This exists for one reader: somebody walking up mid-hand, who gets it
+         * once with their welcome. Broadcasting it to the people already playing
+         * is corruption, because every client publishes its table after every
+         * roll — so two players spent each roll adopting the other's slightly
+         * older snapshot and rolling the point back on top of the roll they had
+         * just settled. Twenty rolls in a row landed on the same point that way.
+         *
+         * Everyone already at the table derives their state from the dice, which
+         * are the same dice for all of them. Only an arrival needs telling.
+         */
         void this.state.storage.put(`state:${table}`, message.value ?? null).catch(() => {})
-        this.broadcast(ws, { t: 'state', table, value: message.value ?? null })
         return
       }
     }
@@ -467,18 +477,38 @@ export class Room implements DurableObject {
    *
    * "Everybody" is a count of sockets at the table, not a rule about blackjack.
    */
-  private async dealIfEverybodyHasBet(table: string): Promise<void> {
-    const line = this.queueFor(table)
-    if (line.length === 0) return
+  private async dealWhenTheTableIsReady(table: string): Promise<void> {
+    const staked = this.wagersAt(table)
+    if (staked.length === 0) return
 
-    const bets: { id: string; amount: number }[] = []
-    for (const { id, socket } of line) {
-      const held = socket.deserializeAttachment() as Attachment | null
-      if (!held || held.bet === null) return
-      bets.push({ id, amount: held.bet })
+    // Everybody in: deal at once rather than making them wait out a clock.
+    if (staked.length === this.queueFor(table).length) {
+      await this.dealRound(table, staked)
+      return
     }
 
-    await this.dealRound(table, bets)
+    /*
+     * Somebody has not bet. Give them a window rather than the table.
+     *
+     * Waiting for *everyone* is what a table full of people looks like when one
+     * of them has walked away from the keyboard: nobody is dealt, ever, and the
+     * only way out is for the absent player to leave. A player who lets the
+     * window run out simply sits the round out, which is what they would do at
+     * a real table by waving the dealer past.
+     */
+    await this.armTurnClock(table, 'deal')
+  }
+
+  /** Everyone at a table who has staked something this round, in seat order. */
+  private wagersAt(table: string): { id: string; amount: number }[] {
+    const staked: { id: string; amount: number }[] = []
+
+    for (const { id, socket } of this.queueFor(table)) {
+      const held = socket.deserializeAttachment() as Attachment | null
+      if (held?.bet !== null && held?.bet !== undefined) staked.push({ id, amount: held.bet })
+    }
+
+    return staked
   }
 
   /**
@@ -652,6 +682,14 @@ export class Room implements DurableObject {
      * nor spend money they did not stake. The room still does not know what
      * standing is.
      */
+    if (kind === 'deal') {
+      // The betting window closed. Deal to whoever backed a hand; the rest sit
+      // this one out and can bet again next round.
+      const staked = this.wagersAt(table)
+      if (staked.length > 0) await this.dealRound(table, staked)
+      return
+    }
+
     if (kind === 'turn') {
       this.sendAll({ t: 'expired', table })
       return

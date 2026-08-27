@@ -79,6 +79,7 @@ interface BlackjackStore {
    * and nobody else's, which is what keeps five people at one table out of each
    * other's bankrolls without the server ever holding a balance.
    */
+  /** This player's seat, or -1 when they are watching the round. */
   mySeatIndex: number
   /** Who is in which seat this round, in seat order, from the room's deal. */
   seatIds: readonly string[]
@@ -235,7 +236,11 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
     set({ dealerCardsShown: 2, holeCardUp: false, revealComplete: false })
     startReveal(next)
 
-    if (totalPaid(next, get().mySeatIndex) <= 0) return
+    // A spectator is owed nothing, and asking for seat -1's winnings is not a
+    // question the engine has an answer to.
+    const seat = get().mySeatIndex
+    if (seat < 0) return
+    if (totalPaid(next, seat) <= 0) return
 
     /*
      * The stake goes back whole and only the winnings meet the marker. Passing
@@ -354,7 +359,15 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
       cancelReveal()
 
       const seatIds = bets.map((bet) => bet.id)
-      const mySeatIndex = selfId === null ? 0 : Math.max(0, seatIds.indexOf(selfId))
+
+      /*
+       * `-1` when this player did not back a hand: they watch the round.
+       *
+       * Deliberately not clamped to zero, which is what this did and which is
+       * worse than it sounds — a player who was only spectating would be given
+       * somebody else's seat, charged for their wager and paid their winnings.
+       */
+      const mySeatIndex = selfId === null ? 0 : seatIds.indexOf(selfId)
 
       /*
        * The shoe is built here rather than sent. Every client runs the same
@@ -367,7 +380,7 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
       )
 
       // Only this player's wager leaves this player's bankroll.
-      const mine = bets[mySeatIndex]?.amount ?? 0
+      const mine = mySeatIndex < 0 ? 0 : (bets[mySeatIndex]?.amount ?? 0)
       if (mine > 0) useGameStore.getState().adjustBankroll(-mine)
 
       set({
