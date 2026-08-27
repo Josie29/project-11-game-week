@@ -428,10 +428,20 @@ export class Room implements DurableObject {
       case 'state': {
         const table = attachment.identity?.table
         if (typeof table !== 'string') return
-        // Stored without being read. The clients agree what is in here; the
-        // room only has to hand it to whoever arrives next.
+        /*
+         * Stored, and deliberately **not** relayed.
+         *
+         * This exists for one reader: somebody walking up mid-hand, who gets it
+         * once with their welcome. Broadcasting it to the people already playing
+         * is corruption, because every client publishes its table after every
+         * roll — so two players spent each roll adopting the other's slightly
+         * older snapshot and rolling the point back on top of the roll they had
+         * just settled. Twenty rolls in a row landed on the same point that way.
+         *
+         * Everyone already at the table derives their state from the dice, which
+         * are the same dice for all of them. Only an arrival needs telling.
+         */
         void this.state.storage.put(`state:${table}`, message.value ?? null).catch(() => {})
-        this.broadcast(ws, { t: 'state', table, value: message.value ?? null })
         return
       }
     }

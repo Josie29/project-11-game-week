@@ -85,6 +85,15 @@ function freshSeed(): number {
 export const useCrapsStore = create<CrapsStore>()((set, get) => {
   let settle: RunningSequence | null = null
 
+  /**
+   * Rolls that arrived while the dice were still moving.
+   *
+   * Outside the store on purpose, like the settle handle beside it: this is a
+   * queue of work, not something the table draws, and putting it in state would
+   * re-render the scene every time a packet landed.
+   */
+  const queued: { roll: DiceRoll; rngState?: number | undefined }[] = []
+
   function cancelSettle(): void {
     settle?.cancel()
     settle = null
@@ -201,7 +210,24 @@ export const useCrapsStore = create<CrapsStore>()((set, get) => {
      */
     applyRoll: (roll, rngState) => {
       const { game, isRolling } = get()
-      if (isRolling) return
+
+      /*
+       * A roll that arrives mid-tumble waits its turn; it is never dropped.
+       *
+       * Dropping it is what this used to do, and at a shared table that is
+       * corruption rather than a missed frame: the room throws for everybody at
+       * once, so a client that ignores one roll has a different point, a
+       * different shoe of luck and a different idea of who won — permanently,
+       * and with no way back. Twenty-two rolls in a row went missing this way
+       * while the table sat on the same point.
+       *
+       * Solo it cannot happen: `canRoll` is false while the dice are moving, so
+       * there is nothing to queue.
+       */
+      if (isRolling) {
+        queued.push({ roll, rngState })
+        return
+      }
 
       const next = settleCrapsRoll({ ...game, rngState: rngState ?? game.rngState }, roll)
       cancelSettle()
@@ -219,6 +245,11 @@ export const useCrapsStore = create<CrapsStore>()((set, get) => {
                 useGameStore.getState().creditWinnings(payout, stakeReturnedByRoll(game, next))
               }
               set({ isRolling: false })
+
+              // Whatever came in while these were tumbling, in the order the
+              // room sent it.
+              const waiting = queued.shift()
+              if (waiting) get().applyRoll(waiting.roll, waiting.rngState)
             },
           },
         ],
