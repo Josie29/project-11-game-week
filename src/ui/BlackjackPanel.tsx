@@ -176,6 +176,14 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
   const offline = table.shared && !table.connected
 
   /*
+   * A gather is running: somebody has staked and the room's deal clock is
+   * armed. The deadline belongs to the whole table, not just whoever staked —
+   * the player it presses hardest is the one who has *not* bet yet, because
+   * it is how long they have before the round deals past them.
+   */
+  const gatherRunning = table.shared && isBetting && table.betClockStartedAt !== null
+
+  /*
    * Seconds until the room deals to whoever has staked, or null with no clock
    * to read — a player who sat down mid-gather missed the bet broadcasts, and
    * no number is better than a wrong one.
@@ -189,7 +197,7 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
   const [dealCountdown, setDealCountdown] = useState<number | null>(null)
   const betClockStartedAt = table.betClockStartedAt
   useEffect(() => {
-    if (!waitingForTable || betClockStartedAt === null) {
+    if (!gatherRunning || betClockStartedAt === null) {
       setDealCountdown(null)
       return
     }
@@ -199,7 +207,10 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
     update()
     const ticker = setInterval(update, 250)
     return () => clearInterval(ticker)
-  }, [waitingForTable, betClockStartedAt])
+  }, [gatherRunning, betClockStartedAt])
+
+  /** `— deals in Ns` while the gather runs, empty otherwise. */
+  const countdownSuffix = dealCountdown === null ? '' : ` — deals in ${dealCountdown}s`
 
   function handleLeave(): void {
     // Standing up abandons the hand, so clear the table for next time.
@@ -311,12 +322,12 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
             */}
             <span className="table-ui__prompt">
               {waitingForTable
-                ? `$${table.pendingBet} in — waiting for the table (${table.staked} of ${table.seatedCount})${
-                    dealCountdown === null ? '' : ` — deals in ${dealCountdown}s`
-                  }`
+                ? `$${table.pendingBet} in — waiting for the table (${table.staked} of ${table.seatedCount})${countdownSuffix}`
                 : offline
                   ? 'Reconnecting to the table…'
-                  : 'Place your bet'}
+                  : // The same clock, from the other side: whoever has not
+                    // staked is the one the deadline is really for.
+                    `Place your bet${countdownSuffix}`}
             </span>
             {CHIP_DENOMINATIONS.map((amount, index) => (
               <button
