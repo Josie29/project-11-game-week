@@ -2,7 +2,7 @@ import { MeshReflectorMaterial, PerspectiveCamera } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
 import { PerspectiveCamera as PerspectiveCameraImpl, Vector3 } from 'three'
-import { findItem, type ShopItem } from '../character/catalog'
+import { findItem, ItemShape, type ShopItem } from '../character/catalog'
 import { isFitting, wornInSlot } from '../character/fitting'
 import { WINDOW_DISPLAY } from '../character/windowDisplay'
 import { useAppearanceStore, useFittedEquipped } from '../store/useAppearanceStore'
@@ -93,6 +93,8 @@ const BRASS = '#c9a227'
 const BRASS_LIT = '#e6c765'
 const CASE_GLOW = '#f5e6c8'
 const CASE_GLASS = '#cfe4ee'
+/** Darker velvet, so metal on a bust has something to read against. */
+const BUST = '#6d5a49'
 const WOOD = '#7a4a2a'
 const RUG = '#8e7a66'
 const PLINTH_TOP = '#a08b7a'
@@ -134,11 +136,19 @@ interface ShopInteriorProps {
  * toward the player rather than lying flat: a card flat on a case reads as a
  * bright smear from standing height.
  */
-function PriceCard({ item, owned }: { item: ShopItem; owned: boolean }) {
+function PriceCard({
+  item,
+  owned,
+  tilt = -0.55,
+}: {
+  item: ShopItem
+  owned: boolean
+  tilt?: number
+}) {
   const texture = useMemo(() => getPriceCardTexture(item, owned), [item, owned])
 
   return (
-    <group rotation={[-0.55, 0, 0]}>
+    <group rotation={[tilt, 0, 0]}>
       <mesh>
         <planeGeometry args={[0.66, 0.37]} />
         <meshBasicMaterial map={texture} transparent toneMapped={false} />
@@ -183,19 +193,51 @@ function CasePiece({ item }: { item: ShopItem }) {
 
   return (
     <group position={[0, CASE_PIECE_BASE_Y, 0]}>
-      {/* The cream velvet bust the piece is displayed on. */}
+      {/*
+        The bust, in a darker velvet than the deck it stands on.
+
+        It was the same cream as the deck, which meant a gold chain sat on a
+        cream bust on a cream deck under a cream light — three values of the
+        same colour, and nothing to see. What a jeweller does is put the metal
+        against something darker, so that is what this does.
+      */}
       <mesh position={[0, bustHeight / 2, 0]} castShadow>
         <cylinderGeometry args={[0.06, 0.11, bustHeight, 12]} />
-        <meshStandardMaterial color={CASE_GLOW} roughness={0.85} />
+        <meshStandardMaterial color={BUST} roughness={0.88} />
       </mesh>
       {/* A shallow plinth under it, so the bust is stood on something. */}
       <mesh position={[0, 0.012, 0]}>
         <cylinderGeometry args={[0.13, 0.14, 0.024, 14]} />
-        <meshStandardMaterial color="#d8c7a8" roughness={0.9} />
+        <meshStandardMaterial color="#5b4a3c" roughness={0.9} />
       </mesh>
-      <group position={[0, bustHeight + 0.03, 0]} scale={1.15}>
-        <Accessory item={item} body={DUMMY_BODY} compact />
-      </group>
+      {/*
+        Two ways to show a piece, because there are two kinds of piece.
+
+        A chain and a pendant are drawn as a torus lying flat — correct on a
+        body, where it circles a neck. Perched on top of a bust it is a hoop seen
+        edge-on from every angle a player can stand at, which is a thin line and
+        reads as nothing at all. Dropped down the bust it does what it does on a
+        neck: sits *around* it. The bust tapers, so at a little over half height
+        its radius is under the chain's and the chain hangs on it.
+
+        A ring and a watch are the opposite problem — a signet ring is a
+        fourteen-millimetre torus and simply cannot be seen across a shop. Those
+        sit up on the bust and are scaled well past life size, which is what a
+        jeweller's display magnifier is for.
+
+        Either way `isOnShowInCase` bounds the stack under the glass.
+      */}
+      {(() => {
+        const drapes = item.shape === ItemShape.Chain || item.shape === ItemShape.Pendant
+        return (
+          <group
+            position={[0, drapes ? bustHeight * 0.58 : bustHeight + 0.04, 0]}
+            scale={drapes ? 1.35 : 3.1}
+          >
+            <Accessory item={item} body={DUMMY_BODY} compact />
+          </group>
+        )
+      })()}
     </group>
   )
 }
@@ -273,7 +315,8 @@ function cardHeight(display: Display): number {
     case Fixture.Mannequin:
       return WINDOW_PLATFORM_HEIGHT + 0.22
     case Fixture.Pedestal:
-      return CASE_HEIGHT + 0.12
+      // On the fascia, below the glass. See `cardReach`.
+      return CASE_DECK_Y - 0.08
     case Fixture.Niche:
       return 1.42
     case Fixture.Stand:
@@ -281,6 +324,25 @@ function cardHeight(display: Display): number {
     case Fixture.Rack:
       return 0.88
   }
+}
+
+/**
+ * How far in front of a fixture its card is clipped, and how far it lies back.
+ *
+ * The glass cases get their own answer, and it is the whole point of this
+ * function. Their cards used to hang above the glass and lean back over it, so
+ * every one of them sat directly between the player and the piece it was naming
+ * — four items in the one fixture whose entire purpose is being looked into,
+ * labelled by the thing covering them.
+ *
+ * On the fascia instead: below the glass line, standing nearly upright against
+ * the case front, where a jeweller puts a ticket. Nothing is in front of the
+ * goods any more.
+ */
+function cardReach(display: Display): { z: number; tilt: number } {
+  return display.fixture === Fixture.Pedestal
+    ? { z: 0.4, tilt: -0.12 }
+    : { z: 0.34, tilt: -0.55 }
 }
 
 /** One display: its fixture, its item, its card and its own pool of light. */
@@ -304,8 +366,8 @@ function DisplayFixture({ display, index, owned }: {
       {display.fixture === Fixture.Stand && <HatStand item={item} />}
       {display.fixture === Fixture.Rack && <CaneRack item={item} />}
 
-      <group position={[0, cardHeight(display), 0.34]}>
-        <PriceCard item={item} owned={owned} />
+      <group position={[0, cardHeight(display), cardReach(display).z]}>
+        <PriceCard item={item} owned={owned} tilt={cardReach(display).tilt} />
       </group>
     </group>
   )
@@ -379,6 +441,65 @@ function Counter() {
         <meshStandardMaterial color={WOOD} roughness={0.7} />
       </mesh>
 
+      {/* A brass reveal along the customer's side, under the overhang. */}
+      <mesh position={[-width / 2 - 0.012, COUNTER_HEIGHT - 0.09, 0]}>
+        <boxGeometry args={[0.02, 0.03, depth - 0.08]} />
+        <meshStandardMaterial color={BRASS} roughness={0.4} metalness={0.75} />
+      </mesh>
+
+      {/*
+        The customer's half of the counter: a card reader on a little stand, a
+        wrapped parcel waiting to be handed over, and a service bell.
+
+        Spread along the counter, and deliberately *not* opposite either person
+        standing at it. The first placement put all three on the near side "where
+        the player stands", which is exactly where the player then stood: the
+        clerk is at local z -0.55 and the player at -0.4, so everything was
+        behind one or the other of them in the checkout shot.
+      */}
+      <group position={[-0.1, COUNTER_HEIGHT + 0.07, 0.34]} rotation={[0, 0.3, 0]}>
+        <mesh position={[0, 0.03, 0]}>
+          <boxGeometry args={[0.14, 0.06, 0.12]} />
+          <meshStandardMaterial color="#2a2029" roughness={0.6} />
+        </mesh>
+        <mesh position={[0, 0.11, -0.02]} rotation={[-0.65, 0, 0]}>
+          <boxGeometry args={[0.12, 0.16, 0.025]} />
+          <meshStandardMaterial color="#1d1a24" roughness={0.45} />
+        </mesh>
+        <mesh position={[0, 0.125, -0.008]} rotation={[-0.65, 0, 0]}>
+          <planeGeometry args={[0.09, 0.11]} />
+          <meshStandardMaterial color="#3d5f57" roughness={0.3} />
+        </mesh>
+      </group>
+
+      {/* A wrapped parcel, ribboned, because this is where things leave. */}
+      <group position={[0.02, COUNTER_HEIGHT + 0.07, -0.98]} rotation={[0, -0.35, 0]}>
+        <mesh position={[0, 0.06, 0]} castShadow>
+          <boxGeometry args={[0.3, 0.12, 0.22]} />
+          <meshStandardMaterial color="#e6dccb" roughness={0.85} />
+        </mesh>
+        <mesh position={[0, 0.061, 0]}>
+          <boxGeometry args={[0.05, 0.125, 0.225]} />
+          <meshStandardMaterial color={BRASS} roughness={0.5} metalness={0.5} />
+        </mesh>
+      </group>
+
+      {/* Service bell. */}
+      <group position={[-0.16, COUNTER_HEIGHT + 0.07, -0.04]}>
+        <mesh position={[0, 0.012, 0]}>
+          <cylinderGeometry args={[0.07, 0.075, 0.024, 14]} />
+          <meshStandardMaterial color={BRASS} roughness={0.35} metalness={0.8} />
+        </mesh>
+        <mesh position={[0, 0.055, 0]}>
+          <sphereGeometry args={[0.055, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <meshStandardMaterial color={BRASS_LIT} roughness={0.28} metalness={0.85} />
+        </mesh>
+        <mesh position={[0, 0.095, 0]}>
+          <sphereGeometry args={[0.016, 8, 6]} />
+          <meshStandardMaterial color={BRASS} roughness={0.4} metalness={0.8} />
+        </mesh>
+      </group>
+
       {/* The top, overhanging on every side. This is the part that reads. */}
       <mesh position={[0, COUNTER_HEIGHT + 0.03, 0]} castShadow receiveShadow>
         <boxGeometry args={[width + 0.12, 0.07, depth + 0.12]} />
@@ -434,6 +555,26 @@ function BackShelf() {
       <mesh position={[0, BACK_SHELF_HEIGHT / 2, 0]} castShadow receiveShadow>
         <boxGeometry args={[width, BACK_SHELF_HEIGHT, depth]} />
         <meshStandardMaterial color={PANEL} roughness={0.6} />
+      </mesh>
+
+      {/*
+        A reveal where this runs up to the shoe cabinet.
+
+        The two are flush by design — `COUNTER_FOOTPRINT` spans them as one box
+        so the player cannot walk the seam between them — and two flush surfaces
+        of similar colour read as one lump of furniture rather than as a shelf
+        beside a cabinet. A shadow gap is what a fitter would put there, and it
+        costs one mesh.
+      */}
+      <mesh position={[width / 2 - 0.012, BACK_SHELF_HEIGHT / 2, 0]}>
+        <boxGeometry args={[0.024, BACK_SHELF_HEIGHT - 0.06, depth + 0.02]} />
+        <meshStandardMaterial color="#150612" roughness={0.9} />
+      </mesh>
+
+      {/* Brass capping, matching the counter's top and the dado. */}
+      <mesh position={[0, BACK_SHELF_HEIGHT + 0.02, 0]} castShadow>
+        <boxGeometry args={[width + 0.05, 0.045, depth + 0.05]} />
+        <meshStandardMaterial color={BRASS} roughness={0.35} metalness={0.8} />
       </mesh>
 
       {/* Two shelves of boxed stock, facing the room over the counter. */}
@@ -941,7 +1082,7 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
               color={CASE_GLOW}
               roughness={0.85}
               emissive={CASE_GLOW}
-              emissiveIntensity={0.55}
+              emissiveIntensity={0.22}
             />
           </mesh>
 
@@ -1091,13 +1232,36 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
         ))}
 
         {/*
-          No decorative stock on the spare shelves.
+          Stock, so the unit reads as a wall of shoes rather than two pairs and
+          two bare ledges.
 
-          Sixteen extra boxes for two shelves of scenery, in the room that was
-          already the slowest in the game — the headless renderer could not
-          complete a screenshot of the shop inside thirty seconds with them in.
-          The shelves read as shelves from their own lit backs and brass nosings.
+          One box per *pair*, not per shoe. The first attempt at this drew both
+          shoes of every pair and cost sixteen boxes for two shelves, in the room
+          that could not complete a screenshot inside thirty seconds with them
+          in. At the distance this cabinet is seen from, a pair is a single
+          shape; the two catalogue pairs are drawn properly because those are the
+          ones you walk over to look at.
         */}
+        {CABINET_SHELVES.map((height, shelf) => {
+          // The two middle shelves carry the catalogue; stock fills round it.
+          const isCatalogue = shelf === 1 || shelf === 2
+          const slots = isCatalogue ? [-0.95, 0.95] : [-1.05, -0.35, 0.35, 1.05]
+
+          return slots.map((offset) => (
+            <mesh
+              key={`stock-${height}-${offset}`}
+              position={[0.02, height + 0.07, offset]}
+              rotation={[0, offset > 0 ? 0.1 : -0.08, 0]}
+              castShadow
+            >
+              <boxGeometry args={[0.3, 0.1, 0.24]} />
+              <meshStandardMaterial
+                color={offset < 0 ? '#3a2418' : '#4a2f1e'}
+                roughness={0.42}
+              />
+            </mesh>
+          ))
+        })}
       </group>
 
       {DISPLAYS.map((display, index) => (
