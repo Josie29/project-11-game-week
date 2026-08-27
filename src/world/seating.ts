@@ -2,6 +2,7 @@ import {
   BLACKJACK_SEAT_COUNT,
   DEFAULT_BLACKJACK_SEAT,
   isBlackjackSeat,
+  TableId,
 } from '../scenes/casinoFloorLayout'
 
 /*
@@ -76,9 +77,13 @@ export function freeSeats(seats: SeatMap, selfId: string | null): readonly numbe
  * the room did not seat has to notice: otherwise they spend the round drawn
  * inside somebody else, holding a panel that will never be given a turn.
  *
- * An empty map is not a refusal. It is a table nobody has reported on yet —
- * treating it as one would stand every player up in the gap between sitting
- * down and the room answering.
+ * A refusal is somebody else's id in the claimed stool, and nothing less. A
+ * stool absent from the map is a claim still in flight, not a claim denied —
+ * and the map is already populated whenever anyone else at the table is
+ * seated, so reading "not mine yet" as a refusal stood a player straight back
+ * up every time they sat down at a table with company. The room only ever
+ * refuses in favour of an incumbent, so the incumbent's id is what a real
+ * refusal looks like when the map arrives.
  *
  * @param seats The room's map for one table.
  * @param claimed The seat this client believes it holds, or null.
@@ -90,18 +95,31 @@ export function claimRefused(
   selfId: string | null,
 ): boolean {
   if (claimed === null || selfId === null) return false
-  if (Object.keys(seats).length === 0) return false
 
-  return seats[claimed] !== selfId
+  const holder = seats[claimed]
+  return holder !== undefined && holder !== selfId
 }
 
 /**
- * Which stool to draw a player on when the room has not said.
+ * The stool this player holds at the blackjack table, or null if they are not
+ * at it.
  *
- * Playing alone, or before the first map arrives. `DEFAULT_BLACKJACK_SEAT` is
- * the seat one player has always taken, so a solo table — and every capture of
- * one — is unchanged.
+ * The one conversion the felt needs, and it deliberately keeps the `null`.
+ * Laundering it into a stool is what put a tray of chips on an empty table:
+ * both tables stay mounted for as long as the player is in the room, so the
+ * felt asked "which stool is this player on" every frame and got "the middle
+ * one" for somebody standing on the other side of the floor. A player who is
+ * not at this table owns nothing on it, and that has to be sayable.
+ *
+ * A seated player with no stool of their own takes the middle one, which is
+ * where a lone player has always sat and what every `?boot=` link relies on.
+ * Total in the seat, because seat indices arrive off the wire.
+ *
+ * @param atTable The table the player is at, or null out on the floor.
+ * @param seat The stool they claimed there, if any.
  */
-export function seatOrDefault(seat: number | null): number {
+export function ownSeat(atTable: TableId | null, seat: number | null): number | null {
+  if (atTable !== TableId.Blackjack) return null
+
   return isBlackjackSeat(seat) ? seat : DEFAULT_BLACKJACK_SEAT
 }

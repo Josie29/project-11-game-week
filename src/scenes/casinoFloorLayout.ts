@@ -30,7 +30,13 @@ import {
   SPLIT_OFFSET,
   TABLE_TOP_Y as FELT_TOP_Y,
 } from './tableLayout'
-import { PIT_HALF_DEPTH, PIT_HALF_WIDTH, TABLE_TOP_Y as PIT_TOP_Y } from './crapsTableLayout'
+import {
+  OUTER_HALF_DEPTH,
+  OUTER_HALF_WIDTH,
+  PIT_HALF_DEPTH,
+  PIT_HALF_WIDTH,
+  TABLE_TOP_Y as PIT_TOP_Y,
+} from './crapsTableLayout'
 
 export enum TableId {
   Blackjack = 'blackjack',
@@ -263,23 +269,77 @@ export const SEATS: Record<TableId, readonly [number, number, number]> = {
 }
 
 /**
- * Places along the craps rail, in the order they are filled.
+ * How far off the table's outer edge a standing player is placed.
+ *
+ * Derived from the shooter's spot rather than written down, so the end spots
+ * around the corner keep exactly the standoff the near rail has always had.
+ */
+const CRAPS_STAND_OFF = SEATS[TableId.Craps][2] - OUTER_HALF_DEPTH
+
+/** The near rail's standing line, which is the shooter's own z. */
+const CRAPS_RAIL_Z = SEATS[TableId.Craps][2]
+
+/**
+ * Gap between neighbouring rail spots.
+ *
+ * Set by the players, not the table: the broadest build is about 0.73 m across
+ * the shoulders (`shoulderX` 0.292 plus the upper arm on each side), so
+ * anything under ~0.75 m stands two figures inside each other's arms.
+ */
+const CRAPS_RAIL_SPACING = 0.8
+
+/** Beside the table's far end, one standoff past the woodwork. */
+const CRAPS_END_X = OUTER_HALF_WIDTH + CRAPS_STAND_OFF
+
+/**
+ * Places along the craps rail, in the order they are filled — one per player
+ * the table takes, which is the spec's eight.
  *
  * **Index 0 is the shooter's end**, and is exactly `SEATS[TableId.Craps]` — the
  * spot every player has stood at since craps was single-player, so a lone
  * player still stands precisely where they always did and no capture moves.
  *
- * Everyone else spreads along the same rail. Before this, every player who took
- * the rail was put on the shooter's spot, so two people stood inside each other
- * and neither looked like the one holding the dice.
+ * Six spots run down the near rail from the shooter, and the last two wrap
+ * around the table's far end, facing it side-on (`crapsRailFacing`). The rail
+ * used to stop at five spots for a table that seats eight, so the back three of
+ * a full line stood inside each other at the far spot — the same bug spreading
+ * the rail out was meant to fix, three players later.
  */
 export const CRAPS_RAIL_SPOTS: readonly (readonly [number, number, number])[] = [
-  [-1.75, 0, 1.58],
-  [-0.75, 0, 1.58],
-  [0.25, 0, 1.58],
-  [1.25, 0, 1.58],
-  [2.25, 0, 1.58],
+  // Down the near rail, shooter first…
+  ...Array.from(
+    { length: 6 },
+    (_, place) =>
+      [SEATS[TableId.Craps][0] + place * CRAPS_RAIL_SPACING, 0, CRAPS_RAIL_Z] as const,
+  ),
+  // …then around the far end, clear of the boxman on the opposite side.
+  [CRAPS_END_X, 0, 0.55],
+  [CRAPS_END_X, 0, -0.25],
 ]
+
+/**
+ * Which way a player at a rail spot faces: at the felt.
+ *
+ * The near rail looks across -z, exactly as it always has; the two spots
+ * around the table's end look across -x. Derived from the spot rather than
+ * stored beside it, so a spot and its facing cannot be edited apart.
+ */
+export function crapsRailFacing(spot: readonly [number, number, number]): number {
+  // Only the end spots sit past the table's far edge.
+  return spot[0] >= CRAPS_END_X ? -Math.PI / 2 : Math.PI
+}
+
+/**
+ * Whether the table can take this player.
+ *
+ * The spec's cap is eight, and it is the rail that enforces it: one spot per
+ * player, no spot, no join. Someone already in the lineup always has room —
+ * their spot is the one they are standing on, and a re-announce racing the
+ * lineup must not read as a ninth player.
+ */
+export function crapsRailHasRoom(playerId: string, lineup: readonly string[]): boolean {
+  return lineup.includes(playerId) || lineup.length < CRAPS_RAIL_SPOTS.length
+}
 
 /**
  * Which rail spot a player stands at.

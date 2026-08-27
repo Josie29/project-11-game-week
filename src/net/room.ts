@@ -349,8 +349,25 @@ export function joinRoom(
     })
 
     next.addEventListener('close', () => {
+      /*
+       * A socket we walked away from says nothing about the one we have now.
+       *
+       * Both guards exist because a close arrives *late*: the handshake on an
+       * abandoned socket hangs and dies of a 1006 timeout about ten seconds
+       * later, long after its replacement opened. Walking from the strip into
+       * a casino is exactly that — `stop()` closes the strip's socket and the
+       * venue's is open a fraction of a second afterwards — so the strip's
+       * close would land on top of a live connection and report it as down.
+       * Nothing ever put it right again: the venue socket stays open, so there
+       * is no further close to reconnect from and no further open to say so,
+       * and the blackjack table sat on "Reconnecting to the table…" with its
+       * chips dead for the rest of the session.
+       *
+       * `closed` covers a connection we deliberately dropped; `socket !== next`
+       * covers a stale attempt from this same connection's own backoff.
+       */
+      if (closed || socket !== next) return
       handlers.onConnectedChange(false)
-      if (closed) return
 
       /*
        * Backoff rather than an immediate retry. A worker that is down or a room

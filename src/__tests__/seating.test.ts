@@ -9,9 +9,11 @@ import {
   blackjackStandSpot,
   DEFAULT_BLACKJACK_SEAT,
   isBlackjackSeat,
+  TableId,
 } from '../scenes/casinoFloorLayout'
 import { SEAT_SPOTS } from '../scenes/tableLayout'
-import { claimRefused, freeSeats, seatOf, seatOrDefault, takenSeats } from '../world/seating'
+import { claimRefused, freeSeats, ownSeat, seatOf, takenSeats } from '../world/seating'
+import { ownsTheFelt } from '../scenes/tableLayout'
 
 /*
  * Seating, which is entirely invisible.
@@ -107,11 +109,11 @@ describe('who is sitting where', () => {
   // Every `?boot=` link seats the player without naming a seat, so the fallback
   // is what keeps every capture of a hand framing what it always framed.
   it('seats a lone player where one player has always sat', () => {
-    expect(seatOrDefault(null)).toBe(DEFAULT_BLACKJACK_SEAT)
-    expect(seatOrDefault(4)).toBe(4)
+    expect(ownSeat(TableId.Blackjack, null)).toBe(DEFAULT_BLACKJACK_SEAT)
+    expect(ownSeat(TableId.Blackjack, 4)).toBe(4)
     // Off the wire, so nonsense has to land somewhere drawable.
-    expect(seatOrDefault(99)).toBe(DEFAULT_BLACKJACK_SEAT)
-    expect(seatOrDefault(-1)).toBe(DEFAULT_BLACKJACK_SEAT)
+    expect(ownSeat(TableId.Blackjack, 99)).toBe(DEFAULT_BLACKJACK_SEAT)
+    expect(ownSeat(TableId.Blackjack, -1)).toBe(DEFAULT_BLACKJACK_SEAT)
   })
 
   it('recognises only the seats the table has', () => {
@@ -181,5 +183,98 @@ describe('the room’s seat map', () => {
     expect(claimRefused({}, 2, ME)).toBe(false)
     expect(claimRefused({ 2: THEM }, 2, null)).toBe(false)
     expect(claimRefused({ 2: THEM }, null, ME)).toBe(false)
+  })
+
+  /*
+   * Catches the bug where pressing F at a free stool while another player was
+   * seated stood you straight back up before the room could grant the seat
+   * (issue #2): the map holds their stool, yours is still in flight, and
+   * "not mine yet" must not read as "refused".
+   */
+  it('does not read somebody else’s seat as a refusal of your own claim', () => {
+    expect(claimRefused({ 4: THEM }, 2, ME)).toBe(false)
+  })
+})
+
+describe('the player’s own chips', () => {
+  /*
+   * The bug, stated directly: a tray of chips sitting on an empty blackjack
+   * table, in front of an empty stool, for the whole time anyone walked the
+   * floor. Both tables stay mounted while the player is in the room, so the
+   * felt asks every frame which stool this player is on — and an answer that
+   * cannot say "none" said "the middle one".
+   *
+   * `ownSeat` keeps the null and `ownsTheFelt` refuses it, which is the whole
+   * of the fix: nobody at the table owns nothing on it.
+   */
+  it('are not on the felt when nobody is at the table', () => {
+    expect(ownSeat(null, null)).toBeNull()
+    expect(ownsTheFelt(ownSeat(null, null), 1)).toBe(false)
+  })
+
+  // Nor when the player is at the other table in the same room, which is drawn
+  // at the same time and would otherwise leave their money behind them.
+  it('are not on the felt while their owner is at craps', () => {
+    expect(ownSeat(TableId.Craps, null)).toBeNull()
+    expect(ownSeat(TableId.Craps, DEFAULT_BLACKJACK_SEAT)).toBeNull()
+    expect(ownsTheFelt(ownSeat(TableId.Craps, DEFAULT_BLACKJACK_SEAT), 1)).toBe(false)
+  })
+
+  // Sat at the middle stool alone: the tray is drawn, exactly as it always was.
+  it('are on the felt for a lone player at the middle stool', () => {
+    expect(ownsTheFelt(ownSeat(TableId.Blackjack, DEFAULT_BLACKJACK_SEAT), 1)).toBe(true)
+    // `?boot=` links seat the player without naming a stool.
+    expect(ownsTheFelt(ownSeat(TableId.Blackjack, null), 1)).toBe(true)
+  })
+
+  /*
+   * ...and nowhere else. The well is authored in the one band of the player's
+   * half that is clear of everything, and that band is in front of the middle
+   * seat — so anywhere else it is a tray parked in front of a neighbour.
+   */
+  it('are not on the felt at any other stool, or at a shared table', () => {
+    expect(ownsTheFelt(ownSeat(TableId.Blackjack, 0), 1)).toBe(false)
+    expect(ownsTheFelt(ownSeat(TableId.Blackjack, BLACKJACK_SEAT_COUNT - 1), 1)).toBe(false)
+    expect(ownsTheFelt(ownSeat(TableId.Blackjack, DEFAULT_BLACKJACK_SEAT), 2)).toBe(false)
+  })
+})
+
+describe('a seat read off a URL', () => {
+  /*
+   * `?seat=` is how a capture picks a stool, and `bootShortcut` reads it with
+   * `URLSearchParams.get`, which answers `null` for a parameter nobody passed.
+   * `Number(null)` is 0 — first base, and a seat this table really has — so
+   * every link that did not name a stool seated the player at the end of the
+   * table. Every regression capture taken through one was of the wrong seat
+   * and looked entirely plausible. `Number('')` is 0 as well, so `?seat=` with
+   * nothing after it lands in the same place — which is what this test found.
+   *
+   * The reading is duplicated here rather than imported because
+   * `bootShortcut.ts` reaches for `window` at module scope. What is asserted is
+   * the coercion, which is where it went wrong.
+   */
+  const seatFromParam = (raw: string | null): number => {
+    const named = raw?.trim()
+    if (!named) return DEFAULT_BLACKJACK_SEAT
+
+    const seat = Number(named)
+    return isBlackjackSeat(seat) ? seat : DEFAULT_BLACKJACK_SEAT
+  }
+
+  it('takes the default stool when no seat is named', () => {
+    expect(seatFromParam(null)).toBe(DEFAULT_BLACKJACK_SEAT)
+  })
+
+  it('still reads first base when it is asked for', () => {
+    expect(seatFromParam('0')).toBe(0)
+    expect(seatFromParam(String(BLACKJACK_SEAT_COUNT - 1))).toBe(BLACKJACK_SEAT_COUNT - 1)
+  })
+
+  // A link is user-writable like any other input off the wire.
+  it('falls back to the default for anything that is not a seat', () => {
+    expect(seatFromParam('')).toBe(DEFAULT_BLACKJACK_SEAT)
+    expect(seatFromParam('nine')).toBe(DEFAULT_BLACKJACK_SEAT)
+    expect(seatFromParam(String(BLACKJACK_SEAT_COUNT))).toBe(DEFAULT_BLACKJACK_SEAT)
+    expect(seatFromParam('-1')).toBe(DEFAULT_BLACKJACK_SEAT)
   })
 })

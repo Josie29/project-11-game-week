@@ -29,6 +29,7 @@ import { WelcomeScreen } from './ui/WelcomeScreen'
 import { ClinicPanel } from './ui/ClinicPanel'
 import { CheckoutPanel } from './ui/CheckoutPanel'
 import { FittingPanel } from './ui/FittingPanel'
+import { UpdateNotice } from './ui/UpdateNotice'
 import { getVenue, VenueKind } from './world/venues'
 import { KEYBOARD_MAP } from './world/controls'
 import { PLAY_FOV } from './world/camera'
@@ -252,6 +253,13 @@ export function App() {
           <BlackjackPanel venueId={activeVenue} />
         ) : null
       )}
+
+      {/*
+        Last, so it layers over every other overlay, and not gated on welcome
+        or designer — a stale tab parked on the welcome screen deserves the
+        notice most of all. Inert in dev and under `?boot=`; see the component.
+      */}
+      {sheet === null && <UpdateNotice />}
     </KeyboardControls>
   )
 }

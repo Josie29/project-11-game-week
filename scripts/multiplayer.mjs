@@ -27,6 +27,16 @@ const OUT = resolve('shots/multiplayer')
 const CONNECT_MS = 4_000
 
 /**
+ * How long a socket abandoned on a room change takes to admit it is closed.
+ *
+ * Measured at about ten seconds against the deployed worker: nothing completes
+ * the handshake, so it ends on a 1006 timeout rather than a clean close. The
+ * window has to outlast that, or the check finishes before the event it is
+ * looking for has happened and passes for the wrong reason.
+ */
+const ABANDONED_CLOSE_MS = 15_000
+
+/**
  * How long the walker holds W.
  *
  * Deliberately short. At 7.5 units a second a longer walk puts the two players
@@ -206,6 +216,86 @@ async function main() {
     JSON.stringify(indoors.names),
   )
   await bobIn.page.screenshot({ path: `${OUT}/bob-casino.png` })
+
+  /*
+   * Changing rooms, which is not the same test as starting in one.
+   *
+   * Everything above opens the casino on a fresh page, so `venue:golden-ace`
+   * is the first room that page ever joined and there is no previous socket in
+   * play. A player arrives the other way — the strip first, then the casino —
+   * and that order was broken in production for as long as this check has been
+   * green, because it is a *second* socket that exposes it.
+   *
+   * `stop()` closes the strip's socket and the venue's is open a fraction of a
+   * second later, but the abandoned one does not close politely: its handshake
+   * has nobody to finish it and it dies of a 1006 timeout about ten seconds
+   * afterwards. That late close then described the live venue socket as down,
+   * and nothing put it right — a socket that stays open never closes again to
+   * reconnect from, and never opens again to say it is up. Blackjack sat on
+   * "Reconnecting to the table…" with every chip button dead for the rest of
+   * the session.
+   *
+   * Polled rather than slept on: the failure is `connected` going false at
+   * some point inside that window, so this watches the whole window and stops
+   * at the first sign of it rather than sampling once at the end and hoping.
+   */
+  /*
+   * The four players above are finished with, and a fifth alongside them is
+   * both a page starved of a software renderer's attention — `openPlayer`'s
+   * wait for the canvas times out — and a stranger in the room the leg below
+   * counts peers in.
+   */
+  for (const player of [alice, bob, aliceIn, bobIn]) await player.context.close()
+
+  const changer = await openPlayer(browser, 'Changer', undefined, 'strip')
+  await changer.page.waitForTimeout(CONNECT_MS)
+
+  const beforeChange = await peers(changer.page)
+  check(
+    'changer connected on the strip',
+    beforeChange.connected === true,
+    JSON.stringify(beforeChange),
+  )
+
+  const afterChange = await changer.page.evaluate(async (windowMs) => {
+    const store = window.presenceStore
+    if (!store) return { error: 'presenceStore not exposed' }
+
+    // What walking through the casino's door does.
+    store.getState().enterRoom(
+      'venue:golden-ace',
+      { minX: -8, maxX: 8, minZ: -40, maxZ: 10 },
+      {
+        name: 'Changer',
+        appearance: {},
+        owned: [],
+        equipped: {},
+        seated: false,
+        table: null,
+        seat: null,
+      },
+    )
+
+    const deadline = Date.now() + windowMs
+    let everConnected = false
+    while (Date.now() < deadline) {
+      const { connected } = store.getState()
+      if (connected) everConnected = true
+      // Only a drop *after* the venue socket came up is the bug; the moment
+      // between `stop()` and the new socket opening is legitimately false.
+      if (everConnected && !connected) {
+        return { droppedAfterConnecting: true, msIn: windowMs - (deadline - Date.now()) }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250))
+    }
+    return { droppedAfterConnecting: false, connected: store.getState().connected }
+  }, ABANDONED_CLOSE_MS)
+
+  check(
+    'changer stays connected after moving from the strip to the casino',
+    afterChange.droppedAfterConnecting === false && afterChange.connected === true,
+    JSON.stringify(afterChange),
+  )
 
   await browser.close()
 

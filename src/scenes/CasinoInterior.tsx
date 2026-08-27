@@ -18,6 +18,7 @@ import {
   blackjackStandSpot,
   CAMERA_BOUNDS,
   CRAPS_PROMPT,
+  crapsRailFacing,
   DEALER_SPOTS,
   DEFAULT_BLACKJACK_SEAT,
   EXIT_DOOR,
@@ -230,6 +231,9 @@ export function CasinoInterior({ venueId }: CasinoInteriorProps) {
    * true when two people reach for the same one at once.
    */
   const takenSeats = blackjack.takenSeats
+  // A full rail is left off the list too, on the same rule as a taken stool:
+  // the spec caps the table at eight, and a place you cannot take is no offer.
+  const crapsHasRoom = craps.hasRoom
   const targets = useMemo<readonly ProximityTarget[]>(
     () => [
       ...BLACKJACK_SEAT_IDS.flatMap((id, seat) =>
@@ -237,15 +241,19 @@ export function CasinoInterior({ venueId }: CasinoInteriorProps) {
           ? []
           : [{ id, position: blackjackStandSpot(seat), radius: BLACKJACK_SEAT_RADIUS }],
       ),
-      {
-        id: TableId.Craps as string,
-        position: CRAPS_PROMPT.center,
-        radius: CRAPS_PROMPT.radius,
-        halfLength: CRAPS_PROMPT.halfLength,
-      },
+      ...(crapsHasRoom
+        ? [
+            {
+              id: TableId.Craps as string,
+              position: CRAPS_PROMPT.center,
+              radius: CRAPS_PROMPT.radius,
+              halfLength: CRAPS_PROMPT.halfLength,
+            },
+          ]
+        : []),
       { id: 'exit', position: EXIT_DOOR, radius: EXIT_RADIUS },
     ],
-    [takenSeats],
+    [takenSeats, crapsHasRoom],
   )
 
   /*
@@ -273,7 +281,7 @@ export function CasinoInterior({ venueId }: CasinoInteriorProps) {
   const seatedSpot = blackjackSeatSpot(activeSeat ?? DEFAULT_BLACKJACK_SEAT)
   const seatedFacing =
     activeTable === TableId.Craps
-      ? Math.PI
+      ? crapsRailFacing(craps.railSpot)
       : blackjackSeatFacing(activeSeat ?? DEFAULT_BLACKJACK_SEAT)
 
   function handleNearest(id: string | null): void {

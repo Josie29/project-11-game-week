@@ -393,7 +393,19 @@ export function applyBootShortcut(): void {
    * useless picture.
    */
   function bootSeat(search: URLSearchParams): number {
-    const seat = Number(search.get('seat'))
+    /*
+     * The absent case first, and it is the whole reason this is four lines.
+     *
+     * `URLSearchParams.get` answers `null` for a parameter nobody passed, and
+     * `Number(null)` is `0` — which is first base, a perfectly valid seat. So
+     * every link that did not name a stool quietly seated the player at the
+     * end of the table instead of the middle, and every capture taken through
+     * one was of the wrong seat while looking entirely plausible.
+     */
+    const named = search.get('seat')?.trim()
+    if (!named) return DEFAULT_BLACKJACK_SEAT
+
+    const seat = Number(named)
     return isBlackjackSeat(seat) ? seat : DEFAULT_BLACKJACK_SEAT
   }
 

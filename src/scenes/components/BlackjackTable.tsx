@@ -4,7 +4,7 @@ import { CatmullRomCurve3, ExtrudeGeometry, Shape, TubeGeometry, Vector3 } from 
 import { ChipPhase, useBlackjackStore } from '../../store/useBlackjackStore'
 import { useGameStore } from '../../store/useGameStore'
 import { usePresenceStore } from '../../store/usePresenceStore'
-import { BLACKJACK_SEAT_COUNT, TableId } from '../casinoFloorLayout'
+import { TableId } from '../casinoFloorLayout'
 import { chipBreakdown, stackHeight } from '../chipLayout'
 import {
   DEALER_DEPTH,
@@ -12,17 +12,19 @@ import {
   DEALER_ROW_Z,
   DISCARD_POSITION,
   HALF_WIDTH,
-  handAnchor,
+  ownsTheFelt,
   PAYOUT_NUDGE_X,
   PAYOUT_NUDGE_Z,
-  ownsTheFelt,
   PLAYER_DEPTH,
+  seatAnchor,
+  seatChipsOrigin,
   SLAB_THICKNESS,
-  stashOrigin,
+  soloAnchor,
+  STASH_ORIGIN,
   SURFACE_Y,
   TABLE_TOP_Y,
 } from '../tableLayout'
-import { seatOrDefault } from '../../world/seating'
+import { ownSeat } from '../../world/seating'
 import { FLIP_DURATION_MS } from '../revealTimeline'
 import { getFeltTexture } from '../tableTexture'
 import { ChipStack } from './ChipStack'
@@ -127,9 +129,8 @@ export function BlackjackTable() {
   /*
    * Every seat at the table, not just the first.
    *
-   * `handAnchor` decides where each one's cards and chips go, and returns the
-   * old single-player positions unchanged when there is only one seat — so a
-   * solo table draws exactly what it always drew.
+   * `soloAnchor` and `seatAnchor` are the two ways their cards and chips can
+   * be laid out, and `ownsTheFelt` below picks between them once.
    */
   const seatCount = game.seats.length
 
@@ -144,19 +145,23 @@ export function BlackjackTable() {
    */
   const seatStools = useBlackjackStore((state) => state.seatStools)
 
-  /*
-   * The stool this player is actually sitting on.
-   *
-   * `seatStools` comes from the room and so is empty in a solo game — which
-   * used to leave the fallback at engine index 0 and every lone player's hand
-   * dealt to the centre line, however far along the table they had walked to
-   * sit. Their own seat is in the game store whether or not there is a room.
-   */
-  const myStool = seatOrDefault(useGameStore((state) => state.activeSeat))
+  /** This player's own stool here, or null while they are anywhere else. */
+  const mine = ownSeat(
+    useGameStore((state) => state.activeTable),
+    useGameStore((state) => state.activeSeat),
+  )
 
-  /** Which stool an engine seat belongs to: the room's answer, then ours. */
-  const stoolOf = (seatIndex: number): number =>
-    seatStools[seatIndex] ?? (seatCount <= 1 ? myStool : seatIndex)
+  /** Which of the felt's two layouts is in force. Decided once, here. */
+  const solo = ownsTheFelt(mine, seatCount)
+
+  /*
+   * Which stool an engine seat belongs to.
+   *
+   * The room's answer first, always: a spectator has no seat of their own and
+   * the map is still authoritative for everybody else's hands. `seatStools` is
+   * empty in a solo game, where the one engine seat is this player's own.
+   */
+  const stoolOf = (seatIndex: number): number => seatStools[seatIndex] ?? mine ?? seatIndex
 
   /*
    * Stakes in with the room but not yet dealt, each at its owner's own stool.
@@ -241,13 +246,18 @@ export function BlackjackTable() {
         The player's own chips, in their own well. Winnings still out on the
         felt are held back so the same money is not shown twice.
 
-        Solo only. The well is authored in the one band of the player's half
-        that is clear of everything, and that band is in front of the middle
-        seat — so at a shared table it is a tray of somebody else's chips
-        sitting in front of your neighbour, or on top of your own cards. See
-        `stashOrigin`.
+        Only while its owner is sat here, and only at the middle stool. The well
+        is authored in the one band of the player's half that is clear of
+        everything, and that band is in front of the middle seat — so at a
+        shared table it is a tray of somebody else's chips sitting in front of
+        your neighbour, or on top of your own cards. See `seatChipsOrigin`.
+
+        And it is the *player's* money rather than the table's furniture, so it
+        leaves with them. Both tables stay mounted for as long as the player is
+        in the room, so without that it was a tray of chips on an empty table in
+        front of an empty stool, for the whole time anyone walked the floor.
       */}
-      {ownsTheFelt(myStool, seatCount) && <ChipStash amount={bankroll - uncollectedPayout} />}
+      {solo && <ChipStash amount={bankroll - uncollectedPayout} />}
 
       {/*
         Sliced rather than rendered whole: the engine resolves the dealer's
@@ -282,24 +292,21 @@ export function BlackjackTable() {
         somebody slow is up to half a minute of a game that looks frozen.
       */}
       {pendingBets.map(({ seat, amount }) => {
-        const at = handAnchor(seat, BLACKJACK_SEAT_COUNT, 0, 1)
+        const at = seatAnchor(seat, 0, 1)
         return (
           <ChipStack
             key={`pending-${seat}`}
             amount={amount}
             position={[at.x, SURFACE_Y, at.chipZ]}
-            origin={stashOrigin(seat, BLACKJACK_SEAT_COUNT)}
+            origin={seatChipsOrigin(seat)}
           />
         )
       })}
 
       {game.seats.flatMap((seat, seatIndex) => seat.hands.map((hand, handIndex) => {
-        const at = handAnchor(
-          stoolOf(seatIndex),
-          seatCount,
-          handIndex,
-          seat.hands.length,
-        )
+        const at = solo
+          ? soloAnchor(handIndex, seat.hands.length)
+          : seatAnchor(stoolOf(seatIndex), handIndex, seat.hands.length)
         const anchorX = at.x
         /*
          * Marks the hand being played, and at a shared table that means the
@@ -325,7 +332,7 @@ export function BlackjackTable() {
         const chipsGoHome = hand.payout > 0
         const restingSpot: readonly [number, number, number] = [anchorX, SURFACE_Y, at.chipZ]
         // Home is this seat's own chips, not the middle of the table.
-        const home = stashOrigin(stoolOf(seatIndex), seatCount)
+        const home = solo ? STASH_ORIGIN : seatChipsOrigin(stoolOf(seatIndex))
         const chipTarget = isClearing
           ? chipsGoHome
             ? home
