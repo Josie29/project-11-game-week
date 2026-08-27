@@ -195,6 +195,23 @@ added for the *main* checkout also matched every source file of a dev server
 started inside a worktree. `npm run locate` is the quickest way to tell the two
 apart: an object that is absent from the scene graph is not a rendering problem.
 
+**A hemisphere capping a cylinder of its own radius meets it tangentially, and
+tangential is the worst case there is.** Two low-poly surfaces crossing at a
+shallow angle have a polygon boundary that staggers, so the seam comes out as a
+dotted, stair-stepped ring — the old hairline, the sleeve/skin boundary and the
+deltoid were all one phenomenon, and no segment count fixes any of them. The
+two ways out are to *steepen* the crossing, which turns a shoulder cap into a
+mushroom, or to remove the boundary: the arms are single capsules now, and a
+sleeve is its own shell ending on a flat rim rather than a colour change part
+way down a limb. A cuff is what real clothing uses at exactly this seam, for
+exactly this reason.
+
+Corollary: **a garment shell has to stay outside the limb it covers along its
+whole length.** The forearm sleeve tapered toward a "wrist" that was a fraction
+of the forearm's radius — arithmetic left over from when the forearm was a
+tapered cylinder — so against the capsule that replaced it the cloth was
+narrower than the arm below the elbow and the bare arm came *through* it.
+
 **Rounded and tapered, never boxes.** Every figure on
 `art/refs/character_sheet.png` has a chest wider than its waist, sloped
 shoulders and limbs that narrow toward the joint. What shipped first was a
@@ -209,6 +226,19 @@ segments it has. Side panels of hair, a ponytail and a row of coils were all
 cylinders, and from the one angle each of them exists to be seen from they read
 as boards bolted to a head. Anything that hangs is a capsule or is tapered and
 tipped with a sphere.
+
+**A shaping piece must not have a silhouette of its own.** The masses that pull
+a hairline down at the temples were sized as a fraction of the *head* and
+overshot the hair shell by a couple of centimetres, so every style grew a small
+dark nub out of each side. They are fractions of `capOuterX` now, summing to
+less than one — which is the whole guarantee. The same rule caught the shoulder
+mass: carried out over the arm, something that flat tapers to a point above the
+sleeve, so each shoulder ended in a spike with a hard crease running to the neck.
+
+**The head takes its room from the torso, so the torso has to be given some
+back.** Anatomically the leg is about 1.6 times the torso and at seven and a
+half heads that reads fine; under a head at 5.5 heads it reads as a small body
+on long legs. Four centimetres came off each leg and went into every torso.
 
 **The figure is stylised, and one number says how far.** `HEADS_TALL` in
 `proportions.ts` is 5.5, against the reference sheet's seven and a half. The
@@ -266,6 +296,27 @@ it also deletes a whole family of near-coincident planes: four hand-placed
 rectangles in one small patch of face meant every attempt to position a temple
 arm landed one of its faces within a millimetre of a sclera's or a pupil's, on
 one silhouette or another.
+
+**A flat panel laid on a curved head has to be turned to face along the
+surface, not pushed back until it fits.** A face panel set at the depth of the
+skull under its own centre stands nearly two centimetres proud at its outer
+corners, so from any angle past three-quarters the far eye rendered as a white
+rectangle *outside* the head's silhouette. Pushing it back is the obvious fix
+and is worse — the panel is then buried by however far the surface fell away
+across it, and the capture came back with no eyes at all. Turning it to the
+normal costs the sagitta, about three millimetres for an eye on this head.
+
+That change is also what caught a hidden defect in `parts.ts`: Euler `'XYZ'`
+builds the matrix `RX · RY · RZ`, so a *point* is turned by Z first and X last,
+and `rotatePoint` had it the other way round. It agrees for every part rotated
+about a single axis and quietly disagrees for any part rotated about two or
+three, which nothing on the figure was until the face panels.
+
+**A straight bar cannot arch, and both directions it can tilt are expressions.**
+Tilted up toward the temple a brow is a scowl and tilted down it is a worried
+face; both shipped here in turn, and the second was a "fix" read off a
+forty-pixel capture. A brow rises to a peak about two thirds out and falls to a
+tail, so it takes two segments — which is also the fewest that has a peak at all.
 
 **Check the sign on a rotation against what it does, not what it is called.**
 `IDLE_ARM_SPLAY` was documented as holding the arms clear of the body and was
@@ -375,6 +426,8 @@ Dev-only deep links, stripped from production builds:
 | `?skin=` `?haircolor=` `?garmentcolor=` | one palette swatch, by id |
 | `?wear=id,id` | grants and equips catalogue items |
 | `?turn=DEGREES` | turns the dressing-room stage; 180 is the back |
+| `?pitch=DEGREES` | raises the dressing-room camera; positive looks down |
+| `?zoom=METRES` | how far it stands off; under 2.4 it frames the head |
 | `?time=HH:MM` | opens at that hour, clock still running |
 | `?freeze` | holds the clock, so a capture is reproducible |
 
@@ -407,6 +460,23 @@ lands on the far wall well below the springing line: a two-storey coffered
 ceiling was rendering every frame into nobody's view, and no regression shot
 could have said so. A player drags to look up. A capture cannot, and a ceiling
 nothing can photograph is a ceiling nobody can tell is broken.
+
+**`?pitch=` and `?zoom=` exist because half of a character audit is invisible
+from eye level and at full length.** Bare skin at a skirted waist, the pelvis
+block, the plate under a shoe and a collar's section only show from above; and
+at the stage's default distance a head is forty pixels tall, which is enough to
+say the hair is there and not enough to say it is right. Both angles were
+reachable only by scripting a pointer drag and a wheel event against the canvas,
+which makes a finding nobody can retake from a link. `?zoom=` also moves the
+camera's own look target up toward the head as it comes in, because a zoom that
+frames the collarbone is not a zoom.
+
+**`?wear=` is authoritative about every slot, not additive.** It used to grant
+what it named and leave whatever was already saved in place, so a per-item
+capture run accumulated: by the seventh item the figure was in a hat, sunglasses,
+heels and a cane, and every shot after the first was of the wrong subject.
+`?wear=` with nothing after it strips the figure, which is the capture that says
+what an item is worth wearing.
 
 **`?turn=` exists because for months there was no way to photograph the back of
 a character.** `?freeze` pinned the designer's turntable at rotation zero, so
@@ -545,6 +615,31 @@ fresh clone and every existing capture behaving exactly as before.
   Two curves driving one impression have to arrive together. The sky was
   keyframed separately from the facades and neon, and for a while 07:00 showed
   daylit buildings under a night sky.
+- **A garment's boundaries are derived from the body's, never chosen beside
+  them.** Outerwear is a second stack of tapered sections over the first,
+  authored in a different file against the same torso height, so every boundary
+  in one had a standing chance of landing on a boundary in the other — and
+  several did, one silhouette at a time as the depth ratios moved. Chasing them
+  individually is a losing game: `torsoRadiusAt` and the four named section
+  boundaries in `bodyParts.ts` are what `itemParts.ts` builds from, offset by
+  `GARMENT_CLEARANCE`, so a coincidence is no longer something that can happen.
+
+  The same rule catches the *other* direction: a jacket sized as its own
+  fraction of `torsoWidth` was within half a millimetre of the body's chest on
+  the broad build once the three silhouettes stopped sharing one chest fraction,
+  and a garment the same width as the body under it is one surface drawn twice.
+
+- **Three builds means three shapes, not one shape at three sizes.** Chest and
+  waist half-widths are their own fields, because as fractions of `torsoWidth`
+  the only difference below the shoulder was scale: the broad figure was the
+  narrow figure enlarged, nip and all, and read as overweight rather than as
+  big. Masculine is a V dropped onto a rectangle — shoulders well past the
+  chest, waist and hip within a couple of centimetres of each other. Feminine is
+  the opposite in every respect.
+
+  Limb thickness is the same trap from the other end. As a fraction of the
+  torso, the broad build's thigh came out as wide as its own hip.
+
 - **Table geometry lives in `src/scenes/tableLayout.ts`**, not in components.
   Shop geometry lives in `src/scenes/shopLayout.ts`, the street in
   `src/scenes/stripLayout.ts`, and body geometry in

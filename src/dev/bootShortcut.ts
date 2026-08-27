@@ -4,8 +4,10 @@ import { Garment, HairStyle, sanitizeAppearance } from '../character/appearance'
 import {
   appearanceOverrides,
   hasAppearanceOverride,
+  pitchRadians,
   turnRadians,
   wornItems,
+  zoomDistance,
 } from './appearanceLinks'
 import { Silhouette } from '../character/proportions'
 import { useAppearanceStore } from '../store/useAppearanceStore'
@@ -14,6 +16,7 @@ import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
 import { PlayMode, useSessionStore } from '../store/useSessionStore'
 import { useTimeStore } from '../store/useTimeStore'
+import { SLOT_ORDER } from '../character/catalog'
 import { AISLE_CENTER_X, TableId, WATER_COURT } from '../scenes/casinoFloorLayout'
 import {
   displayFor,
@@ -182,8 +185,26 @@ function applyAppearanceShortcut(): void {
     sanitizeAppearance({ ...wardrobe.appearance, ...appearanceOverrides(params) }),
   )
 
+  if (!params.has('wear')) return
+
+  /*
+   * `?wear=` says what is on the figure, not what to add to it.
+   *
+   * It used to grant and equip what it named and leave whatever was already
+   * saved in place, which makes a per-item capture run accumulate: by the
+   * seventh item in an audit sweep the figure was in a hat, sunglasses, heels
+   * and a cane, and every shot after the first was of the wrong subject. A
+   * capture link has to be authoritative about the whole figure or it is not
+   * reproducible, which is the entire point of having one.
+   *
+   * `?wear=` with nothing after it is therefore a valid request: strip the
+   * figure. That is the capture that says what an item is worth wearing.
+   */
   const wanted = wornItems(params)
-  if (wanted.length === 0) return
+  for (const slot of SLOT_ORDER) {
+    useAppearanceStore.getState().unequip(slot)
+  }
+  useAppearanceStore.getState().clearFitting()
 
   useAppearanceStore.setState({ owned: [...new Set([...wardrobe.owned, ...wanted])] })
   for (const id of wanted) {
@@ -192,18 +213,30 @@ function applyAppearanceShortcut(): void {
 }
 
 /**
- * Honours `?turn=DEGREES` by seeding the dressing-room stage's orbit yaw.
+ * Honours `?turn=`, `?pitch=` and `?zoom=` by seeding the stage's orbit.
  *
- * The single most overdue line in this file. `?freeze` pinned the turntable at
- * rotation zero, so every regression capture of a character ever taken on this
- * project was a front view — and the defect that started the character rebuild
- * was a ponytail that only reads as wrong from behind.
+ * `?turn=` was the single most overdue line in this file: `?freeze` pinned the
+ * turntable at rotation zero, so every regression capture of a character ever
+ * taken on this project was a front view — and the defect that started the
+ * character rebuild was a ponytail that only reads as wrong from behind.
+ *
+ * `?pitch=` and `?zoom=` are the same lesson learnt again one audit later. Half
+ * of what that audit found is only visible from above the figure, and the head
+ * is forty pixels tall at the stage's default distance, so both angles had to
+ * be reached by scripting a pointer drag and a wheel event against the canvas —
+ * which is a finding nobody can retake from a link.
  */
-function applyTurnShortcut(): void {
-  const turn = turnRadians(new URLSearchParams(window.location.search))
-  if (turn === null) return
+function applyOrbitShortcut(): void {
+  const params = new URLSearchParams(window.location.search)
 
-  useGameStore.setState({ designerYaw: turn })
+  const turn = turnRadians(params)
+  if (turn !== null) useGameStore.setState({ designerYaw: turn })
+
+  const pitch = pitchRadians(params)
+  if (pitch !== null) useGameStore.setState({ designerPitch: pitch })
+
+  const zoom = zoomDistance(params)
+  if (zoom !== null) useGameStore.setState({ designerDistance: zoom })
 }
 
 /** Honours `?look=DEGREES` by seeding the walking camera's orbit yaw. */
@@ -333,7 +366,7 @@ export function applyBootShortcut(): void {
   applyTimeShortcut()
   applyWardrobeShortcut()
   applyAppearanceShortcut()
-  applyTurnShortcut()
+  applyOrbitShortcut()
   applyLookShortcut()
   applyTiltShortcut()
 

@@ -6,7 +6,9 @@ import { resolveAppearance, type Appearance } from '../../character/appearance'
 import {
   footParts,
   forearmParts,
+  gripSeat,
   handParts,
+  ringSeat,
   shinParts,
   thighParts,
   torsoParts,
@@ -26,6 +28,11 @@ import { GESTURES, Gesture, REST_POSE } from '../gestures'
 import { Accessory } from './character/Accessory'
 import { Hair } from './character/Hair'
 import { Parts } from './character/Parts'
+
+/** Mirrors a seat authored on the right hand onto whichever hand wears it. */
+function sideways(seat: readonly [number, number, number], side: 1 | -1): [number, number, number] {
+  return [side * seat[0], seat[1], seat[2]]
+}
 
 /** A gesture and when it started, for a caller driving an arm themselves. */
 export interface ArmSignal {
@@ -355,15 +362,23 @@ export function CasinoCharacter({
           <group name={`hand:${side === 1 ? 'right' : 'left'}`} position={[0, -body.forearm, 0]}>
             <Parts parts={handParts(side, body)} palette={palette} namePrefix={`hand${side}`} />
 
+            {/*
+              Both of these read their seat off `bodyParts.ts` rather than
+              carrying a hand-typed triple. They used to carry one, written
+              against a hand a third smaller than the restyle produced: the
+              signet ring rendered as a white disc in the middle of the palm and
+              the cane's knob sat beside an open hand rather than in it.
+              `anchorFor` is derived from the same two functions, so the tested
+              anchor and the rendered position cannot drift apart.
+            */}
             {isLeft && worn.finger && (
-              // Nudged onto a finger rather than the palm's centre line.
-              <group name="worn:finger" position={[0.022, -0.06, 0.014]}>
+              <group name="worn:finger" position={sideways(ringSeat(body), side)}>
                 <Accessory item={worn.finger} body={body} />
               </group>
             )}
 
             {isLeft && worn.held && (
-              <group name="worn:held" position={[side * 0.06, -0.09, 0.05]}>
+              <group name="worn:held" position={sideways(gripSeat(body), side)}>
                 <Accessory item={worn.held} body={body} />
               </group>
             )}

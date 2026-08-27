@@ -119,7 +119,7 @@ function cap(body: BodyProportions, thickness: number, lift: number, hairline: n
      * segments and was still ragged at 40. It is the one place on the figure
      * where tessellation is load-bearing rather than cosmetic.
      */
-    { segments: 96 },
+    { segments: 128 },
   )
 }
 
@@ -175,6 +175,102 @@ function sides(
 }
 
 /**
+ * How far back a hanging length of hair leans, in radians.
+ *
+ * Small — about thirteen degrees — and it is doing arithmetic rather than
+ * styling: it is what keeps the fall outside the chest at the shoulder blades
+ * without standing off the crown. See the comment on `HairStyle.Long`.
+ */
+const FALL_LEAN = 0.22
+
+/**
+ * Two masses that pull the hairline down at the temples.
+ *
+ * The single most valuable twenty lines in this module, and they exist because
+ * of what the shell arrangement costs. The shell and the skull are the same
+ * ellipsoid at two sizes, so they cross on a *plane* — and a plane seen edge-on
+ * is a straight line. In profile every one of the eight styles had a razor-cut
+ * diagonal running from the brow up and back at forty-five degrees, which reads
+ * as a swim cap or a mask edge rather than as hair.
+ *
+ * The plane is what makes the hairline derivable and it is worth keeping. What
+ * was missing was anything to interrupt it. A pair of masses low at the temples
+ * turns one straight edge into a curve that dips at the sides — which is also
+ * what a hairline does — without giving up the arithmetic anywhere else.
+ *
+ * @param body The head this sits on.
+ * @param thickness The shell's own thickness, so these hang off its surface.
+ * @param hairline Where the shell breaks the skull at the centre line.
+ * @param drop How far below that the temple sits, in half-head-heights.
+ */
+function temples(
+  body: BodyProportions,
+  thickness: number,
+  hairline: number,
+  drop: number,
+): Part[] {
+  const { headHeight: hh, headDepth: hd } = body
+  const half = hh / 2
+
+  /*
+   * Sized so the outer edge lands on the shell, never past it.
+   *
+   * Both numbers are fractions of `capOuterX` and they sum to less than one,
+   * which is the whole point: as a fraction of the *head* the width overshot
+   * the shell by a couple of centimetres, and what showed was a small dark nub
+   * sticking out of each side of the head on every style. A piece that exists
+   * to shape the hairline must not have a silhouette of its own.
+   */
+  const shell = capOuterX(body, thickness)
+  const outer = shell * 0.62
+  const width = shell * 0.36
+
+  return [1, -1].map((side) =>
+    strand(
+      side === 1 ? 'temple-right' : 'temple-left',
+      PartShape.Sphere,
+      // Set back off the brow: at the temple the skull has already turned away,
+      // and a mass centred on the face's own depth stands out in front of it.
+      [side * outer, half * (hairline - drop), -hd * 0.02],
+      [width, hh * 0.1, hd * 0.17],
+      { segments: 24 },
+    ),
+  )
+}
+
+/**
+ * A wisp in front of each ear, which finishes the job the temples start.
+ *
+ * The last stretch of the crossing plane runs down past the ear, and this is
+ * what breaks it there. It is also what makes a short style read as *cut* — a
+ * shell that stops in a clean arc above the ear reads as a helmet however well
+ * the hairline itself behaves.
+ */
+function sideburns(
+  body: BodyProportions,
+  thickness: number,
+  hairline: number,
+  drop: number,
+): Part[] {
+  const { headHeight: hh, headDepth: hd } = body
+  const half = hh / 2
+
+  // Bounded by the shell, for the reason `temples` is.
+  const shell = capOuterX(body, thickness)
+  const radius = shell * 0.11
+
+  return [1, -1].map((side) =>
+    strand(
+      side === 1 ? 'sideburn-right' : 'sideburn-left',
+      PartShape.Capsule,
+      [side * (shell * 0.86 - radius), half * (hairline - drop - 0.36), -hd * 0.04],
+      [radius, half * 0.3, radius],
+      { segments: 14 },
+    ),
+  )
+}
+
+/**
  * Every piece of one hairstyle, in the head's frame.
  *
  * @param style Which of the eight styles to build.
@@ -190,14 +286,33 @@ export function hairParts(style: HairStyle, body: BodyProportions): readonly Par
   switch (style) {
     case HairStyle.Buzz:
       // Barely more than a shadow on the scalp, and a high hairline.
-      return [cap(body, 0.03, 0.04, 0.46)]
+      return [
+        cap(body, 0.03, 0.04, 0.46),
+        ...temples(body, 0.03, 0.46, 0.2),
+        ...sideburns(body, 0.03, 0.46, 0.2),
+      ]
 
     case HairStyle.Crop:
-      return [cap(body, 0.07, 0.1, 0.44), ...sides(body, 0.11, 0.5, 0.07)]
+      return [
+        cap(body, 0.07, 0.1, 0.44),
+        ...temples(body, 0.07, 0.44, 0.16),
+        ...sideburns(body, 0.07, 0.44, 0.16),
+        ...sides(body, 0.11, 0.5, 0.07),
+      ]
 
     case HairStyle.Pompadour:
+      /*
+       * Tall at the hairline, falling away behind — which is the arrangement,
+       * and which the version before this had exactly backwards. Its volume sat
+       * at the crown-*front* as one lump above the skull, and from the side it
+       * read as a bun tied on top of the head. What makes a pompadour is a mass
+       * that rises off the brow and sweeps back over the crown, so it is two
+       * pieces: the wave at the front and the sweep behind it.
+       */
       return [
-        cap(body, 0.07, 0.1, 0.46),
+        cap(body, 0.07, 0.06, 0.5),
+        ...temples(body, 0.07, 0.5, 0.24),
+        ...sideburns(body, 0.07, 0.5, 0.24),
         ...sides(body, 0.1, 0.42, 0.07),
         /*
          * The volume that makes the style: swept up and forward off the brow.
@@ -218,16 +333,16 @@ export function hairParts(style: HairStyle, body: BodyProportions): readonly Par
         strand(
           'quiff',
           PartShape.Sphere,
-          [0, half * 0.98, hd * 0.29],
-          [hw * 0.3, hh * 0.2, hd * 0.24],
-          { segments: 24 },
+          [0, half * 0.72, hd * 0.2],
+          [hw * 0.34, hh * 0.26, hd * 0.24],
+          { segments: 26 },
         ),
         strand(
-          'quiff-root',
+          'quiff-crest',
           PartShape.Sphere,
-          [0, half * 0.68, hd * 0.3],
-          [hw * 0.31, hh * 0.15, hd * 0.18],
-          { segments: 20 },
+          [0, half * 1.02, -hd * 0.04],
+          [hw * 0.34, hh * 0.16, hd * 0.34],
+          { segments: 24 },
         ),
       ]
 
@@ -235,21 +350,28 @@ export function hairParts(style: HairStyle, body: BodyProportions): readonly Par
       return [
         // The low hairline is the fringe.
         cap(body, 0.09, 0.12, 0.315),
+        ...temples(body, 0.09, 0.315, 0.14),
         // Squared off at the jaw, which is what separates a bob from long.
         ...sides(body, 0.19, 1.1, 0.09),
-        // The back of a bob is a single mass, not two panels with a gap.
+        /*
+         * The back of a bob is a single mass, not two panels with a gap — and
+         * it has to be wide enough to swallow the ends of the side panels, or
+         * the join between them shows as a vertical seam from behind. It was
+         * `hw * 0.48`, which stops just short of where the sides hang.
+         */
         strand(
           'bob-back',
           PartShape.Sphere,
-          [0, -half * 0.34, -hd * 0.27],
-          [hw * 0.48, hh * 0.3, hd * 0.3],
-          { segments: 22 },
+          [0, -half * 0.34, -hd * 0.24],
+          [hw * 0.56, hh * 0.32, hd * 0.34],
+          { segments: 24 },
         ),
       ]
 
     case HairStyle.Long:
       return [
         cap(body, 0.085, 0.12, 0.33),
+        ...temples(body, 0.085, 0.33, 0.14),
         ...sides(body, 0.19, 1.9, 0.085),
         /*
          * The fall down the back, which is what reads from the strip camera.
@@ -267,19 +389,45 @@ export function hairParts(style: HairStyle, body: BodyProportions): readonly Par
          * and it read as a plank. Narrowing it toward the ends and capping it
          * with a rounded tip is what makes it hair.
          */
+        /*
+         * Wide enough at the top to swallow the side panels' back edges.
+         *
+         * At `hw * 0.48` the fall was a rectangle standing off the back of the
+         * head with a visible seam either side of it, and from the rear
+         * three-quarter it read as a cape rather than as hair. Hair that hangs
+         * is one mass over the shoulders.
+         */
+        /*
+         * Leaning back, which is what lets one column do the whole length.
+         *
+         * The chest is a couple of centimetres deeper than the skull on every
+         * build, and hair is authored in the *head's* frame — so a column hung
+         * at a depth that looks right behind the head goes straight *through*
+         * the back of the torso. What rendered was hair beside the head, nothing
+         * at all across the shoulder blades, and a dark lens at the small of the
+         * back where the body had narrowed enough for the tip to come out again.
+         *
+         * Held vertical, no single depth works: far enough back to clear the
+         * chest is a hand's width off the crown. Splitting it in two was tried
+         * and is worse — the lower section has to sit further back than the
+         * upper by definition, so the join is a shelf you can see from any
+         * three-quarter angle. A lean solves it in one property, because it is
+         * what the difference actually is: the body gets deeper as it goes down,
+         * and so does the hair lying on it.
+         */
         strand(
           'fall',
           PartShape.Cylinder,
-          [0, -half * 1.18, -hd * 0.34],
-          [hw * 0.48, hh * 1.6, hw * 0.3],
-          { segments: 22, scale: [1, 1, 0.46] as Vec3 },
+          [0, -half * 1.12, -hd * 0.39],
+          [hw * 0.56, hh * 1.5, hw * 0.34],
+          { rotation: [FALL_LEAN, 0, 0] as Vec3, segments: 26, scale: [1, 1, 0.5] as Vec3 },
         ),
         strand(
           'fall-tip',
           PartShape.Sphere,
-          [0, -half * 2.85, -hd * 0.34],
-          [hw * 0.31, hh * 0.16, hw * 0.15],
-          { segments: 18 },
+          [0, -half * 2.6, -hd * 0.56],
+          [hw * 0.33, hh * 0.16, hw * 0.17],
+          { segments: 20 },
         ),
       ]
 
@@ -295,6 +443,7 @@ export function hairParts(style: HairStyle, body: BodyProportions): readonly Par
        */
       return [
         cap(body, 0.05, 0.08, 0.44),
+        ...temples(body, 0.05, 0.44, 0.18),
         ...sides(body, 0.09, 0.4, 0.05),
         // Gathered at the back of the crown, sunk into the shell.
         strand(
@@ -317,18 +466,34 @@ export function hairParts(style: HairStyle, body: BodyProportions): readonly Par
          * Its top is *inside* the gather rather than abutting it, so there is
          * no seam to find from any angle the stage can be turned to.
          */
+        /*
+         * Two segments, hanging closer to vertical than the one it replaces.
+         *
+         * A single rod leaning back at a quarter-radian with a knob on the end
+         * is a baseball bat, which is what the profile capture showed. Hair
+         * falls: it leaves the tie at an angle and then straightens under its
+         * own weight, so the upper section keeps a little of the old lean and
+         * the lower one hangs almost straight down and tapers hard.
+         */
         strand(
           'tail',
           PartShape.Cylinder,
-          [0, -half * 0.94, -hd * 0.6],
-          [hw * 0.24, hh * 1.4, hw * 0.12],
-          { rotation: [0.28, 0, 0] as Vec3, segments: 20 },
+          [0, -half * 0.72, -hd * 0.6],
+          [hw * 0.26, hh * 0.95, hw * 0.19],
+          { rotation: [0.2, 0, 0] as Vec3, segments: 22 },
+        ),
+        strand(
+          'tail-fall',
+          PartShape.Cylinder,
+          [0, -half * 1.85, -hd * 0.78],
+          [hw * 0.2, hh * 1.35, hw * 0.1],
+          { rotation: [0.06, 0, 0] as Vec3, segments: 22 },
         ),
         strand(
           'tail-tip',
           PartShape.Sphere,
-          [0, -half * 2.44, -hd * 0.85],
-          [hw * 0.13, hh * 0.1, hw * 0.13],
+          [0, -half * 2.72, -hd * 0.82],
+          [hw * 0.11, hh * 0.09, hw * 0.11],
           { segments: 16 },
         ),
       ]
@@ -336,22 +501,32 @@ export function hairParts(style: HairStyle, body: BodyProportions): readonly Par
     case HairStyle.Updo:
       return [
         cap(body, 0.05, 0.08, 0.46),
+        ...temples(body, 0.05, 0.46, 0.2),
+        ...sideburns(body, 0.05, 0.46, 0.2),
         ...sides(body, 0.085, 0.32, 0.05),
-        // Pinned high and back — the bun is the whole silhouette.
+        /*
+         * One mass pinned high and back, not two stacked.
+         *
+         * A bun and a slightly smaller bun on top of it is a cottage loaf: the
+         * seam between them runs right across the silhouette from every angle,
+         * and it was the first thing anyone saw. A bun is a coil, so what says
+         * it is a bun is the *wrap* around its base rather than a second lump
+         * above it.
+         */
         strand(
           'bun',
           PartShape.Sphere,
-          [0, half * 1.0, -hd * 0.3],
-          [hw * 0.32, hh * 0.26, hd * 0.32],
-          { segments: 24 },
+          [0, half * 1.02, -hd * 0.26],
+          [hw * 0.34, hh * 0.3, hd * 0.34],
+          { segments: 28 },
         ),
         // The wrap around its base, so the bun reads as coiled rather than stuck on.
         strand(
           'bun-wrap',
           PartShape.Torus,
-          [0, half * 0.8, -hd * 0.22],
-          [hw * 0.25, hw * 0.05, hw * 0.25],
-          { rotation: [Math.PI / 2, 0, 0] as Vec3, segments: 20 },
+          [0, half * 0.76, -hd * 0.2],
+          [hw * 0.3, hw * 0.055, hw * 0.3],
+          { rotation: [Math.PI / 2 - 0.35, 0, 0] as Vec3, segments: 24 },
         ),
       ]
 
@@ -370,20 +545,41 @@ export function hairParts(style: HairStyle, body: BodyProportions): readonly Par
        * across the mouth.
        */
       const capThickness = 0.05
-      const frontGap = 1.15
+      /*
+       * Narrower than it was, so the coils reach the sides of the head.
+       *
+       * At 1.15 radians either side of the centre line the ring was a
+       * crown-to-back arc and nothing else: the style came out as a croissant
+       * sitting on the head, with bare skull from the temple forward. The gap
+       * only has to clear the face itself.
+       */
+      const frontGap = 0.63
       const arc = Math.PI * 2 - frontGap * 2
       const ring = capOuterX(body, capThickness) * 0.9
+      /*
+       * Sixteen, and the count is not free.
+       *
+       * Every coil's outermost point is `sin(angle) · ring + radius`, and the
+       * two of them nearest the ear land wherever the arithmetic puts them —
+       * which for eighteen was half a millimetre off the skull's own widest
+       * point, close enough to fight. Every dimension here is a fraction of the
+       * head, so a spacing that clears on one silhouette clears on all three:
+       * this pair puts the nearest coil four per cent of a head width clear.
+       */
+      const count = 16
 
-      const coils = Array.from({ length: 14 }, (_, index) => {
-        const angle = frontGap + ((index + 0.5) / 14) * arc
+      const coils = Array.from({ length: count }, (_, index) => {
+        const angle = frontGap + ((index + 0.5) / count) * arc
         /*
          * Lengths and roots vary with the index. Partly because real coils are
          * not uniform, and partly because columns cut to exactly one length
          * share exactly one pair of end planes, which the surface check is
          * right to refuse.
          */
-        const length = half * (1.0 + (index % 3) * 0.16)
-        const root = half * (0.62 + (index % 4) * 0.05)
+        // Longer than they were: on the reference sheet the coils fall to the
+        // jaw, and at one half-head-height they stopped level with the eyes.
+        const length = half * (1.5 + (index % 3) * 0.18)
+        const root = half * (0.6 + (index % 4) * 0.05)
 
         return strand(
           `coil-${index}`,
@@ -395,12 +591,12 @@ export function hairParts(style: HairStyle, body: BodyProportions): readonly Par
             root - length / 2,
             Math.cos(angle) * ring * (hd / hw) - hd * 0.06,
           ],
-          [hw * 0.135, Math.max(0.001, length - hw * 0.27), hw * 0.135],
+          [hw * 0.125, Math.max(0.001, length - hw * 0.25), hw * 0.125],
           { segments: 12 },
         )
       })
 
-      return [cap(body, capThickness, 0.1, 0.38), ...coils]
+      return [cap(body, capThickness, 0.1, 0.38), ...temples(body, capThickness, 0.38, 0.12), ...coils]
     }
   }
 }

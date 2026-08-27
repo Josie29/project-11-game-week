@@ -96,7 +96,48 @@ export function hasAppearanceOverride(params: URLSearchParams): boolean {
  * — which is the angle no capture in this project had ever been taken from.
  */
 export function turnRadians(params: URLSearchParams): number | null {
-  const raw = params.get('turn')
+  return degreeParam(params, 'turn')
+}
+
+/**
+ * `?pitch=DEGREES` as radians, or `null`.
+ *
+ * The companion to `?turn=`, and the gap the character audit ran into. Half of
+ * what that audit found — bare skin at a skirted waist, the hip block, the
+ * plate under a shoe, the collar's section — is only visible from above the
+ * figure, and yaw alone cannot get there. Reaching it meant scripting a pointer
+ * drag against the canvas, which makes a finding no one can retake from a link.
+ *
+ * Positive looks *down* at the figure, matching the orbit's own sign.
+ */
+export function pitchRadians(params: URLSearchParams): number | null {
+  return degreeParam(params, 'pitch')
+}
+
+/**
+ * `?zoom=METRES` — how far the dressing-room camera sits from the figure.
+ *
+ * The other half of the same problem, and the one the contact sheets could not
+ * solve: eight figures across a 16:9 frame gives each head about forty pixels,
+ * which is enough to answer "is the hair there" and not enough to answer "is it
+ * right". Pulling in to 1.6 frames a head.
+ *
+ * @returns The distance, or `null` if absent, unreadable, or not a positive
+ *   length. The stage clamps it to its own orbit limits.
+ */
+export function zoomDistance(params: URLSearchParams): number | null {
+  const raw = params.get('zoom')
+  if (raw === null) return null
+
+  const distance = Number(raw)
+  if (!Number.isFinite(distance) || distance <= 0) return null
+
+  return distance
+}
+
+/** Reads a query parameter given in degrees and returns it in radians. */
+function degreeParam(params: URLSearchParams, name: string): number | null {
+  const raw = params.get(name)
   if (raw === null) return null
 
   const degrees = Number(raw)

@@ -8,6 +8,8 @@ import {
   PerspectiveCamera as PerspectiveCameraImpl,
   Vector3,
 } from 'three'
+import { resolveAppearance } from '../character/appearance'
+import { metricsFor } from '../character/proportions'
 import { useAppearanceStore, useFittedEquipped } from '../store/useAppearanceStore'
 import { useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
@@ -46,6 +48,24 @@ const RESUME_RAMP_MS = 1400
 
 const PLINTH_HEIGHT = 0.12
 
+/**
+ * Where the camera looks when it is stood well back, as a fraction of height.
+ *
+ * Just above the waist, so a full-length figure sits centred in frame.
+ */
+const FULL_LENGTH_TARGET = 0.56
+
+/**
+ * Distance at which the camera has finished rising to frame the head.
+ *
+ * Pulling in on a character creator should end up on the face — that is what
+ * the zoom is *for*, and it is the one thing the contact sheets cannot give:
+ * eight figures across a frame leaves each head about forty pixels, enough to
+ * say the hair is there and not enough to say it is right. Below this the look
+ * target is the head; above it, the whole figure.
+ */
+const HEAD_FRAMING_DISTANCE = 2.4
+
 const ORBIT_DEFAULTS = { yaw: 0, pitch: 0.06, distance: 4.3 }
 const ORBIT_LIMITS = {
   minPitch: -0.45,
@@ -70,12 +90,52 @@ export function DesignerStage() {
   const equipped = useFittedEquipped()
 
   const initialYaw = useGameStore((state) => state.designerYaw)
+  const initialPitch = useGameStore((state) => state.designerPitch)
+  const initialDistance = useGameStore((state) => state.designerDistance)
 
   const turntable = useRef<Group>(null)
   const cameraRef = useRef<PerspectiveCameraImpl>(null)
-  const target = useMemo(() => new Vector3(0, 1.0, 0), [])
+  const target = useMemo(() => new Vector3(0, 1, 0), [])
 
-  const defaults = useMemo(() => ({ ...ORBIT_DEFAULTS, yaw: initialYaw }), [initialYaw])
+  /*
+   * The two heights the camera looks at, read off the figure being shown.
+   *
+   * Typed in, these would be two more constants that quietly disagree with
+   * `proportions.ts` the next time the stylisation moves — which is exactly how
+   * a pair of sunglasses ended up worn on a forehead.
+   */
+  const framing = useMemo(() => {
+    const metrics = metricsFor(resolveAppearance(appearance).silhouette)
+
+    return {
+      full: metrics.totalHeight * FULL_LENGTH_TARGET + PLINTH_HEIGHT,
+      head: metrics.headCenterY + PLINTH_HEIGHT,
+    }
+  }, [appearance])
+
+  /*
+   * The deep links win over the defaults, and are clamped by the same limits
+   * the pointer is. A `?pitch=` outside the orbit's own range would put the
+   * capture somewhere no player can reach, which makes it useless as evidence.
+   */
+  const defaults = useMemo(
+    () => ({
+      yaw: initialYaw,
+      pitch:
+        initialPitch === null
+          ? ORBIT_DEFAULTS.pitch
+          : MathUtils.clamp(initialPitch, ORBIT_LIMITS.minPitch, ORBIT_LIMITS.maxPitch),
+      distance:
+        initialDistance === null
+          ? ORBIT_DEFAULTS.distance
+          : MathUtils.clamp(
+              initialDistance,
+              ORBIT_LIMITS.minDistance,
+              ORBIT_LIMITS.maxDistance,
+            ),
+    }),
+    [initialYaw, initialPitch, initialDistance],
+  )
   const { orbit, lastInputAt } = useOrbitInput(defaults, ORBIT_LIMITS)
 
   /** The turntable's own contribution, kept apart from what the pointer set. */
@@ -108,6 +168,22 @@ export function DesignerStage() {
 
     const yaw = orbit.current.yaw + spin.current
     const { pitch, distance } = orbit.current
+
+    /*
+     * The look target rises as the camera comes in.
+     *
+     * Held at the waist from far away and at the head up close, easing between
+     * the two. Without it, zooming in on a face frames the collarbone and the
+     * head leaves the top of the screen — which is what made every head-level
+     * capture in the character audit a scripted drag rather than a link.
+     */
+    const closeness = MathUtils.clamp(
+      (HEAD_FRAMING_DISTANCE - distance) /
+        (HEAD_FRAMING_DISTANCE - ORBIT_LIMITS.minDistance),
+      0,
+      1,
+    )
+    target.y = MathUtils.lerp(framing.full, framing.head, closeness)
 
     /*
      * The camera orbits; the figure stays put.
