@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useAppearanceStore } from '../store/useAppearanceStore'
-import { useGameStore } from '../store/useGameStore'
 import { useSessionStore } from '../store/useSessionStore'
+import { startNewRun } from '../world/startOver'
 import { AccountBadge } from './AccountBadge'
 import { ModeChoice } from './ModeChoice'
 
@@ -21,11 +20,6 @@ export function SettingsPanel() {
   const mode = useSessionStore((state) => state.mode)
   const setMode = useSessionStore((state) => state.setMode)
   const closeSettings = useSessionStore((state) => state.closeSettings)
-  const resetSession = useSessionStore((state) => state.reset)
-
-  const resetAppearance = useAppearanceStore((state) => state.reset)
-  const resetBankroll = useGameStore((state) => state.resetBankroll)
-  const leaveVenue = useGameStore((state) => state.leaveVenue)
 
   /*
    * Armed, then confirmed. This is the only control in the game that destroys
@@ -52,22 +46,6 @@ export function SettingsPanel() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [closeSettings])
-
-  function startOver() {
-    /*
-     * Out of any room first.
-     *
-     * `App` picks what the Canvas draws from `location`, and the welcome screen
-     * only replaces the DOM on top of it — so a reset pressed inside the shop
-     * would put the title card over the shop's interior.
-     */
-    leaveVenue()
-    resetBankroll()
-    resetAppearance()
-    // Last, because it is the one that closes this panel and puts the welcome
-    // screen back up.
-    resetSession()
-  }
 
   return (
     <div className="settings">
@@ -138,7 +116,7 @@ export function SettingsPanel() {
                 <button type="button" className="button" onClick={() => setConfirmingReset(false)}>
                   Cancel
                 </button>
-                <button type="button" className="button settings__destructive" onClick={startOver}>
+                <button type="button" className="button settings__destructive" onClick={startNewRun}>
                   Wipe everything
                 </button>
               </div>
