@@ -98,13 +98,6 @@ export function useSharedCraps(): SharedCraps {
   const isShooter = !shared || (selfId !== null && shooterId === selfId)
 
   /*
-   * Hands the dice on, and tells the room the table as it now stands.
-   *
-   * Both are driven by the outcome the engine just produced rather than by a
-   * timer, because the engine is the only thing that knows a seven-out has
-   * happened — the room deliberately does not.
-   */
-  /*
    * Tells the room whether this player may shoot.
    *
    * A casino will not hand you the dice without a line bet, so the eligibility
@@ -120,12 +113,37 @@ export function useSharedCraps(): SharedCraps {
     sendReady(hasLineBet)
   }, [shared, hasLineBet, sendReady])
 
+  /*
+   * Tells the room the table as it now stands, the moment the roll arrives.
+   *
+   * Driven by the outcome the engine just produced rather than by a timer,
+   * because the engine is the only thing that knows what the roll meant — the
+   * room deliberately does not. Published immediately rather than on the
+   * settle clock below: this is state for a late joiner, not presentation,
+   * and a joiner mid-tumble should adopt the table the roll already decided.
+   */
   useEffect(() => {
     if (!shared) return
-
     publishTable(useCrapsStore.getState().tableSnapshot())
+  }, [shared, game.lastRoll, publishTable])
+
+  /*
+   * Hands the dice on — when the player sees the seven, not when the engine
+   * does.
+   *
+   * The engine registers the seven-out the moment the roll arrives, a full
+   * tumble before the dice visibly land on it, and passing on that instant
+   * rotated the whole rail while the pair was still in the air: the table
+   * announced the outcome before the dice did. `isRolling` is the store's
+   * settle clock — it flips false at the same moment the payout credits and
+   * the result text unhides — so the pass rides the presentation everything
+   * else at the table already follows. The engine stays untouched; only the
+   * telling waits.
+   */
+  useEffect(() => {
+    if (!shared || isRolling) return
     if (game.lastOutcome === RollOutcome.SevenOut) passDice()
-  }, [shared, game.lastOutcome, game.lastRoll, publishTable, passDice])
+  }, [shared, isRolling, game.lastOutcome, passDice])
 
   /** Who has the dice, in words, so nobody wonders what they are waiting for. */
   const shooterName =
