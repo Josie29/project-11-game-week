@@ -256,6 +256,23 @@ type ExpiryKind = 'roll' | 'turn' | 'deal'
 const ROLL_TIMEOUT_MS = 30_000
 
 /**
+ * How long a blackjack seat has to hit, stand, double or split.
+ *
+ * Its own number rather than a share of `ROLL_TIMEOUT_MS`: a roll and a
+ * betting window are half-minute decisions, a hand already dealt is not.
+ * Every action the room relays re-arms this, so each decision gets a fresh
+ * fifteen — and `TURN_WINDOW_MS` in `src/world/turnClock.ts` mirrors this
+ * value so the clients can draw the same clock without it crossing the wire.
+ * Change one, change both; `turnClock.test.ts` pins the pair.
+ */
+const TURN_TIMEOUT_MS = 15_000
+
+/** The window each kind of clock runs for. */
+function timeoutFor(kind: ExpiryKind): number {
+  return kind === 'turn' ? TURN_TIMEOUT_MS : ROLL_TIMEOUT_MS
+}
+
+/**
  * One fair die.
  *
  * Rejection sampling rather than `% 6`: 256 is not divisible by six, so a
@@ -603,6 +620,9 @@ export class Room implements DurableObject {
         // time, rather than five stacks appearing at the moment of the deal.
         this.sendAll({ t: 'bet', table, id: attachment.id, amount })
 
+        // A wager means the last round is over: stop the self-re-arming turn
+        // clock (see `fireTurnClock`) from ticking through the betting phase.
+        await this.clearTurnClock(table, 'turn')
         void this.dealWhenTheTableIsReady(table)
         return
       }
@@ -971,7 +991,7 @@ export class Room implements DurableObject {
   private async armTurnClock(table: string, kind: ExpiryKind): Promise<void> {
     try {
       const deadlines = await this.deadlines()
-      deadlines[`${table}:${kind}`] = Date.now() + ROLL_TIMEOUT_MS
+      deadlines[`${table}:${kind}`] = Date.now() + timeoutFor(kind)
       await this.saveDeadlines(deadlines)
     } catch {
       // Best-effort, like every other storage touch here. Losing the clock
@@ -1108,6 +1128,17 @@ export class Room implements DurableObject {
 
     if (kind === 'turn') {
       this.sendAll({ t: 'expired', table })
+      /*
+       * Re-armed, because the expiry hands the turn to the next seat and the
+       * next seat deserves a clock too — every client stands the expired hand
+       * locally, so no action comes back over the wire to re-arm it the usual
+       * way. Two absent players used to mean the second one's turn never
+       * expired and the table hung forever.
+       *
+       * Once the round is over the clients treat further expiries as no-ops,
+       * and the first wager of the next round clears this — see `case 'bet'`.
+       */
+      await this.armTurnClock(table, 'turn')
       return
     }
 

@@ -148,9 +148,14 @@ check('they hold different seats', av.mySeat !== bv.mySeat, `${av.mySeat} vs ${b
  * this map were dropped the hands would be dealt into the middle of the table
  * in front of nobody, which looks perfectly plausible until you notice the
  * cards are not where the people are.
+ *
+ * Engine seat order is play order, and play runs first base first — the
+ * *highest* stool number (the dealer's left; see `worker/playOrder.ts`) — so
+ * the map is the held stools descending, not in the order they were claimed.
  */
 const stools = await a.evaluate(() => window.blackjackStore.getState().seatStools)
-check('each hand knows its own stool', JSON.stringify(stools) === JSON.stringify(held.map(Number)), JSON.stringify(stools))
+const playOrder = held.map(Number).sort((x, y) => y - x)
+check('each hand knows its own stool', JSON.stringify(stools) === JSON.stringify(playOrder), `${JSON.stringify(stools)} vs ${JSON.stringify(playOrder)}`)
 
 // Out of turn is refused, identically, on both clients.
 const notMine = av.mySeat === av.active ? b : a
@@ -160,6 +165,20 @@ await a.waitForTimeout(2000)
 const after = await view(notMine)
 check('out-of-turn action changes nothing', before.shoeIndex === after.shoeIndex, `${before.shoeIndex} -> ${after.shoeIndex}`)
 
+/*
+ * Issue #10: each action gets fifteen seconds and the whole table watches one
+ * clock. The deadline never crosses the wire — every client restarts a local
+ * window on the deal, on every relayed action, and on the expiry itself — so
+ * these read that window's face, then the DOM both players actually see.
+ */
+const clockOf = (page) =>
+  page.evaluate(() => window.presenceStore.getState().turnClocks.blackjack ?? null)
+const secondsShown = (text) => Number(/ — (\d+)s/.exec(text)?.[1] ?? NaN)
+
+check('both players hold a running turn clock', (await clockOf(a)) !== null && (await clockOf(b)) !== null)
+
+const clockBeforeHit = await clockOf(a)
+
 // The player whose turn it is hits, and the shoe moves for everybody.
 const mine = av.mySeat === av.active ? a : b
 await mine.evaluate(() => window.presenceStore.getState().sendAction('hit'))
@@ -168,6 +187,41 @@ const a2 = await view(a)
 const b2 = await view(b)
 check('a legal hit advances the shoe', a2.shoeIndex > av.shoeIndex, `${av.shoeIndex} -> ${a2.shoeIndex}`)
 check('both agree after the hit', a2.shoeIndex === b2.shoeIndex && JSON.stringify(a2.seats) === JSON.stringify(b2.seats))
+
+// Every action buys the next decision a fresh fifteen.
+const clockAfterHit = await clockOf(a)
+check('a hit resets the turn clock', clockAfterHit !== null && clockAfterHit > clockBeforeHit)
+
+if (a2.phase === 'playerTurn') {
+  // Whoever holds the turn sees the count by their buttons; the other player
+  // sees it beside the name of whoever they are waiting on — and the two
+  // numbers are the same clock, a network trip and a render apart.
+  const actor = a2.mySeat === a2.active ? a : b
+  const waiter = a2.mySeat === a2.active ? b : a
+  const actorPrompt = await prompt(actor)
+  const waitingLine = await waiter.evaluate(
+    () => document.querySelector('.blackjack__waiting')?.textContent ?? '',
+  )
+  check('the acting player sees the clock by their buttons', / — \d+s/.test(actorPrompt), actorPrompt)
+  check('the waiting player sees who and how long', /Waiting on .+ — \d+s/.test(waitingLine), waitingLine)
+  const drift = Math.abs(secondsShown(actorPrompt) - secondsShown(waitingLine))
+  check('both watch the same number fall', drift <= 3, `${actorPrompt} vs ${waitingLine}`)
+
+  // Left alone, the room stands the hand at zero — on every client at once.
+  await a.waitForTimeout(20_000)
+  const a3 = await view(a)
+  const b3 = await view(b)
+  check(
+    'the hand stands itself at zero',
+    a3.phase !== 'playerTurn' || a3.active !== a2.active,
+    `phase ${a3.phase}, active ${a2.active} -> ${a3.active}`,
+  )
+  check(
+    'both agree after the expiry',
+    a3.phase === b3.phase && JSON.stringify(a3.seats) === JSON.stringify(b3.seats),
+    `${a3.phase}/${b3.phase}`,
+  )
+}
 
 await b.screenshot({ path: process.argv[3] ?? '/tmp/shared-blackjack.png' })
 await browser.close()
