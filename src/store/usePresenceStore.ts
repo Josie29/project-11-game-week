@@ -57,6 +57,15 @@ interface PresenceStore {
   shooterId: string | null
   /** Everyone at the table, in arrival order, for placing them along the rail. */
   lineup: readonly string[]
+  /**
+   * The same, per table, because a casino has two of them.
+   *
+   * A single `lineup` is whichever table announced last, so the craps rail and
+   * the blackjack seats overwrote each other and people were placed at whichever
+   * game they were not standing at.
+   */
+  lineups: Readonly<Record<string, readonly string[]>>
+  shooters: Readonly<Record<string, string | null>>
   /** This player's own id in the room, so the HUD can say "your roll". */
   selfId: string | null
   /** Asks the room to throw. It refuses unless it is this player's turn. */
@@ -115,6 +124,8 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     connected: false,
     shooterId: null,
     lineup: [],
+    lineups: {},
+    shooters: {},
     selfId: null,
 
     requestRoll: () => connection?.requestRoll(),
@@ -192,7 +203,13 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
 
         onExpired: () => useBlackjackStore.getState().applyExpiry(),
 
-        onShooter: (_table, id, lineup) => set({ shooterId: id, lineup }),
+        onShooter: (table, id, lineup) =>
+          set((state) => ({
+            shooterId: id,
+            lineup,
+            lineups: { ...state.lineups, [table]: lineup },
+            shooters: { ...state.shooters, [table]: id },
+          })),
 
         /*
          * The table as it stood when somebody last published it. Only adopted
