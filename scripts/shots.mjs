@@ -1,6 +1,7 @@
 import { mkdir, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { chromium } from 'playwright-core'
+import { requireQuietMachine } from './machineLoad.mjs'
 
 /**
  * Captures every scene in one run, so a change to one cannot silently break
@@ -14,6 +15,8 @@ import { chromium } from 'playwright-core'
  *
  * Usage: npm run shots [outDir]
  */
+
+requireQuietMachine('The scene captures')
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const BASE = process.env.SHOTS_BASE_URL ?? 'http://localhost:5180'

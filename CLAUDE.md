@@ -801,6 +801,32 @@ went missing for a player who joined and stood still.
 TypeScript is pinned to **^6**, not 7.x — R3F's JSX namespace augmentation plus
 the `@types/three` surface is the wrong thing to put on a brand-new compiler.
 
+### The browser-driven checks take turns
+
+`walkthrough`, `shots` and `multiplayer` all drive headless Chrome on a software
+renderer, which is the most expensive thing in this repository. Two at once do
+not merely run slowly — they give *wrong answers*. The walkthrough asserts by
+holding a movement key for a fixed number of bursts, so frame rate is distance
+travelled: on a busy machine the player covers less ground and strolls past the
+prompt they were sent to find. `MIRROR_RADIUS` in `shopLayout.ts` carries a note
+about that being mistaken for a geometry bug once already, and a whole session
+went the same way when two Claude sessions ran walkthroughs against each other.
+
+So all three queue on one lock and refuse to start on a loaded machine:
+
+- `lockf -t 2400 .verify.lock` wraps them in `package.json` — macOS ships no
+  `flock`, and `lockf` is the equivalent it does ship. Waits up to 40 minutes
+  for its turn, then gives up.
+- `scripts/machineLoad.mjs` refuses above a one-minute load average of one per
+  core. Override with `IGNORE_MACHINE_LOAD=1` when you know what the load is.
+
+Both decline with exit **75**, which is deliberately not the code a failing
+check uses. **Report which one happened.** Queued behind another session and
+refused for load are both fine; a red walkthrough is not. Say that you are
+waiting, or that you stopped and why — sitting silent for forty minutes reads as
+a hang, and reporting a load refusal as a test failure sends the next hour after
+a bug that is not there.
+
 ## Working style
 
 - Prefer a reference image over a description for anything visual. The Comfy
