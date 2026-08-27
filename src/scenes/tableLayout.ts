@@ -575,3 +575,22 @@ export function dealerCardPlacement(index: number, count: number): CardPlacement
     z: DEALER_ROW_Z,
   }
 }
+
+/** How far onto the upcard the second card rests while levering it over. */
+const WEDGE_OVERLAP_X = CARD_WIDTH * 0.45
+
+/** Clearly on top of the upcard, not fighting its surface. */
+const WEDGE_LIFT_Y = 0.006
+
+/**
+ * Where the dealer's second card pauses to flip the first one face up.
+ *
+ * On the upcard's inner edge and a hair above it, so the moment reads as one
+ * card levering the other over — the casino hole-card move — before it slides
+ * to its own spot in the row. `count` is the cards shown while the move
+ * happens, which during the opening is always two.
+ */
+export function dealerHoleWedge(count: number): CardPlacement {
+  const upcard = dealerCardPlacement(0, count)
+  return { x: upcard.x + WEDGE_OVERLAP_X, y: upcard.y + WEDGE_LIFT_Y, z: upcard.z }
+}

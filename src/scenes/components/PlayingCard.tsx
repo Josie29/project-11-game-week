@@ -47,6 +47,21 @@ interface PlayingCardProps {
    * card, which is the one moment worth drawing out.
    */
   flipDurationMs?: number | undefined
+  /**
+   * Seconds since mount before a face-up card may actually turn.
+   *
+   * The dealer's first card is dealt face down and only levered over when the
+   * second card arrives to do it; this is that moment. Zero — the default —
+   * turns the card as soon as it is dealt, which is every other card.
+   */
+  faceUpAt?: number | undefined
+  /**
+   * A waypoint held until `viaUntil` seconds since mount, then abandoned for
+   * `position`. How the hole card pauses on the upcard's edge while flipping
+   * it, before sliding to its own spot. Both or neither.
+   */
+  via?: readonly [number, number, number] | undefined
+  viaUntil?: number | undefined
 }
 
 const DEFAULT_FLIP_MS = 280
@@ -69,6 +84,9 @@ export function PlayingCard({
   delay,
   seatIndex,
   flipDurationMs = DEFAULT_FLIP_MS,
+  faceUpAt = 0,
+  via,
+  viaUntil = 0,
 }: PlayingCardProps) {
   const groupRef = useRef<Group>(null)
   const elapsed = useRef(0)
@@ -94,8 +112,9 @@ export function PlayingCard({
     // are a coplanar stack flickering at the shoe's lip for seconds.
     group.visible = dealt
 
-    // Cards leave the shoe face down and only turn once they are on their spot.
-    const wantsFaceUp = dealt && faceUp
+    // Cards leave the shoe face down and only turn once they are on their spot
+    // — and the dealer's first card waits for the second to lever it over.
+    const wantsFaceUp = dealt && faceUp && elapsed.current >= faceUpAt
     const step = delta / (flipDurationMs / 1000)
     flip.current = MathUtils.clamp(flip.current + (wantsFaceUp ? step : -step), 0, 1)
 
@@ -103,7 +122,8 @@ export function PlayingCard({
     // Peaks at the midpoint: the card is highest when it is on its edge.
     const lift = Math.sin(turn * Math.PI) * FLIP_LIFT
 
-    const [targetX, targetY, targetZ] = dealt ? position : SHOE_MOUTH
+    const holding = via !== undefined && elapsed.current < viaUntil
+    const [targetX, targetY, targetZ] = dealt ? (holding ? via : position) : SHOE_MOUTH
     group.position.x = MathUtils.damp(group.position.x, targetX, MOVE_DAMPING, delta)
     group.position.y = MathUtils.damp(group.position.y, targetY + lift, MOVE_DAMPING * 2, delta)
     group.position.z = MathUtils.damp(group.position.z, targetZ, MOVE_DAMPING, delta)
