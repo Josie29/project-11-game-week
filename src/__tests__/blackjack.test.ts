@@ -13,6 +13,7 @@ import {
   placeBet,
   actAs,
   placeBets,
+  newlyBustedHands,
   startNextRound,
   takeInsurance,
   totalPaid,
@@ -948,5 +949,63 @@ describe('insurance', () => {
     expect(totalPaid(settled, 0)).toBe(0) // Uninsured: the stake is gone.
     expect(totalPaid(settled, 1)).toBe(36) // 12 back plus 2:1 on it.
     expect(totalStaked(settled, 1)).toBe(37)
+  })
+})
+
+describe('newlyBustedHands', () => {
+  // What the pit's sweep is driven by. Reporting a hand late means the cards
+  // sit on the felt as they always did; reporting one twice would replay the
+  // dealer's sweep gesture every time anybody at the table acts.
+  it('reports a hand in the step it busts, and never again', () => {
+    const shoe = stackedShoe(
+      [card(Rank.Ten), card(Rank.Six)],
+      [card(Rank.Nine), card(Rank.Seven)],
+      [card(Rank.King)], // The hit that busts to 26.
+    )
+
+    const game = placeBet(createGameFromShoe(shoe), 10)
+    const busted = act(game, PlayerAction.Hit)
+
+    expect(handAt(busted, 0).outcome).toBe(RoundOutcome.PlayerBust)
+    expect(newlyBustedHands(game, busted)).toEqual([{ seatIndex: 0, handIndex: 0 }])
+    // Carried into a later step, the same bust is old news.
+    expect(newlyBustedHands(busted, busted)).toEqual([])
+  })
+
+  // A stand decides nothing by itself — sweeping on it would take a live
+  // hand's cards away while the dealer still owes it a showdown.
+  it('reports nothing for a hand that stands', () => {
+    const shoe = stackedShoe(
+      [card(Rank.Ten), card(Rank.Nine)],
+      [card(Rank.Nine), card(Rank.Eight)], // Pat 17: no draw to stack.
+    )
+
+    const game = placeBet(createGameFromShoe(shoe), 10)
+    expect(newlyBustedHands(game, act(game, PlayerAction.Stand))).toEqual([])
+  })
+
+  // The sweep keys on (seat, hand) index, so a bust inside a split must be
+  // reported at the index the table will keep drawing it at — and the
+  // sibling hand playing on afterwards must not re-report it.
+  it('keys a split bust to its own hand, once', () => {
+    const shoe = stackedShoe(
+      [card(Rank.Eight), card(Rank.Eight, Suit.Hearts)],
+      [card(Rank.Ten), card(Rank.Six)],
+      [
+        card(Rank.Nine), // Hand one -> 17
+        card(Rank.Ace, Suit.Clubs), // Hand two -> soft 19
+        card(Rank.King), // Hand one hits to 27, bust.
+        card(Rank.Two, Suit.Clubs), // Dealer draws out.
+      ],
+    )
+
+    const split = act(placeBet(createGameFromShoe(shoe), 10), PlayerAction.Split)
+    const afterBust = act(split, PlayerAction.Hit)
+
+    expect(newlyBustedHands(split, afterBust)).toEqual([{ seatIndex: 0, handIndex: 0 }])
+
+    // The sibling standing settles the round; the old bust stays reported.
+    const settled = act(afterBust, PlayerAction.Stand)
+    expect(newlyBustedHands(afterBust, settled)).toEqual([])
   })
 })

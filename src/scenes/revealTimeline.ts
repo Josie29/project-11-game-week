@@ -18,6 +18,18 @@ export const HOLE_PAUSE_MS = 420
 export const FLIP_DURATION_MS = 650
 
 /**
+ * The pause between a hand busting and the pit sweeping it away.
+ *
+ * The engine knows the hand is dead the instant the card is drawn — a full
+ * flight before the player sees it land. Sweeping on the engine's clock sends
+ * the bust card from the shoe straight to the discard, announcing the outcome
+ * before the card does (the seven-out bug, at a different table). The card's
+ * flight settles in about 0.6 s at the table's damping, and the rest is a
+ * beat to read the count before the dealer reaches for the cards.
+ */
+export const BUST_SWEEP_MS = 900
+
+/**
  * The gap between every card and the one before it, drawn or dealt.
  *
  * A flat beat and a half, deliberately without acceleration: a fixed interval

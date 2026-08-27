@@ -11,6 +11,7 @@ import {
   DEALER_RACK,
   dealerCardPlacement,
   dealerHoleWedge,
+  CARD_LIFT_STEP,
   DISCARD_POSITION,
   HALF_WIDTH,
   ownsTheFelt,
@@ -126,6 +127,7 @@ export function BlackjackTable() {
   const dealerCardsShown = useBlackjackStore((state) => state.dealerCardsShown)
   const holeCardUp = useBlackjackStore((state) => state.holeCardUp)
   const revealComplete = useBlackjackStore((state) => state.revealComplete)
+  const sweptHands = useBlackjackStore((state) => state.sweptHands)
   const bankroll = useGameStore((state) => state.bankroll)
 
   /** The round is being cleared away: chips and cards are both leaving. */
@@ -356,11 +358,19 @@ export function BlackjackTable() {
         const restingSpot: readonly [number, number, number] = [anchorX, SURFACE_Y, at.chipZ]
         // Home is this seat's own chips, not the middle of the table.
         const home = solo ? STASH_ORIGIN : seatChipsOrigin(stoolOf(seatIndex))
+        /*
+         * The pit has already been to this hand: it busted, the sweep beat
+         * ran, and its cards and wager belong to the house for the rest of
+         * the round while the other hands play on.
+         */
+        const swept = sweptHands.has(`${seatIndex}:${handIndex}`)
         const chipTarget = isClearing
           ? chipsGoHome
             ? home
             : DEALER_RACK
-          : restingSpot
+          : swept
+            ? DEALER_RACK
+            : restingSpot
 
         return (
           <group key={`seat-${seatIndex}-hand-${handIndex}`}>
@@ -372,7 +382,21 @@ export function BlackjackTable() {
                   card={card}
                   faceUp
                   flipDurationMs={DEAL_FLIP_MS}
-                  position={isClearing ? DISCARD_POSITION : [spot.x, spot.y, spot.z]}
+                  /*
+                   * A swept hand keeps each card's own lift at the discard:
+                   * unlike the end-of-round clearing, these cards sit there
+                   * for the rest of the round, and stacked on one plane they
+                   * would fight the depth buffer the whole time.
+                   */
+                  position={
+                    swept || isClearing
+                      ? [
+                          DISCARD_POSITION[0],
+                          DISCARD_POSITION[1] + index * CARD_LIFT_STEP,
+                          DISCARD_POSITION[2],
+                        ]
+                      : [spot.x, spot.y, spot.z]
+                  }
                   delay={dealDelay(index, seatIndex, seatCount, false)}
                   seatIndex={index + 1}
                 />

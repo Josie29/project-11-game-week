@@ -5,6 +5,7 @@ import {
   createGame,
   handsOf,
   actAs,
+  newlyBustedHands,
   placeBets,
   createShoe,
   createGameFromShoe,
@@ -16,7 +17,7 @@ import {
 } from '../games/blackjack/engine'
 import { type GameState, PlayerAction, RoundPhase } from '../games/blackjack/types'
 import { Gesture } from '../scenes/gestures'
-import { openingDealEndsAt, revealTimeline } from '../scenes/revealTimeline'
+import { BUST_SWEEP_MS, openingDealEndsAt, revealTimeline } from '../scenes/revealTimeline'
 import { type RunningSequence, runSequence } from './sequence'
 import { useGameStore } from './useGameStore'
 
@@ -68,6 +69,18 @@ interface BlackjackStore {
    * the real credit would mean walking away mid-payout could swallow it.
    */
   uncollectedPayout: number
+
+  /**
+   * Hands the pit has already swept, keyed `"seat:hand"`.
+   *
+   * Presentation only: the engine keeps a busted hand in `seats[].hands` for
+   * the round (its indexes are stable once finished), and this records which
+   * of them the table should be drawing at the discard with their wager in
+   * the dealer's rack. Populated one `BUST_SWEEP_MS` beat after each bust —
+   * never at the bust itself, or the busting card flies from the shoe
+   * straight to the discard without ever being seen at the hand.
+   */
+  sweptHands: ReadonlySet<string>
 
   placeWager: (amount: number) => void
   takeAction: (action: PlayerAction) => void
@@ -207,6 +220,62 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
   }
 
   /**
+   * The pit's pending sweeps, one per hand that has busted and not yet been
+   * cleared. Separate handles from `pending` and `reveal` for the standing
+   * reason: parking an animation on the input gate swallows input, and two
+   * seats can bust inside one `BUST_SWEEP_MS` window.
+   */
+  let sweeps: RunningSequence[] = []
+
+  function cancelSweeps(): void {
+    for (const sweep of sweeps) sweep.cancel()
+    sweeps = []
+  }
+
+  /**
+   * Books the pit's visit to every hand that just busted.
+   *
+   * Guarded by `roundId`, deliberately not the `game === captured` idiom the
+   * other beats use: the game moves on while a sweep is pending — another
+   * seat hits, the dealer reveals — and none of that un-busts the hand. Only
+   * a fresh deal makes the sweep meaningless.
+   */
+  function scheduleBustSweeps(previous: GameState, next: GameState): void {
+    const busted = newlyBustedHands(previous, next)
+    if (busted.length === 0) return
+
+    const roundId = get().roundId
+    for (const { seatIndex, handIndex } of busted) {
+      const key = `${seatIndex}:${handIndex}`
+      sweeps.push(
+        runSequence(
+          [
+            {
+              at: BUST_SWEEP_MS,
+              run: () => {
+                set((state) => ({ sweptHands: new Set(state.sweptHands).add(key) }))
+                /*
+                 * The dealer reaches for the cards — but only while the round
+                 * is still being played. A solo bust settles instantly and
+                 * the dealer is already mid hole-card choreography there; the
+                 * chips sliding to the rack carry the meaning on their own.
+                 */
+                if (get().game.phase === RoundPhase.PlayerTurn) {
+                  set({
+                    dealerGesture: Gesture.DealerSweep,
+                    gestureStartedAtDealer: performance.now(),
+                  })
+                }
+              },
+            },
+          ],
+          { isStillValid: () => get().roundId === roundId },
+        ),
+      )
+    }
+  }
+
+  /**
    * Plays the dealer's hand out over time: a beat, the hole card turning, then
    * each drawn card in turn.
    */
@@ -309,6 +378,7 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
     revealComplete: false,
     chipPhase: ChipPhase.Idle,
     uncollectedPayout: 0,
+    sweptHands: new Set<string>(),
 
     placeWager: (amount) => {
       const { game } = get()
@@ -320,12 +390,14 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
       // Push the chips out first; the cards follow once they land.
       useGameStore.getState().adjustBankroll(-amount)
       dealtAt = performance.now()
+      cancelSweeps()
       set({
         game: placeBet(game, amount),
         roundId: get().roundId + 1,
         activeGesture: Gesture.PushChips,
         gestureStartedAt: performance.now(),
         chipPhase: ChipPhase.Wagering,
+        sweptHands: new Set<string>(),
       })
 
       const dealt = get().game
@@ -382,6 +454,7 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
               if (extraStake > 0) useGameStore.getState().adjustBankroll(-extraStake)
 
               set({ game: next })
+              scheduleBustSweeps(game, next)
               creditIfSettled(next)
             },
           },
@@ -450,6 +523,7 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
       if (mine > 0) useGameStore.getState().adjustBankroll(-mine)
 
       dealtAt = performance.now()
+      cancelSweeps()
       set({
         game: dealt,
         seatIds,
@@ -459,6 +533,7 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
         activeGesture: Gesture.PushChips,
         gestureStartedAt: performance.now(),
         chipPhase: ChipPhase.Wagering,
+        sweptHands: new Set<string>(),
       })
       creditIfSettled(dealt)
     },
@@ -488,6 +563,7 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
       if (extraStake > 0) useGameStore.getState().adjustBankroll(-extraStake)
 
       set({ game: next })
+      scheduleBustSweeps(game, next)
       creditIfSettled(next)
     },
 
@@ -552,7 +628,8 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
         [
           {
             at: SETTLE_TRAVEL_MS,
-            run: () =>
+            run: () => {
+              cancelSweeps()
               set({
                 game: startNextRound(game, freshSeed()),
                 chipPhase: ChipPhase.Idle,
@@ -562,7 +639,9 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
                 dealerCardsShown: 2,
                 holeCardUp: false,
                 revealComplete: false,
-              }),
+                sweptHands: new Set<string>(),
+              })
+            },
           },
         ],
         { isStillValid: () => get().game === game },
@@ -574,6 +653,7 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
       // which no longer exists.
       cancelPending()
       cancelReveal()
+      cancelSweeps()
       wagerBeat?.cancel()
       payoutBeat?.cancel()
       set({
@@ -586,6 +666,7 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
         revealComplete: false,
         chipPhase: ChipPhase.Idle,
         uncollectedPayout: 0,
+        sweptHands: new Set<string>(),
       })
     },
   }

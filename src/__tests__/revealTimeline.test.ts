@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  BUST_SWEEP_MS,
   DRAW_INTERVAL_MS,
   FLIP_DURATION_MS,
   openingDealAt,
@@ -8,6 +9,23 @@ import {
   openingUpcardFlipAt,
   revealTimeline,
 } from '../scenes/revealTimeline'
+
+describe('the bust sweep', () => {
+  // The regression this pins: swept on the engine's clock, the busting card
+  // flies from the shoe straight to the discard and the player never sees the
+  // card that killed the hand — the seven-out bug at a different table. The
+  // hole card's flip is the yardstick for "long enough to watch a card".
+  it('waits a readable beat after the bust card lands', () => {
+    expect(BUST_SWEEP_MS).toBeGreaterThanOrEqual(FLIP_DURATION_MS)
+  })
+
+  // And it does not dawdle: the pit clears a dead hand inside the round's own
+  // card-to-card pace, so the sweep is done before attention moves on to the
+  // next player's draw.
+  it('finishes inside the pace of the round', () => {
+    expect(BUST_SWEEP_MS).toBeLessThanOrEqual(DRAW_INTERVAL_MS)
+  })
+})
 
 describe('dealer flip choreography', () => {
   /*

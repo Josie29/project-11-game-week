@@ -808,6 +808,39 @@ export function act(state: GameState, action: PlayerAction): GameState {
 }
 
 /**
+ * Hands whose outcome became a bust between two states.
+ *
+ * A pure diff for the presentation layer: the table sweeps a busted hand's
+ * cards and chips one beat after the bust, and it needs to know which hands
+ * just crossed that line without the engine growing a clock or a flag. The
+ * `(seatIndex, handIndex)` pair is a stable identity for a finished hand —
+ * `splitActiveHand` splices at the active index, and every hand behind the
+ * active one is already finished, so a busted hand never changes index for
+ * the rest of the round.
+ *
+ * @param previous The state before an action was applied.
+ * @param next The state the action produced.
+ * @returns The hands that busted in this step, in seat order.
+ */
+export function newlyBustedHands(
+  previous: GameState,
+  next: GameState,
+): readonly { seatIndex: number; handIndex: number }[] {
+  const busted: { seatIndex: number; handIndex: number }[] = []
+
+  next.seats.forEach((seat, seatIndex) => {
+    seat.hands.forEach((hand, handIndex) => {
+      if (hand.outcome !== RoundOutcome.PlayerBust) return
+      const before = previous.seats[seatIndex]?.hands[handIndex]
+      if (before?.outcome === RoundOutcome.PlayerBust) return
+      busted.push({ seatIndex, handIndex })
+    })
+  })
+
+  return busted
+}
+
+/**
  * Clears the table for another round, reshuffling once the shoe passes
  * `PENETRATION` so cards are not dealt to exhaustion.
  *
