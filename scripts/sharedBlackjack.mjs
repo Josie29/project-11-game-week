@@ -157,6 +157,22 @@ const stools = await a.evaluate(() => window.blackjackStore.getState().seatStool
 const playOrder = held.map(Number).sort((x, y) => y - x)
 check('each hand knows its own stool', JSON.stringify(stools) === JSON.stringify(playOrder), `${JSON.stringify(stools)} vs ${JSON.stringify(playOrder)}`)
 
+/*
+ * Nobody's fifteen starts while the cards are still flying. A two-player deal
+ * animates for over six seconds, and this read happens 2.5s in — the panel
+ * must already say who it is waiting on, but show no falling number yet: the
+ * clock face is stamped for the end of the deal, and the room grants its own
+ * window the same grace.
+ */
+const earlyWaiting = await (av.mySeat === av.active ? b : a).evaluate(
+  () => document.querySelector('.blackjack__waiting')?.textContent ?? '',
+)
+check(
+  'the clock waits for the deal to finish landing',
+  /Waiting on .+/.test(earlyWaiting) && !/ — \d+s/.test(earlyWaiting),
+  earlyWaiting,
+)
+
 // Out of turn is refused, identically, on both clients.
 const notMine = av.mySeat === av.active ? b : a
 const before = await view(notMine)

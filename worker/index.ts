@@ -13,9 +13,10 @@
  * shared type would hide the fact that an old client can talk to a new server.
  */
 
-// Both imports are the worker's own, kept beside this file so a vitest in
+// Every import is the worker's own, kept beside this file so a vitest in
 // `src/__tests__` can reach them: the play-order comparator so its direction
-// is pinned, and the dice-holder rule for the same reason.
+// is pinned, the dice-holder rule and the deal grace for the same reason.
+import { dealGraceMs } from './dealGrace'
 import { resolveDiceHolder } from './dice'
 import { byPlayOrder } from './playOrder'
 
@@ -867,7 +868,9 @@ export class Room implements DurableObject {
     // The betting window has been satisfied rather than run out; leaving it
     // pending would have it fire into the middle of the hand it just started.
     await this.clearTurnClock(table, 'deal')
-    await this.armTurnClock(table, 'turn')
+    // The first decision's window starts once the felt has finished dealing,
+    // not at this broadcast — the cards take several seconds to land.
+    await this.armTurnClock(table, 'turn', dealGraceMs(bets.length))
   }
 
   /** Whoever holds the dice at a table, handing out a loose pair if nobody does. */
@@ -993,10 +996,10 @@ export class Room implements DurableObject {
    * So the deadlines are a map and the alarm is set to the earliest of them.
    * Each clock owns its own entry and can only ever cancel itself.
    */
-  private async armTurnClock(table: string, kind: ExpiryKind): Promise<void> {
+  private async armTurnClock(table: string, kind: ExpiryKind, graceMs = 0): Promise<void> {
     try {
       const deadlines = await this.deadlines()
-      deadlines[`${table}:${kind}`] = Date.now() + timeoutFor(kind)
+      deadlines[`${table}:${kind}`] = Date.now() + timeoutFor(kind) + graceMs
       await this.saveDeadlines(deadlines)
     } catch {
       // Best-effort, like every other storage touch here. Losing the clock

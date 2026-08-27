@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { getLocalTransform } from '../net/localTransform'
 import { TableId } from '../scenes/casinoFloorLayout'
+import { openingDealEndsAt } from '../scenes/revealTimeline'
 import { PlayerAction } from '../games/blackjack/types'
 import { useBlackjackStore } from './useBlackjackStore'
 import { useCrapsStore } from './useCrapsStore'
@@ -261,15 +262,20 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
           if (table !== TableId.Blackjack) return
           // The gather is over; the chips on the felt are the dealt hands now,
           // and the deal clock they were counting against is spent with them.
-          // The turn clock starts in their place: the room armed its own
-          // fifteen-second window in the same breath as this broadcast.
+          // The turn clock takes their place — stamped for when the deal
+          // *animation* ends, not for now: the room grants the same grace
+          // (`dealGraceMs`, its mirror of `openingDealEndsAt`), so nobody's
+          // fifteen seconds tick away while the cards are still flying.
           set((state) => {
             const betClocks = { ...state.betClocks }
             delete betClocks[table]
             return {
               bets: { ...state.bets, [table]: {} },
               betClocks,
-              turnClocks: { ...state.turnClocks, [table]: performance.now() },
+              turnClocks: {
+                ...state.turnClocks,
+                [table]: performance.now() + openingDealEndsAt(bets.length),
+              },
             }
           })
           useBlackjackStore.getState().applyDeal(seed, bets, usePresenceStore.getState().selfId)
