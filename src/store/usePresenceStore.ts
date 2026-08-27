@@ -184,7 +184,28 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
 
       connection = joinRoom(roomId, bounds, identity, {
         onIdentity: (person) => {
-          set((state) => ({ peers: { ...state.peers, [person.id]: person } }))
+          set((state) => {
+            // Never yourself, whatever socket the message came off. Your own
+            // figure is drawn by the controller; a peer copy would be a ghost.
+            if (person.id === state.selfId) return state
+            return { peers: { ...state.peers, [person.id]: person } }
+          })
+        },
+
+        /*
+         * The welcome's snapshot replaces the roster outright.
+         *
+         * Whoever it does not name is not in the room, and this is the only
+         * cleanup that can reach a peer stranded by a `left` broadcast while
+         * this client was between sockets — nothing else ever removes one.
+         */
+        onRoster: (people) => {
+          set((state) => ({
+            peers: Object.fromEntries(
+              people.filter((person) => person.id !== state.selfId)
+                .map((person) => [person.id, person]),
+            ),
+          }))
         },
 
         onPose: (id, snapshot) => {

@@ -7,6 +7,7 @@ import {
 } from '../world/presence'
 import type { TableId } from '../scenes/casinoFloorLayout'
 import type { WalkBounds } from '../scenes/components/WalkingPlayer'
+import { playerToken } from './playerToken'
 
 /*
  * The socket, and only the socket.
@@ -50,6 +51,14 @@ export interface RoomHandlers {
   readonly onTableState?: (table: string, value: unknown) => void
   /** A player joined, or their identity changed. */
   readonly onIdentity: (identity: RemoteIdentity) => void
+  /**
+   * The whole room, as the `welcome` reports it — everyone present, and by
+   * omission everyone *not*. Meant to replace the roster, not merge into it:
+   * a `left` broadcast while this client was between sockets is gone forever,
+   * and the fresh snapshot is the only thing that can clean up the peer it
+   * stranded.
+   */
+  readonly onRoster?: (peers: readonly RemoteIdentity[]) => void
   /** A player moved. `at` is local time, so clock skew never matters. */
   readonly onPose: (id: string, snapshot: Snapshot) => void
   readonly onLeave: (id: string) => void
@@ -150,6 +159,13 @@ export function joinRoom(
     socket.send(
       JSON.stringify({
         t: 'join',
+        /*
+         * The per-tab secret the room hashes into this player's id. Sent on
+         * every (re)connect, which is precisely the point: the same tab
+         * returning after a dropped socket is the same player, so the room
+         * replaces the dead connection instead of minting a seated ghost.
+         */
+        token: playerToken(),
         name: current.name,
         appearance: current.appearance,
         owned: current.owned,
@@ -177,13 +193,23 @@ export function joinRoom(
         // The room as it already stands, so it does not fill in one player at a
         // time as each of them happens to move.
         const peers = Array.isArray(message.peers) ? message.peers : []
-        for (const peer of peers) {
-          const person = sanitizeRemoteIdentity(peer, 'unknown')
-          handlers.onIdentity(person)
+        const people = peers.map((peer) => sanitizeRemoteIdentity(peer, 'unknown'))
 
+        /*
+         * A snapshot, not a delta: whoever the welcome does not name is not
+         * here. Handed over whole so the roster can be replaced rather than
+         * merged into — merging is what kept a ghost alive across reconnects,
+         * because the `left` that should have removed it was broadcast while
+         * this client had no socket to hear it on.
+         */
+        if (handlers.onRoster) handlers.onRoster(people)
+        else people.forEach(handlers.onIdentity)
+
+        peers.forEach((peer, index) => {
+          const person = people[index]
           const raw = (peer as Record<string, unknown> | null)?.pose
-          if (raw) handlers.onPose(person.id, { ...sanitizePose(raw, bounds), at: now })
-        }
+          if (person && raw) handlers.onPose(person.id, { ...sanitizePose(raw, bounds), at: now })
+        })
         return
       }
 
