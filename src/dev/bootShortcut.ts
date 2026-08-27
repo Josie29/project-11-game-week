@@ -17,7 +17,13 @@ import { useGameStore } from '../store/useGameStore'
 import { PlayMode, useSessionStore } from '../store/useSessionStore'
 import { useTimeStore } from '../store/useTimeStore'
 import { SLOT_ORDER } from '../character/catalog'
-import { AISLE_CENTER_X, TableId, WATER_COURT } from '../scenes/casinoFloorLayout'
+import {
+  AISLE_CENTER_X,
+  DEFAULT_BLACKJACK_SEAT,
+  isBlackjackSeat,
+  TableId,
+  WATER_COURT,
+} from '../scenes/casinoFloorLayout'
 import {
   displayFor,
   ENTRANCE as SHOP_ENTRANCE,
@@ -374,6 +380,23 @@ export function applyBootShortcut(): void {
   const boot = params.get('boot')
   if (!boot) return
 
+  /**
+   * Which stool a blackjack link sits the player at. `?seat=`.
+   *
+   * Defaults to the one a lone player has always taken, so every existing
+   * capture frames exactly what it framed before seats could be chosen.
+   *
+   * It exists because two players at one table is now something that can be
+   * photographed and otherwise could not be: every `?boot=` link claims the
+   * same stool, the room refuses the second player, and the capture comes back
+   * as one player beside an empty chair — which is correct behaviour and a
+   * useless picture.
+   */
+  function bootSeat(search: URLSearchParams): number {
+    const seat = Number(search.get('seat'))
+    return isBlackjackSeat(seat) ? seat : DEFAULT_BLACKJACK_SEAT
+  }
+
   const known = [
     'welcome',
     'settings',
@@ -670,7 +693,7 @@ export function applyBootShortcut(): void {
     useAppearanceStore.getState().completeDesign()
     useGameStore.setState({ bankroll: 0, debt: 0 })
     useGameStore.getState().enterVenue(VenueId.GoldenAce)
-    useGameStore.getState().sitAt(TableId.Blackjack)
+    useGameStore.getState().sitAt(TableId.Blackjack, bootSeat(params))
     return
   }
 
@@ -680,7 +703,7 @@ export function applyBootShortcut(): void {
     useAppearanceStore.getState().completeDesign()
     useGameStore.setState({ bankroll: 0, debt: MARKER_AMOUNT })
     useGameStore.getState().enterVenue(VenueId.GoldenAce)
-    useGameStore.getState().sitAt(TableId.Blackjack)
+    useGameStore.getState().sitAt(TableId.Blackjack, bootSeat(params))
     return
   }
 
@@ -750,7 +773,7 @@ export function applyBootShortcut(): void {
     return
   }
 
-  useGameStore.getState().sitAt(TableId.Blackjack)
+  useGameStore.getState().sitAt(TableId.Blackjack, bootSeat(params))
 
   if (boot === 'split') {
     // Stack a pair of eights against a dealer sixteen, then let the rest of the

@@ -39,7 +39,9 @@ import {
   isOnCasinoFloor,
   ROOM,
   SEATS,
-  SIT_RADII,
+  BLACKJACK_SEAT_RADIUS,
+  CRAPS_PROMPT,
+  crapsPromptGap,
   SIT_SPOTS,
   TABLE_FOOTPRINTS,
   TABLE_IDS,
@@ -110,8 +112,10 @@ describe('casino floor layout', () => {
   // nearest. If two sit radii overlapped there would be a patch of floor where
   // F is ambiguous and the player gets the table they did not walk up to.
   it('keeps the two sit prompts from overlapping', () => {
-    const apart = distance2D(SIT_SPOTS[TableId.Blackjack], SIT_SPOTS[TableId.Craps])
-    expect(apart).toBeGreaterThan(SIT_RADII[TableId.Blackjack] + SIT_RADII[TableId.Craps])
+    const [standX, , standZ] = SIT_SPOTS[TableId.Blackjack]
+    expect(crapsPromptGap(standX, standZ)).toBeGreaterThan(
+      CRAPS_PROMPT.radius + BLACKJACK_SEAT_RADIUS,
+    )
   })
 
   /*
@@ -131,12 +135,19 @@ describe('casino floor layout', () => {
     // WALK_SPEED 7.5 for the 700ms the walkthrough holds a key.
     const stride = 7.5 * 0.7
 
-    const [spotX, , spotZ] = SIT_SPOTS[TableId.Craps]
+    const [spotX, , spotZ] = CRAPS_PROMPT.center
     const crossingZ = SIT_SPOTS[TableId.Blackjack][2]
     const offset = Math.abs(crossingZ - spotZ)
-    const radius = SIT_RADII[TableId.Craps]
+    const radius = CRAPS_PROMPT.radius
 
-    const halfWindow = Math.sqrt(Math.max(0, radius * radius - offset * offset))
+    /*
+     * The segment's own length counts toward the window, and is most of it.
+     * That is the point of the shape: the prompt is wide where the table is and
+     * stops shortly after it ends, instead of being a circle whose only way to
+     * cover five metres of rail is to reach five metres past it.
+     */
+    const halfWindow =
+      CRAPS_PROMPT.halfLength + Math.sqrt(Math.max(0, radius * radius - offset * offset))
     expect(halfWindow * 2).toBeGreaterThan(stride)
 
     // And the crossing actually passes through it, rather than the window

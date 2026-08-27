@@ -66,6 +66,25 @@ interface PresenceStore {
    */
   lineups: Readonly<Record<string, readonly string[]>>
   shooters: Readonly<Record<string, string | null>>
+  /**
+   * Who is in which seat, per table, as the room settled it.
+   *
+   * The authority on where a seated figure is drawn — for peers *and* for this
+   * player. It used to be read off the deal's bet order, which meant nobody had
+   * a seat until a round was dealt: two people who sat down and were still
+   * choosing a stake were both drawn at their last walking pose, on the same
+   * square of carpet beside the table.
+   */
+  seats: Readonly<Record<string, Readonly<Record<number, string>>>>
+  /**
+   * Wagers staked for the round being gathered, per table, keyed by player.
+   *
+   * The room relays every bet as it lands precisely so the felt can show chips
+   * arriving one at a time. Dropping them on the floor is what made the bet
+   * buttons look broken: in a shared game nothing whatever happens when you
+   * click one until the whole table is in, which can be half a minute.
+   */
+  bets: Readonly<Record<string, Readonly<Record<string, number>>>>
   /** This player's own id in the room, so the HUD can say "your roll". */
   selfId: string | null
   /** Asks the room to throw. It refuses unless it is this player's turn. */
@@ -80,7 +99,7 @@ interface PresenceStore {
   sendReady: (ready: boolean) => void
   /** Sends a blackjack action for the room to order and echo back. */
   sendAction: (action: string) => void
-  setSeated: (seated: boolean, table: TableId | null) => void
+  setSeated: (seated: boolean, table: TableId | null, seat: number | null) => void
 }
 
 /**
@@ -126,6 +145,8 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     lineup: [],
     lineups: {},
     shooters: {},
+    seats: {},
+    bets: {},
     selfId: null,
 
     requestRoll: () => connection?.requestRoll(),
@@ -193,15 +214,43 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
          * knows who is in the room, and what a shoe is belongs in the game
          * store that already owns one.
          */
-        onDeal: (_table, seed, bets) => {
+        onDeal: (table, seed, bets) => {
+          if (table !== TableId.Blackjack) return
+          // The gather is over; the chips on the felt are the dealt hands now.
+          set((state) => ({ bets: { ...state.bets, [table]: {} } }))
           useBlackjackStore.getState().applyDeal(seed, bets, usePresenceStore.getState().selfId)
         },
 
-        onAction: (_table, id, action) => {
+        onAction: (table, id, action) => {
+          if (table !== TableId.Blackjack) return
           useBlackjackStore.getState().applyAction(id, action as PlayerAction)
         },
 
-        onExpired: () => useBlackjackStore.getState().applyExpiry(),
+        /*
+         * Every wager as it lands, so a click has something to show for itself.
+         *
+         * Kept here rather than pushed into the blackjack store because it is
+         * not a hand: it is what the *room* is holding for a round that has not
+         * been dealt, and half of it belongs to other people.
+         */
+        onBet: (table, id, amount) =>
+          set((state) => ({
+            bets: { ...state.bets, [table]: { ...(state.bets[table] ?? {}), [id]: amount } },
+          })),
+
+        onSeats: (table, seats) => set((state) => ({ seats: { ...state.seats, [table]: seats } })),
+
+        /*
+         * Which table ran out of time, which this ignored entirely.
+         *
+         * A craps shooter letting their clock expire made every blackjack
+         * player at the other table stand — a hand ended, by somebody who was
+         * not playing it, in a different game.
+         */
+        onExpired: (table) => {
+          if (table !== TableId.Blackjack) return
+          useBlackjackStore.getState().applyExpiry()
+        },
 
         onShooter: (table, id, lineup) =>
           set((state) => ({
@@ -216,7 +265,10 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
          * when this client has not rolled yet — otherwise a late packet would
          * drag a table that has moved on back to an older hand.
          */
-        onTableState: (_table, value) => {
+        onTableState: (table, value) => {
+          // Craps only. A blackjack join is answered with a blackjack snapshot,
+          // and handing that to the craps store is a point set by another game.
+          if (table !== TableId.Craps) return
           useCrapsStore.getState().adoptTable(value)
         },
       })
@@ -273,6 +325,6 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
 
     // Not mirrored into `peers`: that roster is everyone *else*, and we never
     // draw ourselves from it.
-    setSeated: (seated, table) => connection?.setSeated(seated, table),
+    setSeated: (seated, table, seat) => connection?.setSeated(seated, table, seat),
   }
 })

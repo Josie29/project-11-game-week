@@ -8,6 +8,11 @@
  * hanging over the edge. Testable is cheaper than another screenshot round.
  */
 
+// The one thing this module takes from anywhere else, and it takes it rather
+// than restating it: how much felt a chip covers decides how far a wager has to
+// sit behind the cards it belongs to. `chipLayout` imports nothing at all.
+import { CHIP_RADIUS } from './chipLayout'
+
 /** Half the table's width, at its widest. */
 export const HALF_WIDTH = 3.1
 /** How far the felt reaches toward the player from the centre line. */
@@ -17,6 +22,17 @@ export const DEALER_DEPTH = 0.85
 
 export const SLAB_THICKNESS = 0.16
 export const TABLE_TOP_Y = 1
+
+/**
+ * A playing card, lying flat on the felt.
+ *
+ * Here rather than in `PlayingCard.tsx` because the felt has to make room for
+ * it: how far back a seat's chips sit is the card's own length plus a chip, and
+ * a size kept in the component is a size no layout test can reach. It was, and
+ * every shared hand's wager sat a centimetre and a half on top of its cards.
+ */
+export const CARD_WIDTH = 0.34
+export const CARD_HEIGHT = 0.48
 
 /** Anything resting on the felt sits a hair above it to avoid z-fighting. */
 export const SURFACE_Y = TABLE_TOP_Y + 0.016
@@ -155,6 +171,57 @@ export const STASH_ORIGIN: readonly [number, number, number] = [
 ]
 
 /**
+ * How far out the felt reaches on the player's side, at a given x.
+ *
+ * The table outline itself, solved for z — the same ellipse `isOnFelt` tests
+ * against and `createTableShape` draws.
+ */
+export function feltEdgeZ(x: number): number {
+  const across = Math.min(1, Math.abs(x) / HALF_WIDTH)
+  return PLAYER_DEPTH * Math.sqrt(1 - across ** 2)
+}
+
+/**
+ * Where this player's chips travel from, at whichever table they are at.
+ *
+ * A lone player owns the whole felt and keeps a tray on it. Five do not: the
+ * tray is authored in the one band of the player's half that is clear of
+ * everything, and that band is in front of the *middle* seat. Sat anywhere
+ * else, a player watched their wager fly out of a tray parked in front of
+ * somebody else — and at the centre seat it landed on their own cards.
+ *
+ * So a shared table has no tray, and each player's chips come from the rail
+ * directly in front of their own seat instead — which is where a real player's
+ * rack is. Derived from the table outline rather than chosen beside it: the
+ * felt is an ellipse, so how far the rail reaches depends on how far out the
+ * seat is, and third base has a good 34cm less table in front of it than the
+ * middle seat does.
+ *
+ * @param stool Which of `SEAT_SPOTS` this player is at.
+ * @param seatCount How many hands are in play.
+ */
+export function stashOrigin(
+  stool: number,
+  seatCount: number,
+): readonly [number, number, number] {
+  if (seatCount <= 1) return STASH_ORIGIN
+
+  const spot = SEAT_SPOTS[stool] ?? SEAT_SPOTS[0]!
+  // Held far enough in from the edge that the whole stack is on the cloth
+  // rather than half of it hanging over the rail.
+  return [spot.x, SURFACE_Y, feltEdgeZ(spot.x) - SEAT_RAIL_INSET]
+}
+
+/**
+ * How far in from the rail a seat's own chips are held.
+ *
+ * More than a chip's radius, because the edge is a curve: a stack set a radius
+ * in from the boundary still crosses it either side of its own centre, and the
+ * outer seats sit where that curve is turning hardest.
+ */
+export const SEAT_RAIL_INSET = 0.22
+
+/**
  * Tests whether a point lies on the felt.
  *
  * The table is two half-ellipses sharing a waist: a deep one toward the player
@@ -204,8 +271,16 @@ export function handAnchorX(handIndex: number, handCount: number): number {
  * cards and its chips is what buys the width, and it is the smallest change
  * that does: everything else tried either put the cards out by the dealer or
  * left a stack overhanging the rail.
+ *
+ * Forward again by another 0.15 since, and for the same reason from the other
+ * end. `SEAT_CHIP_GAP` is now the card's own half-length plus a chip's radius
+ * rather than a number somebody picked, which is a centimetre and a half more
+ * than it was — and at the old row depth that pushed the outer seats' split
+ * wagers over the rail. Moving the cards forward keeps the chips exactly where
+ * they were and takes the extra room out of the empty felt in front of the
+ * dealer, which is the only place there is any.
  */
-export const SHARED_ROW_Z = 0.99
+export const SHARED_ROW_Z = 0.84
 
 /**
  * Where each seat's cards sit, first base to third base.
@@ -237,19 +312,35 @@ export const SEAT_SPOTS: readonly { readonly x: number; readonly z: number }[] =
  */
 export const SEAT_SPLIT_OFFSET = 0.26
 
-/** How far behind a seat's cards its chips sit, on a shared table. */
-export const SEAT_CHIP_GAP = 0.25
+/**
+ * How far behind a seat's cards its chips sit, on a shared table.
+ *
+ * Derived, not chosen. A card lies flat and reaches half its own length back
+ * from its anchor, and a chip stack reaches its own radius forward — so the two
+ * touch at exactly the sum, and anything less puts the wager on top of the
+ * cards. At the 0.25 that was here it did, by a centimetre and a half, on every
+ * seat of every shared hand.
+ */
+export const SEAT_CHIP_GAP = CARD_HEIGHT / 2 + CHIP_RADIUS
 
 /**
- * Where one hand belongs: which seat, and which of that seat's hands.
+ * Where one hand belongs: which stool, and which of that stool's hands.
  *
  * A one-seat table returns exactly what it always did — `handAnchorX` about the
  * centre line at `PLAYER_ROW_Z` — so solo blackjack is unchanged down to the
  * pixel and every capture of it still holds. The arc only exists once somebody
  * else sits down.
+ *
+ * The first argument is which *stool*, not which of the engine's seats. The two
+ * were the same thing while the room handed seats out in the order people bet;
+ * now that a player picks their own, they are not — a table with two people at
+ * first base and third base has two engine seats and five felt spots, and the
+ * cards belong in front of the person who staked them.
+ *
+ * @param stool Which of `SEAT_SPOTS`, first base to third base.
  */
 export function handAnchor(
-  seatIndex: number,
+  stool: number,
   seatCount: number,
   handIndex: number,
   handCount: number,
@@ -262,7 +353,7 @@ export function handAnchor(
     }
   }
 
-  const spot = SEAT_SPOTS[seatIndex] ?? SEAT_SPOTS[0]!
+  const spot = SEAT_SPOTS[stool] ?? SEAT_SPOTS[0]!
   const spread =
     handCount <= 1
       ? 0

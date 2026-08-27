@@ -20,6 +20,7 @@ export function usePresenceRoom(): void {
   const location = useGameStore((state) => state.location)
   const activeVenue = useGameStore((state) => state.activeVenue)
   const activeTable = useGameStore((state) => state.activeTable)
+  const activeSeat = useGameStore((state) => state.activeSeat)
   const atChair = useGameStore((state) => state.atChair)
 
   const mode = useSessionStore((state) => state.mode)
@@ -38,6 +39,14 @@ export function usePresenceRoom(): void {
    * table, and the casino has two tables that a boolean cannot tell apart.
    */
   const table = activeTable
+  /*
+   * The stool being claimed, which is a request rather than a fact.
+   *
+   * A clinic recliner is not one of these: it is a seat nobody else in the room
+   * can walk up to, because the clinic is not a shared table. Only a stool at a
+   * table two people can both reach needs the room to arbitrate it.
+   */
+  const seat = activeSeat
 
   useEffect(() => {
     const { enterRoom, leaveRoom, updateIdentity } = usePresenceStore.getState()
@@ -66,7 +75,7 @@ export function usePresenceRoom(): void {
       return
     }
 
-    const identity = { name, appearance, owned, equipped, seated, table }
+    const identity = { name, appearance, owned, equipped, seated, table, seat }
 
     /*
      * Both, every time, and neither is wasteful. `enterRoom` returns early when
@@ -77,7 +86,7 @@ export function usePresenceRoom(): void {
      */
     enterRoom(roomId, boundsFor(roomId), identity)
     updateIdentity(identity)
-  }, [mode, roomId, name, appearance, owned, equipped, seated, table])
+  }, [mode, roomId, name, appearance, owned, equipped, seated, table, seat])
 
   // Leaves for good when the app unmounts, so a hot reload does not strand a
   // socket holding a figure in the room.

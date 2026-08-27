@@ -3,10 +3,13 @@ import { useRef } from 'react'
 import { Group, MathUtils } from 'three'
 import { getCardBackTexture, getCardFaceTexture } from '../../games/blackjack/cardTexture'
 import type { Card } from '../../games/blackjack/types'
-import { SHOE_MOUTH } from '../tableLayout'
+import { CARD_HEIGHT, CARD_WIDTH, SHOE_MOUTH } from '../tableLayout'
 
-export const CARD_WIDTH = 0.34
-export const CARD_HEIGHT = 0.48
+// Re-exported so the components that lay cards out need only this module; the
+// sizes themselves live with the rest of the table geometry, where the felt's
+// own clearances can be asserted against them.
+export { CARD_HEIGHT, CARD_WIDTH }
+
 const CARD_THICKNESS = 0.011
 
 /** Lying flat with the printed face toward the ceiling. */

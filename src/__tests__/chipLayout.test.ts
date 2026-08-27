@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   CHIP_DENOMINATIONS,
   chipBreakdown,
+  CHIP_RADIUS,
   chipsValue,
   MAX_CHIPS_PER_COLUMN,
   packIntoColumns,
@@ -9,19 +10,27 @@ import {
 } from '../scenes/chipLayout'
 import { MAX_HANDS } from '../games/blackjack/engine'
 import {
+  CARD_HEIGHT,
   CHIP_ROW_Z,
   DEALER_RACK,
   DISCARD_POSITION,
   DISCARD_TRAY,
+  feltEdgeZ,
+  handAnchor,
   handAnchorX,
   isOnFelt,
   PAYOUT_NUDGE_X,
   PAYOUT_NUDGE_Z,
+  SEAT_RAIL_INSET,
+  SEAT_SPOTS,
   SHOE_MOUTH,
   SHOE_POSITION,
   STASH_COLUMN_ANCHORS,
+  STASH_ORIGIN,
+  stashOrigin,
   stashRailCorners,
 } from '../scenes/tableLayout'
+
 
 describe('chipBreakdown', () => {
   // Chips are the player's money made physical. If a breakdown does not add
@@ -225,6 +234,73 @@ describe('stash rail', () => {
       expect(x).toBeGreaterThan(minX)
       expect(x).toBeLessThan(maxX)
     }
+  })
+})
+
+describe('a seat’s own chips', () => {
+  /*
+   * At a shared table each player's chips come from in front of their own seat
+   * instead of a tray in the middle of the felt — the tray is authored in the
+   * one clear band of the player's half, and that band is in front of the
+   * middle seat only. Sat anywhere else you watched your wager fly out of
+   * somebody else's space, and at the centre it landed on your own cards.
+   *
+   * These spots are hand-derived like every other anchor on this table, so they
+   * go through `isOnFelt` before anything is drawn at them. The outer seats are
+   * the ones at risk: the felt is an ellipse, so it narrows as it comes toward
+   * the player, and third base is 1.73 out on a half-width that has fallen to
+   * about 1.9 by the time it reaches the chips.
+   */
+  it('keeps every seat’s wager on the felt', () => {
+    for (let stool = 0; stool < SEAT_SPOTS.length; stool++) {
+      const wager = handAnchor(stool, SEAT_SPOTS.length, 0, 1)
+      expect(
+        isOnFelt(wager.x, wager.chipZ, CHIP_RADIUS),
+        `seat ${stool} chips overhang the rail`,
+      ).toBe(true)
+    }
+  })
+
+  /*
+   * A wager sits *behind* its own cards, not on them.
+   *
+   * A card lies flat and is nearly half a metre long, so it reaches a good way
+   * back from its own anchor — further than the gap that was there, which put
+   * every shared hand's chips a centimetre and a half on top of its own cards.
+   * The two sizes live in the components, so this is where the relationship is
+   * kept: change either and this fails rather than the felt quietly overlapping.
+   */
+  it('keeps every seat’s chips clear of its own cards', () => {
+    for (let stool = 0; stool < SEAT_SPOTS.length; stool++) {
+      const at = handAnchor(stool, SEAT_SPOTS.length, 0, 1)
+      const cardReach = at.z + CARD_HEIGHT / 2
+
+      expect(at.chipZ - CHIP_RADIUS, `seat ${stool} chips lie on its cards`).toBeGreaterThanOrEqual(
+        cardReach,
+      )
+    }
+  })
+
+  // The chips come from the rail in front of that seat — which on an ellipse is
+  // a different distance for every seat, so it is solved rather than picked.
+  it('takes each seat’s chips from the rail in front of it', () => {
+    for (let stool = 0; stool < SEAT_SPOTS.length; stool++) {
+      const spot = SEAT_SPOTS[stool]!
+      const [x, , z] = stashOrigin(stool, SEAT_SPOTS.length)
+      const wager = handAnchor(stool, SEAT_SPOTS.length, 0, 1)
+
+      expect(x).toBeCloseTo(spot.x)
+      // On the table's own edge, and beyond that seat's chips.
+      expect(z).toBeCloseTo(feltEdgeZ(spot.x) - SEAT_RAIL_INSET)
+      expect(z).toBeGreaterThan(wager.chipZ)
+      expect(isOnFelt(x, z), `seat ${stool} draws chips from off the table`).toBe(true)
+    }
+  })
+
+  // A lone player keeps the tray they have always had, in the place they have
+  // always had it, or every capture of a solo hand moves.
+  it('leaves a solo table exactly as it was', () => {
+    expect(stashOrigin(2, 1)).toEqual(STASH_ORIGIN)
   })
 })
 

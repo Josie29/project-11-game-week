@@ -1,6 +1,12 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { ENTRANCE, SIT_SPOTS, TableId } from '../scenes/casinoFloorLayout'
+import {
+  blackjackStandSpot,
+  DEFAULT_BLACKJACK_SEAT,
+  ENTRANCE,
+  SIT_SPOTS,
+  TableId,
+} from '../scenes/casinoFloorLayout'
 import { ENTRANCE as CLINIC_ENTRANCE, chairSitSpot } from '../scenes/clinicLayout'
 import {
   DESK_FACING,
@@ -71,8 +77,23 @@ interface GameStore {
    * the panel and the camera.
    */
   activeTable: TableId | null
+  /**
+   * Which stool at blackjack, or `null` at a table that has none.
+   *
+   * A seat is chosen, not assigned: you walk up to the stool you want and F
+   * takes it, the way you would in a casino. It is separate from `activeTable`
+   * because craps has no seats at all — you stand at the rail — and folding
+   * "which table" and "which stool" into one field would mean every reader
+   * working out which of the two a number meant.
+   *
+   * The room is what makes it exclusive. This is only ever what *this* client
+   * believes it holds; `usePresenceStore.seats` is the map everybody agrees on.
+   */
+  activeSeat: number | null
   /** The table F would seat them at, for the floor prompt. */
   nearbyTable: TableId | null
+  /** The stool F would put them on, for the floor prompt. */
+  nearbySeat: number | null
   /** Where the player should appear when the casino floor mounts. */
   floorPosition: readonly [number, number, number]
   /**
@@ -212,9 +233,9 @@ interface GameStore {
   enterVenue: (id: VenueId) => void
   leaveVenue: () => void
   setNearbyExit: (near: boolean) => void
-  sitAt: (table: TableId) => void
+  sitAt: (table: TableId, seat?: number) => void
   standUp: () => void
-  setNearbyTable: (table: TableId | null) => void
+  setNearbyTable: (table: TableId | null, seat?: number | null) => void
   sitInChair: (index: number) => void
   leaveChair: () => void
   setNearbyChair: (index: number | null) => void
@@ -284,7 +305,9 @@ export const useGameStore = create<GameStore>()(
       nearbyVenue: null,
       nearbyExit: false,
       activeTable: null,
+      activeSeat: null,
       nearbyTable: null,
+      nearbySeat: null,
       floorPosition: ENTRANCE,
       atChair: null,
       nearbyChair: null,
@@ -319,7 +342,9 @@ export const useGameStore = create<GameStore>()(
           nearbyExit: false,
           // Always arrive on your feet at the door, never already seated.
           activeTable: null,
+          activeSeat: null,
           nearbyTable: null,
+          nearbySeat: null,
           floorPosition: ENTRANCE,
           atChair: null,
           nearbyChair: null,
@@ -337,28 +362,46 @@ export const useGameStore = create<GameStore>()(
           nurseTask: NurseTask.Patrolling,
         }),
 
-      sitAt: (table) => set({ activeTable: table, nearbyTable: null }),
+      sitAt: (table, seat) =>
+        set({
+          activeTable: table,
+          // Craps has no stools; blackjack falls back to the seat a lone player
+          // has always taken, which is what every `?boot=` link relies on.
+          activeSeat:
+            table === TableId.Blackjack ? (seat ?? DEFAULT_BLACKJACK_SEAT) : null,
+          nearbyTable: null,
+          nearbySeat: null,
+        }),
 
       /**
        * Stands the player up beside the table they were at.
        *
        * Putting them back at the entrance would read as being thrown out of the
        * casino for leaving a table; the same reasoning as the door offset in
-       * `leaveVenue`.
+       * `leaveVenue`. Behind the stool they were actually on, rather than behind
+       * the middle one — being teleported two seats sideways on standing up is
+       * the same complaint from the other end.
        */
       standUp: () => {
-        const { activeTable } = get()
+        const { activeTable, activeSeat } = get()
         set({
           activeTable: null,
+          activeSeat: null,
           nearbyTable: null,
-          floorPosition: activeTable ? SIT_SPOTS[activeTable] : ENTRANCE,
+          nearbySeat: null,
+          floorPosition:
+            activeTable === TableId.Blackjack
+              ? blackjackStandSpot(activeSeat ?? DEFAULT_BLACKJACK_SEAT)
+              : activeTable
+                ? SIT_SPOTS[activeTable]
+                : ENTRANCE,
         })
       },
 
-      setNearbyTable: (table) => {
+      setNearbyTable: (table, seat = null) => {
         // Called from the render loop, so bail out unless it actually changed.
-        if (get().nearbyTable === table) return
-        set({ nearbyTable: table })
+        if (get().nearbyTable === table && get().nearbySeat === seat) return
+        set({ nearbyTable: table, nearbySeat: seat })
       },
 
       sitInChair: (index) => set({ atChair: index, nearbyChair: null }),
@@ -499,7 +542,9 @@ export const useGameStore = create<GameStore>()(
           nearbyVenue: null,
           nearbyExit: false,
           activeTable: null,
+          activeSeat: null,
           nearbyTable: null,
+          nearbySeat: null,
           atChair: null,
           nearbyChair: null,
           atMirror: false,

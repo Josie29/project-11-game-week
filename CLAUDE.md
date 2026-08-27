@@ -413,6 +413,7 @@ Dev-only deep links, stripped from production builds:
 | `?boot=strip` | the street, with the first-run designer skipped |
 | `?boot=welcome` | the welcome screen, held up rather than skipped |
 | `?mp=1` | re-enables multiplayer under a `?boot=` link, which otherwise suppresses it |
+| `?seat=N` | which blackjack stool, 0 (first base) to 4 (third base) |
 | `?boot=northend` | at the north junction, where the strip meets its cross street |
 | `?boot=southend` | the same at the south end |
 | `?look=DEGREES` | swings the walking camera round before it settles |
@@ -531,6 +532,21 @@ handler takes the nearest and does not rank. `venueDoors.test.ts` holds it for
 every door, every seat and the shop's mirror, and it is what lets those handlers
 stay three lines long.
 
+**A circle is the wrong shape for a five-metre table.** Craps was one, and to be
+walkable into anywhere along the rail it had to reach 3.2 — which is two metres
+past the end of the table, across the floor in front of the blackjack table's
+third-base stool. Nothing said so while blackjack had a single prompt out at
+x = -7.5; the moment its five stools spread out, walking up to one of them was
+offered craps. A `halfLength` on a proximity target makes it a capsule, so the
+prompt covers the rail and stops where the table does. Anything long gets one.
+
+**A seat you cannot choose is not a seat.** Blackjack has five stools and the
+player walks up to the one they want, on exactly the clinic recliner pattern:
+one prompt each, deliberately overlapping so the row is gapless, `WalkingPlayer`
+reporting the nearest. Prompts for stools somebody else is on are not offered at
+all. That is only a prediction over the last seat map the room sent — the room
+is what makes it true when two people reach for the same stool at once.
+
 Two things that offer the *same* thing may overlap, and should: circular prompts
 along a row cannot be both non-overlapping and gapless, and gapless is what
 matters. The clinic's recliners and the shop's twelve fixtures both rely on it —
@@ -576,6 +592,52 @@ the spot.
 each frame and the sender samples it on its own timer. Routing a
 sixty-times-a-second transform through zustand re-renders the world to move one
 figure — the same reason the walk cycle takes a `speedRef` rather than a prop.
+
+**A seat is claimed, and only the room can settle a claim.** Everything else
+here is a relay — the shoe is a shared seed, an illegal action is refused
+identically by every client, and the server never learns what blackjack is. A
+stool is the one exception, because two players can each press F at the same
+one inside a single round trip and *no* shared rule separates them. The room
+takes the first claim and broadcasts the whole `{seat → player}` map;
+`world/seating.ts` is everything a client does with that answer, and it is pure
+and tested for the usual reason — two figures drawn one inside the other and
+two figures on their own stools are the same still image until you count the
+chairs. The loser of a contested stool is stood back up by `claimRefused`.
+
+That map is also what *places* a seated peer. It used to be the roster the deal
+was dealt against, which does not exist until a round is dealt — so two people
+who had sat down and were still choosing a stake had no seats at all and were
+both drawn at their last walking pose, which is the one patch of carpet they
+had both walked to. **A seated peer has to be placeable before anything is
+dealt**, because that is the state a table spends most of its time in.
+
+**The engine's seats are compact and the stools are not.** Only the players who
+bet get an engine seat, and they get them in order; the stools are wherever
+people chose to sit. `seatStools` is the map between the two, and without it a
+hand is dealt in front of nobody. The room stamps each wager with its stool and
+sorts by it, so the order the wagers go out in is the order the hands are
+played — first base round to third base, which is the only order a table deals
+in. Arrival order would have third base taking their turn first.
+
+**One Durable Object, one alarm — and three kinds of clock across two tables.**
+Holding it as a single table-and-kind meant every new clock cancelled whatever
+was pending, and `armRollTimeout` deleted it outright whenever a table had
+nobody eligible to shoot, which is *always* true at blackjack. So: one player
+stakes, the deal window is armed, and the next thing anybody does at either
+table — sitting down, changing a jacket, arriving — cancels it and the table
+never deals. Not in thirty seconds; ever. From a player's chair that reads as
+the bet buttons having stopped working, which is how it was reported. The
+deadlines are a map now, the alarm is set to the earliest, and each clock can
+only cancel itself. `npm run seat-claims` holds both of these against a real
+room.
+
+**A wager handed to the room has to say so.** Nothing local changes when you
+bet at a shared table — no chips, no bankroll movement — and the room relays
+every bet as it lands precisely so the felt can show them arriving. Dropping
+that on the floor left the buttons looking dead for up to half a minute, and
+`sharedBlackjack.mjs` did not catch it because it bet by calling `sendBet`
+directly. **A check that reaches past the UI cannot tell you the UI works.** It
+clicks the buttons now.
 
 Two traps, both of which cost money or captures rather than correctness:
 
@@ -713,6 +775,8 @@ npm run build
 npm run shot <url> <out.png> [settleMs] [keys]
 npm run locate <url> [prefix]   # world positions of named objects
 npm run multiplayer [baseUrl]   # two players at once; needs the worker running
+npm run shared-blackjack [url]  # two players at one table, one shoe
+npm run seat-claims [wss://]    # seat exclusivity and the deal clock, over the wire
 npm run worker:dev              # the presence worker, locally
 npm run worker:deploy           # the presence worker, to Cloudflare
 npm run typecheck:worker

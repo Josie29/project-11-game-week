@@ -20,7 +20,8 @@
     "worker:deploy": "wrangler deploy --config worker/wrangler.toml",
     "mode-toggle": "node scripts/modeToggle.mjs",
     "shared-craps": "node scripts/sharedCraps.mjs",
-    "shared-blackjack": "node scripts/sharedBlackjack.mjs"
+    "shared-blackjack": "node scripts/sharedBlackjack.mjs",
+    "seat-claims": "node scripts/seatClaims.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.8",

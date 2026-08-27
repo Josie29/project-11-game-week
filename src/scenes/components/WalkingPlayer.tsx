@@ -117,6 +117,15 @@ export interface ProximityTarget {
   readonly id: string
   readonly position: readonly [number, number, number]
   readonly radius: number
+  /**
+   * Stretches the target along x, making it a capsule rather than a circle.
+   *
+   * For things that are long: the craps rail is five metres of table, and a
+   * circle big enough to be walkable into anywhere along it necessarily bulges
+   * that far past both ends as well. Defaults to zero, which is a circle and is
+   * what every other target is.
+   */
+  readonly halfLength?: number | undefined
 }
 
 /** A rectangle the player is pushed out of, such as a table. */
@@ -379,7 +388,12 @@ export function WalkingPlayer({
       let bestGap = Infinity
 
       for (const target of candidates) {
-        const dx = group.position.x - target.position[0]
+        // Measured to the segment, which for a `halfLength` of zero is the
+        // point itself. See `crapsPromptGap`, which applies the same rule.
+        const dx = Math.max(
+          0,
+          Math.abs(group.position.x - target.position[0]) - (target.halfLength ?? 0),
+        )
         const dz = group.position.z - target.position[2]
         const gap = Math.hypot(dx, dz)
 
