@@ -89,6 +89,11 @@ export function PlayingCard({
     elapsed.current += delta
     const dealt = elapsed.current >= delay
 
+    // Queued cards wait invisibly. The table now deals a shared round one card
+    // at a time, so several cards can be waiting their turn — rendered, they
+    // are a coplanar stack flickering at the shoe's lip for seconds.
+    group.visible = dealt
+
     // Cards leave the shoe face down and only turn once they are on their spot.
     const wantsFaceUp = dealt && faceUp
     const step = delta / (flipDurationMs / 1000)
@@ -112,6 +117,8 @@ export function PlayingCard({
       ref={groupRef}
       position={[SHOE_MOUTH[0], SHOE_MOUTH[1], SHOE_MOUTH[2]]}
       rotation={[FACE_DOWN_PITCH, 0, 0]}
+      // Hidden until dealt; the first frame callback keeps this in step.
+      visible={false}
     >
       <mesh castShadow receiveShadow>
         <boxGeometry args={[CARD_WIDTH, CARD_HEIGHT, CARD_THICKNESS]} />
