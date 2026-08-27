@@ -119,8 +119,16 @@ bursts, so frame rate is distance travelled.
 
 - `lockf -t 2400 .verify.lock` wraps them in `package.json` (macOS ships no
   `flock`). Waits 40 minutes for its turn, then gives up.
-- `scripts/machineLoad.mjs` refuses above a one-minute load average of one per
-  core. Override with `IGNORE_MACHINE_LOAD=1`.
+- `scripts/machineLoad.mjs` refuses below a third of the machine idle. Override
+  with `IGNORE_MACHINE_LOAD=1`.
+
+  **Idle CPU, not load average** — that was the first version and it refused on
+  a machine with five cores free. macOS counts kernel-blocked threads in the
+  load average and Chrome, VS Code and the agent keep hundreds, so an ordinary
+  desktop reads 12–18 at 54% idle. When something *is* eating the machine, look
+  for it before waiting on it: a capture script that throws never reaches
+  `browser.close()`, and the orphaned headless Chrome holds a core indefinitely.
+  `ps -eo pid,etime,%cpu,command | grep headless` finds them.
 
 Both decline with exit **75**, deliberately not the code a failing check uses.
 **Report which one happened.** Queued or load-refused is fine; a red walkthrough
