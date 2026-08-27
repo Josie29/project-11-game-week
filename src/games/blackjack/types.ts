@@ -36,6 +36,15 @@ export enum PlayerAction {
 export enum RoundPhase {
   /** Awaiting a wager. No cards are on the table. */
   Betting = 'betting',
+  /**
+   * The dealer shows an ace and every seat is deciding on insurance.
+   *
+   * Nothing else may happen while this is open — the dealer has not peeked, no
+   * natural has been settled, and no seat may act. It closes when the last
+   * seat decides, which is the same shape as the deal window: the table waits
+   * for everyone, not for a turn.
+   */
+  Insurance = 'insurance',
   /** Cards are dealt and a seat is choosing actions. */
   PlayerTurn = 'playerTurn',
   /** The round is over and `outcome` and `payout` are populated. */
@@ -104,8 +113,23 @@ export interface Seat {
   readonly hands: readonly Hand[]
   /** Which of this seat's hands it is acting on. */
   readonly activeHandIndex: number
-  /** Sum of this seat's hand payouts, populated at settlement. */
+  /** Sum of this seat's hand payouts plus `insurancePayout`, populated at settlement. */
   readonly totalPayout: number
+  /**
+   * The seat's insurance wager.
+   *
+   * Null while an insurance window is open and this seat has not decided —
+   * which is the state the whole table waits on. Zero once declined, and zero
+   * in every round where insurance was never offered.
+   */
+  readonly insuranceBet: number | null
+  /**
+   * Chips returned for the insurance bet, stake included: three times the
+   * wager on a dealer natural, nothing otherwise. Settled when the insurance
+   * window closes, on the same debit-on-wager credit-on-settlement terms as a
+   * hand's `payout`.
+   */
+  readonly insurancePayout: number
 }
 
 /**

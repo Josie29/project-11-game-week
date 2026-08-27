@@ -168,6 +168,9 @@ const SCENES = [
   { name: 'blackjack-dealt', path: '/?boot=table&time=21:00&freeze', settleMs: 7500 },
   { name: 'blackjack-settled', path: '/?boot=settled&time=21:00&freeze', settleMs: 9000 },
   { name: 'blackjack-split', path: '/?boot=split&time=21:00&freeze', settleMs: 7500, keys: ['p'] },
+  // The offer is up the moment the ace shows; the cards beneath it take the
+  // full deal choreography to land, so it waits on the same clock as a deal.
+  { name: 'blackjack-insurance', path: '/?boot=insurance&time=21:00&freeze', settleMs: 7500 },
   // Deal choreography (~5s left when the stand lands) plus the reveal, which
   // `revealTimeline(7).completeAt < 9000` bounds in revealTimeline.test.ts —
   // if the reveal outgrows its share, that test fails before this truncates.

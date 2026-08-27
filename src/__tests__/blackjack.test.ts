@@ -6,12 +6,15 @@ import {
   createGame,
   createGameFromShoe,
   createShoe,
+  canInsure,
   handValue,
   handsOf,
+  maxInsurance,
   placeBet,
   actAs,
   placeBets,
   startNextRound,
+  takeInsurance,
   totalPaid,
   totalStaked,
 } from '../games/blackjack/engine'
@@ -100,19 +103,52 @@ describe('handValue', () => {
 })
 
 describe('dealer play', () => {
-  // House rule is stand on soft 17. If the dealer hit here the house edge would
-  // shift and the game would no longer match the rules printed on the felt.
-  it('stands on soft 17 rather than drawing', () => {
+  // The spec says the dealer hits soft 17. Standing on it — which is what a
+  // plain `total < 17` test does — shifts the house edge and silently plays a
+  // different game from the one the rules describe.
+  it('hits soft 17 rather than standing', () => {
+    // Six up, ace in the hole: the same soft 17, dealt in the order that does
+    // not open an insurance window in a test about drawing.
     const shoe = stackedShoe(
       [card(Rank.Ten), card(Rank.Eight)], // Player 18
-      [card(Rank.Ace), card(Rank.Six)], // Dealer soft 17
-      [card(Rank.Five)], // Would be drawn only if the dealer wrongly hit.
+      [card(Rank.Six), card(Rank.Ace)], // Dealer soft 17
+      [card(Rank.Ten, Suit.Hearts)], // The soft 17 draws, and hardens to 17.
+    )
+
+    const settled = act(placeBet(createGameFromShoe(shoe), 10), PlayerAction.Stand)
+
+    expect(settled.dealerHand).toHaveLength(3)
+    expect(handValue(settled.dealerHand)).toEqual({ total: 17, isSoft: false })
+    expect(handAt(settled, 0).outcome).toBe(RoundOutcome.PlayerWin)
+  })
+
+  // The boundary the rule turns on: hard 17 stands even though soft 17 hits.
+  // Hitting both would bust the dealer far too often and pay hands that lost.
+  it('stands on hard 17', () => {
+    const shoe = stackedShoe(
+      [card(Rank.Ten), card(Rank.Eight)], // Player 18
+      [card(Rank.Ten, Suit.Hearts), card(Rank.Seven)], // Dealer hard 17
+      [card(Rank.Four)], // Would be drawn only if the dealer wrongly hit.
     )
 
     const settled = act(placeBet(createGameFromShoe(shoe), 10), PlayerAction.Stand)
 
     expect(settled.dealerHand).toHaveLength(2)
-    expect(handValue(settled.dealerHand).total).toBe(17)
+    expect(handAt(settled, 0).outcome).toBe(RoundOutcome.PlayerWin)
+  })
+
+  // Soft 18 stands: the hit-soft-17 rule reaches exactly one total and no
+  // further, or the dealer draws on hands the rules say are made.
+  it('stands on soft 18', () => {
+    const shoe = stackedShoe(
+      [card(Rank.Ten), card(Rank.Nine)], // Player 19
+      [card(Rank.Seven), card(Rank.Ace)], // Dealer soft 18
+      [card(Rank.Five)], // Would be drawn only on a wrongly hit soft 18.
+    )
+
+    const settled = act(placeBet(createGameFromShoe(shoe), 10), PlayerAction.Stand)
+
+    expect(settled.dealerHand).toHaveLength(2)
     expect(handAt(settled, 0).outcome).toBe(RoundOutcome.PlayerWin)
   })
 
@@ -153,9 +189,12 @@ describe('settlement', () => {
   // Two naturals is a push, not a player win. Players notice immediately when a
   // tied blackjack pays out.
   it('pushes when player and dealer both have naturals', () => {
+    // Queen up, ace in the hole, so the peek settles it at the deal — the
+    // ace-up version of this push goes through the insurance window instead,
+    // and has its own test there.
     const shoe = stackedShoe(
       [card(Rank.Ace), card(Rank.King)],
-      [card(Rank.Ace, Suit.Hearts), card(Rank.Queen)],
+      [card(Rank.Queen), card(Rank.Ace, Suit.Hearts)],
     )
 
     const settled = placeBet(createGameFromShoe(shoe), 10)
@@ -641,7 +680,9 @@ describe('seats', () => {
         [card(Rank.Ten, Suit.Spades), card(Rank.Six, Suit.Spades)],
         [card(Rank.Nine, Suit.Hearts), card(Rank.Nine, Suit.Clubs)],
       ],
-      [card(Rank.Ace, Suit.Diamonds), card(Rank.King, Suit.Diamonds)],
+      // King up, ace in the hole: an ace up would open the insurance window,
+      // which is not what this test is about.
+      [card(Rank.King, Suit.Diamonds), card(Rank.Ace, Suit.Diamonds)],
     )
 
     const settled = placeBets(createGameFromShoe(shoe, 2), [10, 25])
@@ -713,5 +754,199 @@ describe('turn order', () => {
 
     state = actAs(state, 1, PlayerAction.Stand)
     expect(state.activeSeatIndex).toBe(2)
+  })
+})
+
+describe('insurance', () => {
+  /** An ace-up deal for one seat: player 16 against a dealer natural. */
+  function aceUpWithNatural(bet = 10) {
+    const shoe = stackedShoe(
+      [card(Rank.Ten), card(Rank.Six)], // Player 16
+      [card(Rank.Ace), card(Rank.King)], // Ace up, ten in the hole: a natural.
+    )
+    return placeBets(createGameFromShoe(shoe), [bet])
+  }
+
+  /** An ace-up deal for one seat where the hole card is a brick. */
+  function aceUpNoNatural(player: readonly [Rank, Rank] = [Rank.Ten, Rank.Eight]) {
+    const shoe = stackedShoe(
+      [card(player[0]), card(player[1], Suit.Hearts)],
+      [card(Rank.Ace), card(Rank.Nine)], // Ace up, no natural underneath.
+    )
+    return placeBets(createGameFromShoe(shoe), [10])
+  }
+
+  // The window is the feature: an ace up must pause the round for a decision.
+  // Without it the felt advertises a bet the game never offers.
+  it('opens an insurance window on an ace upcard, before anything settles', () => {
+    const offered = aceUpWithNatural()
+
+    expect(offered.phase).toBe(RoundPhase.Insurance)
+    expect(canInsure(offered, 0)).toBe(true)
+    expect(maxInsurance(offered, 0)).toBe(5)
+    // The dealer has not peeked: nothing is settled while the window is open.
+    expect(handAt(offered, 0).outcome).toBeNull()
+    // And nobody can play a hand through it.
+    expect(() => act(offered, PlayerAction.Hit)).toThrow(/insurance/)
+  })
+
+  // A ten upcard peeks immediately and offers nothing, exactly as before
+  // insurance existed — the window is the ace's alone.
+  it('does not offer insurance on a ten-value upcard', () => {
+    const shoe = stackedShoe(
+      [card(Rank.Ten), card(Rank.Six)],
+      [card(Rank.King), card(Rank.Ace)], // Dealer natural, ten showing.
+    )
+
+    const settled = placeBets(createGameFromShoe(shoe), [10])
+
+    expect(settled.phase).toBe(RoundPhase.Settled)
+    expect(canInsure(settled, 0)).toBe(false)
+  })
+
+  // The issue's own acceptance test: insurance is a side bet sized so that a
+  // dealer natural against a fully insured hand is a wash.
+  it('nets exactly zero when a fully insured hand loses to a dealer natural', () => {
+    const settled = takeInsurance(aceUpWithNatural(10), 0, 5)
+
+    expect(settled.phase).toBe(RoundPhase.Settled)
+    expect(handAt(settled, 0).outcome).toBe(RoundOutcome.DealerWin)
+    // The hand lost 10; the 5 of insurance came back as 15. Stakes were
+    // 10 + 5, chips returned 15: the round moved nothing.
+    expect(totalPaid(settled)).toBe(15)
+    expect(totalStaked(settled)).toBe(15)
+    expect(settled.dealerHand).toHaveLength(2) // A natural buys no cards.
+  })
+
+  it('loses only the stake when insurance is declined against a natural', () => {
+    const settled = takeInsurance(aceUpWithNatural(10), 0, 0)
+
+    expect(settled.phase).toBe(RoundPhase.Settled)
+    expect(totalPaid(settled)).toBe(0)
+    expect(totalStaked(settled)).toBe(10)
+  })
+
+  // The premium is simply lost when the hole card is a brick — and the round
+  // then plays out exactly as if the window had never opened.
+  it('forfeits the premium and plays on when the dealer has no natural', () => {
+    // Player 20 against ace-nine: the dealer's soft 20 pushes the hand, so
+    // the round's whole cost is the premium — the assertable difference
+    // between "insurance lost" and "insurance never happened".
+    const opened = takeInsurance(aceUpNoNatural([Rank.Ten, Rank.Ten]), 0, 5)
+
+    expect(opened.phase).toBe(RoundPhase.PlayerTurn)
+
+    const settled = act(opened, PlayerAction.Stand)
+
+    expect(handAt(settled, 0).outcome).toBe(RoundOutcome.Push)
+    expect(totalPaid(settled)).toBe(10) // The stake back, the premium gone.
+    expect(totalStaked(settled)).toBe(15)
+  })
+
+  // A player natural waits out the window like everyone else, then pays 3:2 —
+  // settling it at the deal would sell insurance after the peek.
+  it('holds a player natural through the window and then pays it 3:2', () => {
+    const shoe = stackedShoe(
+      [card(Rank.Ace, Suit.Hearts), card(Rank.King, Suit.Hearts)], // Player natural
+      [card(Rank.Ace), card(Rank.Nine)], // Ace up, no natural.
+    )
+    const offered = placeBets(createGameFromShoe(shoe), [10])
+
+    expect(offered.phase).toBe(RoundPhase.Insurance)
+    expect(handAt(offered, 0).outcome).toBeNull()
+
+    const settled = takeInsurance(offered, 0, 0)
+
+    expect(settled.phase).toBe(RoundPhase.Settled)
+    expect(handAt(settled, 0).outcome).toBe(RoundOutcome.PlayerBlackjack)
+    expect(totalPaid(settled)).toBe(25)
+  })
+
+  // Insured naturals against a dealer natural: the hand pushes and the
+  // insurance pays, which is where "even money" actually comes from.
+  it('pushes an insured natural against a dealer natural and pays the insurance', () => {
+    const shoe = stackedShoe(
+      [card(Rank.Ace, Suit.Hearts), card(Rank.King, Suit.Hearts)],
+      [card(Rank.Ace), card(Rank.Queen)],
+    )
+    const settled = takeInsurance(placeBets(createGameFromShoe(shoe), [10]), 0, 5)
+
+    expect(handAt(settled, 0).outcome).toBe(RoundOutcome.Push)
+    expect(totalPaid(settled)).toBe(25) // Stake refunded, 15 for the insurance.
+    expect(totalStaked(settled)).toBe(15)
+  })
+
+  // The whole-dollar rule, applied to the offer itself: at every stake the
+  // cap is a whole amount and both outcomes pay whole dollars.
+  it('offers and pays whole dollars at every stake', () => {
+    for (let bet = 2; bet <= 200; bet++) {
+      const offered = aceUpWithNatural(bet)
+      const cap = maxInsurance(offered, 0)
+
+      expect(Number.isInteger(cap)).toBe(true)
+      expect(cap).toBe(Math.floor(bet / 2))
+
+      const settled = takeInsurance(offered, 0, cap)
+      const insurancePaid = totalPaid(settled) // The hand itself pays 0 here.
+
+      expect(Number.isInteger(insurancePaid)).toBe(true)
+      expect(insurancePaid).toBe(cap * 3) // Stake back plus 2:1, in integers.
+    }
+  })
+
+  // A $1 stake cannot buy a whole dollar of insurance, so the seat is
+  // declined for it — a window waiting on a decision with no possible yes
+  // would stall a shared table forever.
+  it('declines for a seat whose stake is too small to insure', () => {
+    const shoe = stackedShoe(
+      [card(Rank.Ten), card(Rank.Eight)],
+      [card(Rank.Ace), card(Rank.Nine)],
+    )
+
+    const dealt = placeBets(createGameFromShoe(shoe), [1])
+
+    // Straight past the window: the only seat had no decision to make.
+    expect(dealt.phase).toBe(RoundPhase.PlayerTurn)
+    expect(canInsure(dealt, 0)).toBe(false)
+  })
+
+  it('refuses a second decision, an oversized premium, and fractional dollars', () => {
+    const offered = aceUpWithNatural(10)
+
+    expect(() => takeInsurance(offered, 0, 6)).toThrow(/between 0 and 5/)
+    expect(() => takeInsurance(offered, 0, 2.5)).toThrow(/whole dollars/)
+    expect(() => takeInsurance(offered, 0, -1)).toThrow(/whole dollars/)
+
+    const decided = takeInsurance(aceUpNoNatural(), 0, 5)
+    expect(() => takeInsurance(decided, 0, 0)).toThrow()
+  })
+
+  // The window is the deal window's shape: it waits for every seat and closes
+  // on the last decision, whichever seat that happens to be.
+  it('waits for every seat and closes on the last decision', () => {
+    const shoe = stackedTableShoe(
+      [
+        [card(Rank.Ten, Suit.Spades), card(Rank.Six, Suit.Spades)],
+        [card(Rank.Nine, Suit.Hearts), card(Rank.Nine, Suit.Clubs)],
+      ],
+      [card(Rank.Ace, Suit.Diamonds), card(Rank.King, Suit.Diamonds)], // Natural under the ace.
+    )
+    const offered = placeBets(createGameFromShoe(shoe, 2), [10, 25])
+
+    expect(offered.phase).toBe(RoundPhase.Insurance)
+
+    // Seat two answers first: order is arrival, not position.
+    const oneDecided = takeInsurance(offered, 1, 12)
+
+    expect(oneDecided.phase).toBe(RoundPhase.Insurance)
+    expect(canInsure(oneDecided, 1)).toBe(false)
+    expect(canInsure(oneDecided, 0)).toBe(true)
+
+    const settled = takeInsurance(oneDecided, 0, 0)
+
+    expect(settled.phase).toBe(RoundPhase.Settled)
+    expect(totalPaid(settled, 0)).toBe(0) // Uninsured: the stake is gone.
+    expect(totalPaid(settled, 1)).toBe(36) // 12 back plus 2:1 on it.
+    expect(totalStaked(settled, 1)).toBe(37)
   })
 })

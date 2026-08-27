@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react'
 import {
   activeHand,
   canDouble,
+  canInsure,
   canSplit,
   handValue,
   handsOf,
+  maxInsurance,
   seatAt,
   totalPaid,
   totalStaked,
@@ -164,11 +166,25 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
   const staked = table.spectating ? 0 : totalStaked(game, mySeat)
   /** What the round did to the bankroll, stake excluded. See `netLabel`. */
   const net = (table.spectating ? 0 : totalPaid(game, mySeat)) - staked
+  /** Whether this seat's insurance bet came home, worth naming at settlement. */
+  const insurancePaid = (table.spectating ? 0 : (seatAt(game, mySeat)?.insurancePayout ?? 0)) > 0
 
   const current = activeHand(game)
   const canDoubleNow = isPlayerTurn && canDouble(game, mySeat) && bankroll >= (current?.bet ?? 0)
   const canSplitNow = isPlayerTurn && canSplit(game, mySeat) && bankroll >= (current?.bet ?? 0)
   const isBroke = bankroll <= 0 && isBetting
+
+  /*
+   * The insurance window: the dealer shows an ace and every seat answers
+   * before anything else happens. Solo, the one answer closes it at once, so
+   * the waiting line below can only ever appear at a shared table.
+   */
+  const isInsuring = game.phase === RoundPhase.Insurance
+  const insuranceOpen = isInsuring && !table.spectating && canInsure(game, mySeat)
+  // Offered at the table maximum the bankroll covers — half the stake, floored
+  // to whole dollars by the engine, and never more than the player holds.
+  const insurancePremium = Math.min(maxInsurance(game, mySeat), bankroll)
+  const canInsureNow = insuranceOpen && insurancePremium >= 1
 
   /** This player's stake is with the room, and the deal is on other people. */
   const waitingForTable = table.shared && isBetting && table.pendingBet > 0
@@ -223,6 +239,8 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
     onStand: () => isPlayerTurn && takeAction(PlayerAction.Stand),
     onDouble: () => canDoubleNow && takeAction(PlayerAction.Double),
     onSplit: () => canSplitNow && takeAction(PlayerAction.Split),
+    onInsure: () => canInsureNow && table.insure(insurancePremium),
+    onDeclineInsurance: () => insuranceOpen && table.insure(0),
     onNextRound: () => isResolved && nextRound(),
     onLeave: handleLeave,
     // 1/2/3 pick a stake, so a hand can be played without touching the mouse.
@@ -281,6 +299,11 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
           }`}
         >
           {OUTCOME_LABEL[hands[0].outcome]}
+          {/*
+            An insured loss reads as a win gone missing without this — the hand
+            lost, the bankroll did not move, and only the insurance explains it.
+          */}
+          {insurancePaid && ' — insurance pays 2:1'}
           {/* A push is already named by the label; "even" beside it just nags. */}
           {net !== 0 && <span className="table-ui__payout">{netLabel(net)}</span>}
         </p>
@@ -308,7 +331,47 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
         </p>
       )}
 
-      {isBetting && !isBroke && (
+      {insuranceOpen && (
+          <>
+            {/*
+              The felt already advertises the terms — INSURANCE PAYS 2 TO 1 —
+              so the prompt only has to say what is being asked. The offer is
+              one figure rather than a stack of denominations because the only
+              interesting insurance bet is the biggest one the rules allow.
+            */}
+            <span className="table-ui__prompt">
+              Dealer shows an ace — insurance?
+            </span>
+            <button
+              type="button"
+              className="button"
+              disabled={!canInsureNow}
+              onClick={() => table.insure(insurancePremium)}
+            >
+              Insure ${insurancePremium} <kbd>I</kbd>
+            </button>
+            <button
+              type="button"
+              className="button"
+              onClick={() => table.insure(0)}
+            >
+              No insurance <kbd>N</kbd>
+            </button>
+          </>
+        )}
+
+        {/*
+          Decided, at a shared table, while somebody else is still thinking.
+          The same honesty rule as the deal window: without this line the
+          buttons vanish and nothing happens, which reads as a hang.
+        */}
+        {isInsuring && !insuranceOpen && !table.spectating && (
+          <span className="table-ui__prompt">
+            Insurance is down — waiting for the table
+          </span>
+        )}
+
+        {isBetting && !isBroke && (
           <>
             {/*
               What the click did.

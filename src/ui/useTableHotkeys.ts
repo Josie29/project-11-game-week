@@ -9,6 +9,10 @@ export interface TableHotkeyHandlers {
   onLeave: () => void
   /** Picks a stake by position: 0 for the first chip button, and so on. */
   onBet: (slot: number) => void
+  /** Takes the offered insurance. No-op outside an insurance window. */
+  onInsure?: () => void
+  /** Declines the offered insurance. No-op outside an insurance window. */
+  onDeclineInsurance?: () => void
 }
 
 /**
@@ -53,6 +57,12 @@ export function useTableHotkeys(handlers: TableHotkeyHandlers): void {
           break
         case 'escape':
           current.onLeave()
+          break
+        case 'i':
+          current.onInsure?.()
+          break
+        case 'n':
+          current.onDeclineInsurance?.()
           break
         case '1':
         case '2':
