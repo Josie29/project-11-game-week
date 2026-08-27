@@ -20,6 +20,12 @@ import {
   roadTextureOffset,
   STREET_BOUNDS,
   STRIP_SPAN,
+  APPROACH_CLEARANCE,
+  APPROACH_TALL,
+  clearsApproach,
+  LAMP_HEIGHT,
+  PALM_HEIGHT_LEFT,
+  PALM_HEIGHT_RIGHT,
 } from '../scenes/stripLayout'
 import { keyDirection, lightingAt, MINUTES_PER_DAY } from '../world/timeOfDay'
 import { VENUES } from '../world/venues'
@@ -265,5 +271,82 @@ describe('the sun and the moon', () => {
   it('rides higher at midday than at dawn', () => {
     expect(keyDirection(12 * 60)[1]).toBeGreaterThan(keyDirection(6 * 60)[1])
     expect(keyDirection(12 * 60)[1]).toBeGreaterThan(keyDirection(19 * 60)[1])
+  })
+})
+
+describe('the approach to a doorway', () => {
+  /** Every tall prop the street actually places, with the rules applied. */
+  function placedTallProps(): { x: number; z: number; height: number }[] {
+    const candidates = [
+      ...PALM_ROW_Z.flatMap((z) => [
+        { x: -7.6, z, height: PALM_HEIGHT_LEFT },
+        { x: 7.6, z: z - 4, height: PALM_HEIGHT_RIGHT },
+      ]),
+      ...LAMP_ROW_Z.flatMap((z) => [
+        { x: -6.6, z, height: LAMP_HEIGHT },
+        { x: 6.6, z: z - 6, height: LAMP_HEIGHT },
+      ]),
+    ]
+
+    return candidates.filter(
+      (prop) => clearsDoorways(prop.x, prop.z) && clearsApproach(prop.x, prop.z, prop.height),
+    )
+  }
+
+  /*
+   * Nothing tall may stand between the camera and a door.
+   *
+   * `clearsDoorways` is a radius, and a radius is the wrong shape: the play
+   * camera trails the player *along* the street, so what hides an entrance is
+   * not something standing near it but something standing up-street of it. A
+   * seven-metre palm four units from the Golden Ace passed the radius check and
+   * filled the middle of the frame at the moment the door prompt appeared —
+   * four separate props did it to that one entrance.
+   */
+  it('leaves every doorway visible from its own approach', () => {
+    for (const prop of placedTallProps()) {
+      for (const venue of VENUES) {
+        const [doorX, , doorZ] = venue.doorPosition
+        if (Math.sign(prop.x) !== Math.sign(doorX)) continue
+
+        expect(
+          Math.abs(prop.z - doorZ),
+          `a ${prop.height}m prop at z = ${prop.z} hides ${venue.id}`,
+        ).toBeGreaterThan(APPROACH_CLEARANCE)
+      }
+    }
+  })
+
+  /*
+   * The rhythms cannot be re-phased out of this, and that is why the rule
+   * removes furniture instead of moving it.
+   *
+   * Doors fall every `BLOCK_DEPTH`, so within one period nothing can be further
+   * than half a block from a door — which is already well inside the corridor.
+   * If this ever stops being true the cheaper fix becomes available, and this
+   * test is where somebody would find that out.
+   */
+  it('cannot be solved by moving the rows', () => {
+    expect(BLOCK_DEPTH / 2).toBeLessThan(APPROACH_CLEARANCE)
+  })
+
+  // Low things are below the camera's line to the door and may stand anywhere,
+  // or clearing the corridor would strip the street of benches and bollards too.
+  it('lets low furniture stand anywhere', () => {
+    const [doorX, , doorZ] = VENUES[0]!.doorPosition
+    expect(clearsApproach(doorX, doorZ, APPROACH_TALL)).toBe(true)
+    expect(clearsApproach(doorX, doorZ, APPROACH_TALL + 0.1)).toBe(false)
+  })
+
+  // The far pavement never occludes: the camera and the player share a side.
+  it('ignores the other side of the street', () => {
+    const [doorX, , doorZ] = VENUES[0]!.doorPosition
+    expect(clearsApproach(-doorX, doorZ, 9)).toBe(true)
+  })
+
+  // ...and the street still has furniture on it. A rule that removed everything
+  // would pass every assertion above and leave a bare road.
+  it('keeps most of the street furniture', () => {
+    expect(placedTallProps().length).toBeGreaterThan(12)
   })
 })

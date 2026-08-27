@@ -242,8 +242,71 @@ export function clearsDoorways(x: number, z: number): boolean {
   })
 }
 
+/**
+ * How far up and down the street a doorway needs kept clear of tall furniture.
+ *
+ * `DOORWAY_CLEARANCE` is a radius, and a radius is the wrong shape for this.
+ * The play camera trails the player *along* the street, so what hides an
+ * entrance is not something standing near it but something standing between it
+ * and the camera — which is anything on the same pavement, up to the camera's
+ * own trailing distance away. A seven-metre palm four units up-street passes
+ * the radius check comfortably and fills the middle of the frame at the exact
+ * moment the door prompt appears.
+ *
+ * Taken from `DEFAULT_DISTANCE` in `WalkingPlayer`, with a little over, because
+ * that is literally how far back the camera sits.
+ *
+ * The rhythms cannot be re-phased out of this, which is why the rule has to
+ * remove furniture rather than move it: doors fall every `BLOCK_DEPTH`, so
+ * within one period nothing can be more than `BLOCK_DEPTH / 2` from a door, and
+ * that is already inside the corridor. There is no offset that works.
+ */
+export const APPROACH_CLEARANCE = 7.6
+
+/**
+ * How tall something has to be before the corridor applies to it.
+ *
+ * Waist height, matching `APPROACH_CLEAR_HEIGHT` on the casino's own frontage.
+ * A bench, a bollard or a rope is below the camera's line to the door and may
+ * stand anywhere; a palm or a lamp column is not.
+ */
+export const APPROACH_TALL = 1.2
+
+/**
+ * Whether something of this height may stand here without hiding an entrance.
+ *
+ * Only applies on the venue's own side of the street — the camera and the
+ * player are on the same pavement, so the far kerb never occludes anything.
+ *
+ * @param x World x. Its sign is the side of the street.
+ * @param z World z.
+ * @param height How tall the thing is.
+ */
+export function clearsApproach(x: number, z: number, height: number): boolean {
+  if (height <= APPROACH_TALL) return true
+
+  return VENUES.every((venue) => {
+    const [doorX, , doorZ] = venue.doorPosition
+    if (Math.sign(x) !== Math.sign(doorX)) return true
+
+    return Math.abs(z - doorZ) > APPROACH_CLEARANCE
+  })
+}
+
 export const PALM_ROW_Z: readonly number[] = [6, -2, -10, -18, -26, -34, -42]
 export const LAMP_ROW_Z: readonly number[] = [4, -8, -20, -32, -44]
+
+/**
+ * How tall each kind of street furniture stands.
+ *
+ * Here rather than in the components because `clearsApproach` needs them: what
+ * decides whether a prop may stand near a door is its height, and a height that
+ * lives only inside the mesh that draws it cannot be asked. The lamp's was a
+ * literal in `StreetProps.tsx`; the palms' are passed in from here.
+ */
+export const PALM_HEIGHT_LEFT = 6.4
+export const PALM_HEIGHT_RIGHT = 7.1
+export const LAMP_HEIGHT = 4.4
 
 /**
  * The street-level colonnade: how far a column's centre stands out from the
