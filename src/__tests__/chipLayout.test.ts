@@ -11,23 +11,25 @@ import {
 import { MAX_HANDS } from '../games/blackjack/engine'
 import {
   CARD_HEIGHT,
+  CENTER_SEAT,
   CHIP_ROW_Z,
   DEALER_RACK,
   DISCARD_POSITION,
   DISCARD_TRAY,
   feltEdgeZ,
-  handAnchor,
   handAnchorX,
   isOnFelt,
   PAYOUT_NUDGE_X,
   PAYOUT_NUDGE_Z,
+  ownsTheFelt,
+  seatAnchor,
+  seatChipsOrigin,
   SEAT_RAIL_INSET,
   SEAT_SPOTS,
   SHOE_MOUTH,
   SHOE_POSITION,
   STASH_COLUMN_ANCHORS,
   STASH_ORIGIN,
-  stashOrigin,
   stashRailCorners,
 } from '../scenes/tableLayout'
 
@@ -253,7 +255,7 @@ describe('a seat’s own chips', () => {
    */
   it('keeps every seat’s wager on the felt', () => {
     for (let stool = 0; stool < SEAT_SPOTS.length; stool++) {
-      const wager = handAnchor(stool, SEAT_SPOTS.length, 0, 1)
+      const wager = seatAnchor(stool, 0, 1)
       expect(
         isOnFelt(wager.x, wager.chipZ, CHIP_RADIUS),
         `seat ${stool} chips overhang the rail`,
@@ -272,7 +274,7 @@ describe('a seat’s own chips', () => {
    */
   it('keeps every seat’s chips clear of its own cards', () => {
     for (let stool = 0; stool < SEAT_SPOTS.length; stool++) {
-      const at = handAnchor(stool, SEAT_SPOTS.length, 0, 1)
+      const at = seatAnchor(stool, 0, 1)
       const cardReach = at.z + CARD_HEIGHT / 2
 
       expect(at.chipZ - CHIP_RADIUS, `seat ${stool} chips lie on its cards`).toBeGreaterThanOrEqual(
@@ -286,8 +288,8 @@ describe('a seat’s own chips', () => {
   it('takes each seat’s chips from the rail in front of it', () => {
     for (let stool = 0; stool < SEAT_SPOTS.length; stool++) {
       const spot = SEAT_SPOTS[stool]!
-      const [x, , z] = stashOrigin(stool, SEAT_SPOTS.length)
-      const wager = handAnchor(stool, SEAT_SPOTS.length, 0, 1)
+      const [x, , z] = seatChipsOrigin(stool)
+      const wager = seatAnchor(stool, 0, 1)
 
       expect(x).toBeCloseTo(spot.x)
       // On the table's own edge, and beyond that seat's chips.
@@ -297,10 +299,13 @@ describe('a seat’s own chips', () => {
     }
   })
 
-  // A lone player keeps the tray they have always had, in the place they have
-  // always had it, or every capture of a solo hand moves.
+  // A lone player in the middle keeps the tray they have always had, and it is
+  // the only case that does — asserted on the choice rather than on the spot,
+  // because the two layouts are two functions now and the tray is one of them.
   it('leaves a solo table exactly as it was', () => {
-    expect(stashOrigin(2, 1)).toEqual(STASH_ORIGIN)
+    expect(ownsTheFelt(CENTER_SEAT, 1)).toBe(true)
+    expect(STASH_ORIGIN[0]).toBeCloseTo(STASH_COLUMN_ANCHORS[0]![0])
+    expect(STASH_ORIGIN[2]).toBeCloseTo(STASH_COLUMN_ANCHORS[0]![1])
   })
 })
 
