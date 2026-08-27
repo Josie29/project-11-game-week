@@ -185,6 +185,12 @@ seen, which is why doors now take a keypress.
 visual work is done.** An entire session's worth of table work shipped with
 four visible bugs in it because it was written without ever being viewed.
 
+**`npm run shots` takes an output directory, not a URL** — the server is
+`SHOTS_BASE_URL`, defaulting to the conventional port. Handed a URL it makes a
+directory called `http:` and photographs whatever is on 5180, which on a
+machine running two sessions is somebody else's app and on a machine running
+one is nothing at all. Both look exactly like the scene failing to load.
+
 **Check that the dev server is serving what you just wrote.** Vite caches
 transformed modules and only invalidates them on a watcher event, so anything
 that stops the watcher seeing a file makes the server go on serving the last
@@ -773,6 +779,7 @@ npm test            # vitest
 npm run typecheck   # tsc --noEmit, strict + exactOptionalPropertyTypes
 npm run build
 npm run shot <url> <out.png> [settleMs] [keys]
+npm run shots [outDir]          # every scene; SHOTS_BASE_URL picks the server
 npm run locate <url> [prefix]   # world positions of named objects
 npm run multiplayer [baseUrl]   # two players at once; needs the worker running
 npm run shared-blackjack [url]  # two players at one table, one shoe
