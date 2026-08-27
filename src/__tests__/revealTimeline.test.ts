@@ -3,8 +3,50 @@ import {
   DRAW_INTERVAL_MS,
   FLIP_DURATION_MS,
   openingDealAt,
+  openingDealEndsAt,
+  openingHoleRestAt,
+  openingUpcardFlipAt,
   revealTimeline,
 } from '../scenes/revealTimeline'
+
+describe('dealer flip choreography', () => {
+  /*
+   * The casino hole-card move: the dealer's first card is dealt face down and
+   * the second card levers it face up before tucking in as the hole. Out of
+   * order, the table shows nonsense — an upcard flipping itself with nothing
+   * touching it, or a hole card sliding home before the flip it exists to
+   * perform.
+   */
+  it('turns the upcard only after the second card has arrived to turn it', () => {
+    for (let seatCount = 1; seatCount <= 5; seatCount++) {
+      expect(openingUpcardFlipAt(seatCount)).toBeGreaterThan(
+        openingDealAt(1, 0, seatCount, true),
+      )
+    }
+  })
+
+  it('holds the hole card at the wedge until the flip is finished', () => {
+    for (let seatCount = 1; seatCount <= 5; seatCount++) {
+      expect(openingHoleRestAt(seatCount)).toBeGreaterThanOrEqual(
+        openingUpcardFlipAt(seatCount) + FLIP_DURATION_MS,
+      )
+    }
+  })
+
+  /*
+   * A dealt natural settles the instant the deal lands, and the reveal is
+   * scheduled from settlement — the store holds it behind this moment, so the
+   * hole card cannot be commanded face up while still travelling.
+   */
+  it('declares the deal over only after every part of the move', () => {
+    for (let seatCount = 1; seatCount <= 5; seatCount++) {
+      expect(openingDealEndsAt(seatCount)).toBeGreaterThan(openingHoleRestAt(seatCount))
+      expect(openingDealEndsAt(seatCount)).toBeGreaterThan(
+        openingDealAt(1, seatCount - 1, seatCount, false),
+      )
+    }
+  })
+})
 
 describe('openingDealAt', () => {
   /*
@@ -26,10 +68,10 @@ describe('openingDealAt', () => {
     expect(order).toEqual([0, 1, 2, 3, 4, 5].map((slot) => slot * DRAW_INTERVAL_MS))
   })
 
-  // The solo cadence the captures were tuned to: player, dealer, player,
-  // dealer, one interval apart — the last card leaves the shoe at 3s, which is
-  // what the 4500ms settle in `blackjack-dealt` and the walkthrough's deal
-  // wait were sized against.
+  // The solo cadence the captures are tuned to: player, dealer, player,
+  // dealer, one interval apart — the hole card leaves the shoe at 4.5s and the
+  // wedge move runs on past it, which is what the settles in `shots.mjs` and
+  // the walkthrough's deal wait are sized against.
   it('keeps the solo deal on the same clock as before', () => {
     expect(openingDealAt(0, 0, 1, false)).toBe(0)
     expect(openingDealAt(0, 0, 1, true)).toBe(DRAW_INTERVAL_MS)
@@ -123,13 +165,13 @@ describe('revealTimeline', () => {
 
   /*
    * The worst realistic case: a dealer drawing several small cards up to
-   * seventeen. Six-plus seconds is the accepted price of the flat one-second
-   * deal (issue #3) — but the `blackjack-dealer-draws` capture waits a fixed
-   * 7500ms, so if this ever grows past that bound the screenshot silently
-   * truncates a hand mid-reveal.
+   * seventeen. Eight-plus seconds is the accepted price of the flat
+   * beat-and-a-half deal — but the `blackjack-dealer-draws` capture waits a
+   * fixed 15000ms (deal choreography plus this reveal), so if this ever grows
+   * past that budget the screenshot silently truncates a hand mid-reveal.
    */
   it('keeps even a long dealer hand inside the capture window', () => {
-    expect(revealTimeline(7).completeAt).toBeLessThan(7000)
+    expect(revealTimeline(7).completeAt).toBeLessThan(9000)
   })
 
   it('treats a degenerate card count as the opening two', () => {
