@@ -146,7 +146,7 @@ const SCENES = [
   // in it: a stool folds the legs under a floor-length hem, and the walk cycle
   // swings an arm holding a cane.
   { name: 'strip-dressed', path: '/?boot=strip&dressed&time=21:00&freeze', settleMs: 2400 },
-  { name: 'blackjack-dressed', path: '/?boot=settled&dressed&time=21:00&freeze', settleMs: 2600 },
+  { name: 'blackjack-dressed', path: '/?boot=settled&dressed&time=21:00&freeze', settleMs: 5000 },
   // The walkable casino floor. Every other casino link sits the player at a
   // table, so without this the room itself is never captured.
   { name: 'casino-floor', path: '/?boot=floor&time=21:00&freeze', settleMs: 2600 },
@@ -160,10 +160,15 @@ const SCENES = [
   // above the top of the frame from every position a capture can reach.
   { name: 'casino-vault', path: '/?boot=floor&tilt=-6&time=21:00&freeze', settleMs: 2600 },
   { name: 'blackjack-bet', path: '/?boot=casino&time=21:00&freeze', settleMs: 1800 },
-  { name: 'blackjack-dealt', path: '/?boot=table&time=21:00&freeze', settleMs: 1800 },
-  { name: 'blackjack-settled', path: '/?boot=settled&time=21:00&freeze', settleMs: 2600 },
-  { name: 'blackjack-split', path: '/?boot=split&time=21:00&freeze', settleMs: 2000, keys: ['p'] },
-  { name: 'blackjack-dealer-draws', path: '/?boot=draw&time=21:00&freeze', settleMs: 4200, keys: ['s'] },
+  // The opening deal is paced at a card a second (issue #3): the last of the
+  // four opening cards leaves the shoe at 3.0s, so anything capturing a dealt
+  // hand waits for the deal plus flip and settle.
+  { name: 'blackjack-dealt', path: '/?boot=table&time=21:00&freeze', settleMs: 4500 },
+  { name: 'blackjack-settled', path: '/?boot=settled&time=21:00&freeze', settleMs: 5000 },
+  { name: 'blackjack-split', path: '/?boot=split&time=21:00&freeze', settleMs: 4500, keys: ['p'] },
+  // Bounded by `revealTimeline(7).completeAt < 7000` in revealTimeline.test.ts;
+  // if the reveal outgrows the wait, that test fails before this truncates.
+  { name: 'blackjack-dealer-draws', path: '/?boot=draw&time=21:00&freeze', settleMs: 7500, keys: ['s'] },
   { name: 'craps-comeout', path: '/?boot=craps&time=21:00&freeze', settleMs: 1800 },
   { name: 'craps-rolled', path: '/?boot=craps&time=21:00&freeze', settleMs: 3400, keys: [' '] },
 ]

@@ -17,21 +17,15 @@ export const HOLE_PAUSE_MS = 420
 /** How long the hole card takes to physically turn. */
 export const FLIP_DURATION_MS = 650
 
-/** Gap before the first card the dealer draws. */
-export const DRAW_INTERVAL_MS = 620
-
 /**
- * How much each successive gap shortens.
+ * The gap between every card and the one before it, drawn or dealt.
  *
- * A dealer grinding up to seventeen picks up speed, and at a fixed interval a
- * seven-card hand ran to 4.2 seconds — long enough that a presenter would have
- * to talk over it. Accelerating keeps the tail watchable and happens to be what
- * a real dealer does.
+ * A flat second, deliberately without acceleration: a fixed interval puts a
+ * seven-card dealer hand past six seconds, and that cost is accepted for a deal
+ * slow enough to be dramatic. The opening deal takes its stagger from this same
+ * number, so the round is paced by one constant.
  */
-const DRAW_INTERVAL_DECAY = 0.82
-
-/** However fast it accelerates, cards never blur together. */
-const MIN_DRAW_INTERVAL_MS = 320
+export const DRAW_INTERVAL_MS = 1000
 
 /** Cards dealt face down at the start of a round: the dealer's hole card. */
 const OPENING_CARDS = 2
@@ -56,16 +50,16 @@ export function revealTimeline(dealerCardCount: number): RevealTimeline {
 
   const holeFlipAt = HOLE_PAUSE_MS
   // Nothing is drawn until the hole card has finished turning; a card landing
-  // mid-flip reads as two things happening for no reason.
-  const firstDrawAt = holeFlipAt + FLIP_DURATION_MS
+  // mid-flip reads as two things happening for no reason. The interval is
+  // longer than the flip, so waiting a full beat covers it.
+  const firstDrawAt = holeFlipAt + DRAW_INTERVAL_MS
 
   const drawAt: number[] = []
   let at = firstDrawAt
 
   for (let index = 0; index < drawnCards; index++) {
     drawAt.push(at)
-    const gap = Math.max(MIN_DRAW_INTERVAL_MS, DRAW_INTERVAL_MS * DRAW_INTERVAL_DECAY ** index)
-    at += gap
+    at += DRAW_INTERVAL_MS
   }
 
   const lastEvent = drawAt[drawAt.length - 1] ?? holeFlipAt
