@@ -13,10 +13,12 @@ import { CRAPS_ORIGIN, TABLE_FOOTPRINTS, TableId } from '../scenes/casinoFloorLa
 import {
   CHIP_CHANNEL_OFFSET,
   CHIP_CHANNEL_WIDTH,
+  DICE_LINEAR_DAMPING,
   DICE_REST_POSITIONS,
   DICE_THROW_ORIGINS,
   DICE_THROW_VELOCITIES,
   DIE_HALF,
+  DIE_RESTITUTION,
   DRINK_HOLDER_OFFSET,
   DRINK_HOLDER_RADIUS,
   DRINK_HOLDERS,
@@ -39,6 +41,7 @@ import {
   PUCK_RADIUS,
   RAIL_WIDTH,
   roundedRectOutline,
+  WALL_RESTITUTION,
 } from '../scenes/crapsTableLayout'
 
 describe('the pit predicate', () => {
@@ -162,6 +165,29 @@ describe('the dice', () => {
     // the dice died around the middle of it.
     const reach = Math.min(...DICE_THROW_VELOCITIES.map(([vx]) => vx))
     expect(reach).toBeGreaterThan(PIT_HALF_WIDTH)
+  })
+
+  /*
+   * The other half of a craps throw: the dice strike the far wall and come
+   * back down the table. Rapier's linear damping sheds speed at exactly
+   * `dv/dx = -λ` along the flight, so the impact speed is arithmetic rather
+   * than simulation — and the walls answering with restitution is what was
+   * missing when the dice crossed the table and simply died at the far end.
+   */
+  it('reaches the far wall fast enough to bounce back', () => {
+    for (const [index, [originX]] of DICE_THROW_ORIGINS.entries()) {
+      const vx = DICE_THROW_VELOCITIES[index]![0]
+      const impact = vx - DICE_LINEAR_DAMPING * (PIT_HALF_WIDTH - originX)
+
+      // Arrives with real pace, not a crawl that taps the wall and stops.
+      expect(impact).toBeGreaterThan(2)
+
+      // Rapier averages the two surfaces' restitution in a contact, so the
+      // rebound is that average of the die's and the wall's. Anything much
+      // under 1.5 m/s reads as the wall absorbing the throw.
+      const rebound = impact * ((DIE_RESTITUTION + WALL_RESTITUTION) / 2)
+      expect(rebound).toBeGreaterThan(1.5)
+    }
   })
 
   it('parks the OFF puck on the felt and clear of the resting dice', () => {

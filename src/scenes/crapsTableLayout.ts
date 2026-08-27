@@ -121,8 +121,8 @@ export const DIE_HALF = 0.08
  * so neither the resting dice nor the release point lands on top of a bet.
  */
 export const DICE_THROW_ORIGINS: readonly (readonly [number, number, number])[] = [
-  [-2.0, 1.42, 0.42],
-  [-2.0, 1.42, 0.62],
+  [-2.0, 1.42, -0.2],
+  [-2.0, 1.42, 0.0],
 ]
 
 export const DICE_REST_POSITIONS: readonly (readonly [number, number, number])[] = [
@@ -139,10 +139,36 @@ export const DICE_REST_POSITIONS: readonly (readonly [number, number, number])[]
  * and the table it has to cross stay in one file — the table got two and a half
  * times longer, and a throw tuned for the old one dies in the middle of it.
  */
+/*
+ * Thrown to fly, not to roll. Damping alone would let a flat throw cross four
+ * times over, but the felt's friction is what actually stops a rolling die —
+ * measured with the dev bridge, the old flat 0.45 lift put the dice down a
+ * metre and a half in and they died mid-table. The lift keeps them airborne
+ * almost to the far wall, so friction never gets a say until after the strike.
+ */
 export const DICE_THROW_VELOCITIES: readonly (readonly [number, number, number])[] = [
-  [5.7, 0.45, -0.55],
-  [5.4, 0.45, -0.75],
+  [8.3, 2.3, -0.2],
+  [7.9, 2.4, -0.35],
 ]
+
+/**
+ * The physics of the bounce, in the layout module because they are arithmetic
+ * the tests hold: rapier's linear damping sheds speed at exactly `dv/dx = -λ`
+ * along the flight, so "the throw reaches the far wall and comes back" is
+ * `v0 - λ·distance` times the restitution the wall answers with — checkable
+ * without running a simulation.
+ */
+export const DICE_LINEAR_DAMPING = 0.35
+
+export const DIE_RESTITUTION = 0.42
+
+/**
+ * The pit wall's own restitution. Rapier *averages* the two surfaces in a
+ * contact, and a wall left at the default 0 halves the die's 0.42 to a bounce
+ * that dies at the far wall — the throw must strike it and visibly come back,
+ * which is the half of a craps throw that makes it a throw.
+ */
+export const WALL_RESTITUTION = 0.75
 
 export const PUCK_RADIUS = 0.1
 

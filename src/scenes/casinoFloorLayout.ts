@@ -31,6 +31,7 @@ import {
   TABLE_TOP_Y as FELT_TOP_Y,
 } from './tableLayout'
 import {
+  DICE_REST_POSITIONS,
   OUTER_HALF_DEPTH,
   OUTER_HALF_WIDTH,
   PIT_HALF_DEPTH,
@@ -81,8 +82,11 @@ export const TABLE_FOOTPRINTS: Record<TableId, Footprint> = {
   [TableId.Blackjack]: { minX: -10.8, maxX: -4.2, minZ: -1.8, maxZ: 3.5 },
   // Two and a half to one now: wide across the room, shallow front to back.
   // Deeper than the table itself, because this has to cover the boxman behind
-  // it and the shooter standing at the near rail as well as the woodwork.
-  [TableId.Craps]: { minX: -2.85, maxX: 2.85, minZ: -2.0, maxZ: 2.0 },
+  // it and the players at the rail as well as the woodwork — including the
+  // shooter beside the dice at one short end and the two spots wrapped around
+  // the other, all near x = ±2.93. `crapsRail.test.ts` holds every rail spot
+  // inside this box, so a spot cannot quietly step out of the keep-out again.
+  [TableId.Craps]: { minX: -3.2, maxX: 3.2, minZ: -2.0, maxZ: 2.0 },
 }
 
 /* --------------------------------------------------- the blackjack seats */
@@ -255,29 +259,41 @@ export const SIT_SPOTS: Record<TableId, readonly [number, number, number]> = {
 
 
 /**
+ * How far off the table's outer edge a standing player is placed.
+ *
+ * Written down now rather than derived from the shooter's spot: the shooter
+ * moved around to the short end, and the near rail keeps the standoff it has
+ * always had instead of inheriting wherever the shooter went.
+ */
+const CRAPS_STAND_OFF = 0.36
+
+/** The near rail's standing line. */
+const CRAPS_RAIL_Z = OUTER_HALF_DEPTH + CRAPS_STAND_OFF
+
+/** Beside either short end, one standoff past the woodwork. */
+const CRAPS_END_X = OUTER_HALF_WIDTH + CRAPS_STAND_OFF
+
+/**
  * Where the player's character ends up once they take a place, per table.
  *
  * Blackjack is a seat. Craps is a spot at the rail: nobody sits at craps, and
  * the seated pose put the player's head below the rail they were supposedly
- * throwing over. Standing at the shooter's end also lines them up with where
- * the dice are released, so the throw reads as theirs.
+ * throwing over.
+ *
+ * The craps spot is the shooter's end — the left short end, beside the dice,
+ * which is what the spec has always said ("a fixed spot at a short end of the
+ * table"). Its z is derived from where the dice actually wait, so the figure
+ * and the pair it is about to pick up cannot drift apart.
  */
 export const SEATS: Record<TableId, readonly [number, number, number]> = {
   // Derived, not written down twice: the stool a lone player takes.
   [TableId.Blackjack]: blackjackSeatSpot(DEFAULT_BLACKJACK_SEAT),
-  [TableId.Craps]: [-1.75, 0, 1.58],
+  [TableId.Craps]: [
+    -CRAPS_END_X,
+    0,
+    (DICE_REST_POSITIONS[0]![2] + DICE_REST_POSITIONS[1]![2]) / 2,
+  ],
 }
-
-/**
- * How far off the table's outer edge a standing player is placed.
- *
- * Derived from the shooter's spot rather than written down, so the end spots
- * around the corner keep exactly the standoff the near rail has always had.
- */
-const CRAPS_STAND_OFF = SEATS[TableId.Craps][2] - OUTER_HALF_DEPTH
-
-/** The near rail's standing line, which is the shooter's own z. */
-const CRAPS_RAIL_Z = SEATS[TableId.Craps][2]
 
 /**
  * Gap between neighbouring rail spots.
@@ -288,29 +304,25 @@ const CRAPS_RAIL_Z = SEATS[TableId.Craps][2]
  */
 const CRAPS_RAIL_SPACING = 0.8
 
-/** Beside the table's far end, one standoff past the woodwork. */
-const CRAPS_END_X = OUTER_HALF_WIDTH + CRAPS_STAND_OFF
-
 /**
  * Places along the craps rail, in the order they are filled — one per player
  * the table takes, which is the spec's eight.
  *
- * **Index 0 is the shooter's end**, and is exactly `SEATS[TableId.Craps]` — the
- * spot every player has stood at since craps was single-player, so a lone
- * player still stands precisely where they always did and no capture moves.
- *
- * Six spots run down the near rail from the shooter, and the last two wrap
- * around the table's far end, facing it side-on (`crapsRailFacing`). The rail
- * used to stop at five spots for a table that seats eight, so the back three of
- * a full line stood inside each other at the far spot — the same bug spreading
- * the rail out was meant to fix, three players later.
+ * **Index 0 is the shooter's end**, and is exactly `SEATS[TableId.Craps]`: the
+ * left short end, beside the resting dice, facing down the felt the way the
+ * throw flies. Five spots run along the near rail, centred on it, and the last
+ * two wrap around the table's far end, facing it side-on (`crapsRailFacing`).
+ * The rail used to stop at five spots for a table that seats eight, so the
+ * back three of a full line stood inside each other at the far spot — the same
+ * bug spreading the rail out was meant to fix, three players later.
  */
 export const CRAPS_RAIL_SPOTS: readonly (readonly [number, number, number])[] = [
-  // Down the near rail, shooter first…
+  // The shooter's end…
+  SEATS[TableId.Craps],
+  // …then down the near rail, centred so the line reads as one rail…
   ...Array.from(
-    { length: 6 },
-    (_, place) =>
-      [SEATS[TableId.Craps][0] + place * CRAPS_RAIL_SPACING, 0, CRAPS_RAIL_Z] as const,
+    { length: 5 },
+    (_, place) => [(place - 2) * CRAPS_RAIL_SPACING, 0, CRAPS_RAIL_Z] as const,
   ),
   // …then around the far end, clear of the boxman on the opposite side.
   [CRAPS_END_X, 0, 0.55],
@@ -321,11 +333,13 @@ export const CRAPS_RAIL_SPOTS: readonly (readonly [number, number, number])[] = 
  * Which way a player at a rail spot faces: at the felt.
  *
  * The near rail looks across -z, exactly as it always has; the two spots
- * around the table's end look across -x. Derived from the spot rather than
- * stored beside it, so a spot and its facing cannot be edited apart.
+ * around the table's far end look across -x; the shooter's end looks across
+ * +x, down the length of the table the dice fly. Derived from the spot rather
+ * than stored beside it, so a spot and its facing cannot be edited apart.
  */
 export function crapsRailFacing(spot: readonly [number, number, number]): number {
-  // Only the end spots sit past the table's far edge.
+  // Only the end spots sit past the table's short edges.
+  if (spot[0] <= -CRAPS_END_X) return Math.PI / 2
   return spot[0] >= CRAPS_END_X ? -Math.PI / 2 : Math.PI
 }
 

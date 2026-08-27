@@ -42,6 +42,7 @@ import {
   roundedRectOutline,
   SURFACE_Y,
   TABLE_TOP_Y,
+  WALL_RESTITUTION,
 } from '../crapsTableLayout'
 import {
   getChipChannelTexture,
@@ -487,6 +488,11 @@ export function CrapsTable() {
               args={[...wall.halfExtents]}
               position={[...wall.position]}
               rotation={[0, wall.rotationY, 0]}
+              // The walls answer a throw, the felt does not: rapier averages
+              // the two surfaces of a contact, and a wall left at the default
+              // 0 halves the die's own restitution into a bounce that dies at
+              // the far end instead of coming back down the table.
+              restitution={WALL_RESTITUTION}
             />
           ))}
         </RigidBody>

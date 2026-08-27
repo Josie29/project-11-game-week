@@ -4,15 +4,30 @@ import {
   crapsRailFacing,
   crapsRailHasRoom,
   crapsRailSpot,
+  SEATED_TARGET,
+  SEATED_VIEW,
+  seatedCameraAt,
   SEATS,
+  TABLE_FOOTPRINTS,
   TableId,
 } from '../scenes/casinoFloorLayout'
-import { OUTER_HALF_DEPTH, OUTER_HALF_WIDTH } from '../scenes/crapsTableLayout'
+import {
+  DICE_REST_POSITIONS,
+  OUTER_HALF_DEPTH,
+  OUTER_HALF_WIDTH,
+  PIT_HALF_DEPTH,
+} from '../scenes/crapsTableLayout'
+import {
+  framedFractionY,
+  frameWidth,
+  LANDSCAPE_ASPECT,
+  subtendedAngle,
+} from '../world/camera'
 
 describe('crapsRailSpot', () => {
-  // A lone player must stand exactly where they have always stood. That spot is
-  // the shooter's end, lined up with where the dice leave the hand, and every
-  // craps capture in the suite frames it.
+  // A lone player is the shooter, and the shooter's spot and the solo spot must
+  // be the same place — beside the resting dice at the short end — or the throw
+  // reads as somebody else's the moment a second player arrives.
   it('leaves a single player on the shooter spot', () => {
     expect(CRAPS_RAIL_SPOTS[0]).toEqual(SEATS[TableId.Craps])
     expect(crapsRailSpot('a', 'a', ['a'])).toEqual(SEATS[TableId.Craps])
@@ -63,22 +78,91 @@ describe('crapsRailSpot', () => {
 })
 
 describe('crapsRailFacing', () => {
-  // Every spot must look at the felt. A near-rail spot faces across -z, and the
-  // two around the table's end face across -x — a player facing away from the
-  // table they are betting on is the seated-figure equivalent of a wrong seat.
+  // Every spot must look at the felt. A near-rail spot faces across -z, the
+  // two around the far end face across -x, and the shooter's end faces across
+  // +x — a player facing away from the table they are betting on is the
+  // seated-figure equivalent of a wrong seat.
   it('faces every spot at the table', () => {
     for (const spot of CRAPS_RAIL_SPOTS) {
-      const pastTheEnd = spot[0] > OUTER_HALF_WIDTH
-      expect(crapsRailFacing(spot)).toBe(pastTheEnd ? -Math.PI / 2 : Math.PI)
-      // And the spot itself stands off the table, not inside the woodwork.
-      if (!pastTheEnd) expect(spot[2]).toBeGreaterThan(OUTER_HALF_DEPTH)
+      const pastTheFarEnd = spot[0] > OUTER_HALF_WIDTH
+      const pastTheShooterEnd = spot[0] < -OUTER_HALF_WIDTH
+      expect(crapsRailFacing(spot)).toBe(
+        pastTheShooterEnd ? Math.PI / 2 : pastTheFarEnd ? -Math.PI / 2 : Math.PI,
+      )
+      // And a near-rail spot stands off the table, not inside the woodwork.
+      if (!pastTheFarEnd && !pastTheShooterEnd) {
+        expect(spot[2]).toBeGreaterThan(OUTER_HALF_DEPTH)
+      }
     }
   })
 
-  // The shooter's facing is the one every craps capture frames; it must keep
-  // returning exactly the value that shipped.
-  it('keeps the shooter square to the felt', () => {
-    expect(crapsRailFacing(CRAPS_RAIL_SPOTS[0]!)).toBe(Math.PI)
+  // The throw flies down the table toward +x, and the figure it has to read as
+  // belonging to must face the same way — a shooter with their back to the
+  // dice is the picture this pins against.
+  it('faces the shooter down the length of the table', () => {
+    expect(crapsRailFacing(CRAPS_RAIL_SPOTS[0]!)).toBe(Math.PI / 2)
+  })
+})
+
+describe('the shooter spot', () => {
+  // The spec: the shooter throws "from a fixed spot at a short end of the
+  // table". The figure must stand past the woodwork at the same end the dice
+  // wait at, close enough that the pair on the felt reads as theirs — the spot
+  // used to be a metre away around the corner on the long rail.
+  it('stands the shooter at the short end beside the resting dice', () => {
+    const [x, , z] = SEATS[TableId.Craps]
+
+    expect(x).toBeLessThan(-OUTER_HALF_WIDTH)
+    expect(Math.abs(z)).toBeLessThan(PIT_HALF_DEPTH)
+
+    for (const [dieX, , dieZ] of DICE_REST_POSITIONS) {
+      expect(Math.sign(dieX)).toBe(Math.sign(x))
+      expect(Math.hypot(x - dieX, z - dieZ)).toBeLessThan(1.2)
+    }
+  })
+
+  // The footprint is what keeps the walking player out of the table, and it
+  // has to cover the people standing at it too — the far-end spots sat outside
+  // it for a while, so a walker could stand inside a figure at the rail.
+  it('keeps every rail spot inside the table keep-out', () => {
+    const box = TABLE_FOOTPRINTS[TableId.Craps]
+
+    for (const [x, , z] of CRAPS_RAIL_SPOTS) {
+      expect(x).toBeGreaterThan(box.minX)
+      expect(x).toBeLessThan(box.maxX)
+      expect(z).toBeGreaterThan(box.minZ)
+      expect(z).toBeLessThan(box.maxZ)
+    }
+  })
+
+  /*
+   * The fixed table camera has to hold the new spot. Width across the view is
+   * measured from the look target, which sits at the centre of the frame by
+   * construction, so "inside the horizontal frame" is an angle against half
+   * the frame's width — and height is checked separately, because width says
+   * nothing about whether something is on screen (the waterfall lesson).
+   */
+  it('keeps the shooter inside the fixed table camera frame', () => {
+    const view = SEATED_VIEW[TableId.Craps]
+    const target = SEATED_TARGET[TableId.Craps]
+    const camera = seatedCameraAt(view, target)
+    const spot = CRAPS_RAIL_SPOTS[0]!
+
+    // The far shoulder at hip height and the top of the head: the extremities
+    // most likely to leave by the left edge or the top of the frame.
+    const extremities: readonly (readonly [number, number, number])[] = [
+      [spot[0] - 0.4, 1.0, spot[2]],
+      [spot[0] - 0.4, 1.8, spot[2]],
+    ]
+
+    const halfFrame = frameWidth(view.fov, LANDSCAPE_ASPECT) / 2
+    for (const point of extremities) {
+      expect(subtendedAngle(camera, [target, point])).toBeLessThan(halfFrame)
+
+      const fraction = framedFractionY(camera, target, view.fov, point)
+      expect(fraction).toBeGreaterThan(0)
+      expect(fraction).toBeLessThan(1)
+    }
   })
 })
 

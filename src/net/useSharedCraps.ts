@@ -1,6 +1,11 @@
 import { useEffect } from 'react'
 import { RollOutcome } from '../games/craps/types'
-import { crapsRailHasRoom, crapsRailSpot, TableId } from '../scenes/casinoFloorLayout'
+import {
+  CRAPS_RAIL_SPOTS,
+  crapsRailHasRoom,
+  crapsRailSpot,
+  TableId,
+} from '../scenes/casinoFloorLayout'
 import { CrapsBet } from '../scenes/crapsFeltLayout'
 import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
@@ -133,8 +138,15 @@ export function useSharedCraps(): SharedCraps {
   return {
     shared,
     shooterName,
-    /** Where this player stands at the rail, shooter's end included. */
-    railSpot: crapsRailSpot(selfId ?? '', shooterId, lineup),
+    /*
+     * Where this player stands at the rail.
+     *
+     * Alone, the shooter's end outright: the queue knows nothing of a solo
+     * player — no self id, no lineup — and asking it anyway dropped them on
+     * the *last* spot, standing at the far end of a table whose dice they were
+     * throwing from the near one.
+     */
+    railSpot: shared ? crapsRailSpot(selfId ?? '', shooterId, lineup) : CRAPS_RAIL_SPOTS[0]!,
     /*
      * Checked in Multiplayer whether or not this player is at the table yet —
      * `shared` is false while they are still walking up, which is exactly when

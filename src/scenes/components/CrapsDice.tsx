@@ -4,10 +4,12 @@ import { useEffect, useRef, useState } from 'react'
 import { Euler, Group, Quaternion } from 'three'
 import type { DiceRoll } from '../../games/craps/types'
 import {
+  DICE_LINEAR_DAMPING,
   DICE_REST_POSITIONS,
   DICE_THROW_ORIGINS,
   DICE_THROW_VELOCITIES,
   DIE_HALF,
+  DIE_RESTITUTION,
 } from '../crapsTableLayout'
 import { DIE_FACE_VALUES, FACE_UP_ROTATIONS, getDieFaceTexture } from '../diceTexture'
 
@@ -150,9 +152,9 @@ export function CrapsDice({ roll, rollId }: CrapsDiceProps) {
           // Continuous collision detection: a die is small and fast enough to
           // step past a wall between frames without it.
           ccd
-          restitution={0.42}
+          restitution={DIE_RESTITUTION}
           friction={0.85}
-          linearDamping={0.35}
+          linearDamping={DICE_LINEAR_DAMPING}
           angularDamping={0.4}
           position={[...(DICE_REST_POSITIONS[index] ?? DICE_REST_POSITIONS[0]!)]}
         >
