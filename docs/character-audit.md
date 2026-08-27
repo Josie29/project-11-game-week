@@ -10,7 +10,7 @@ end, under [Found in the doing](#found-in-the-doing).
 
 Every observation below comes from a capture, and every capture is named so it
 can be retaken. The harness is `scripts/shot.mjs` and the deep links in
-`CLAUDE.md`, plus a scripted pointer drag for the angles no deep link reaches
+[dev-links.md](dev-links.md), plus a scripted pointer drag for the angles no deep link reaches
 (see [Harness gaps](#h-harness-gaps)).
 
 Angles used: front, high three-quarter (~35° above, ~30° round), profile
@@ -558,7 +558,7 @@ all — a face with no eyes is not a face you can look past.*
 
 ## H. Harness gaps found while doing this
 
-*All three fixed. `?pitch=` and `?zoom=` are documented in `CLAUDE.md`; `?wear=`
+*All three fixed. `?pitch=` and `?zoom=` are documented in `dev-links.md`; `?wear=`
 is authoritative about every slot and an empty `?wear=` strips the figure. The
 contact sheets were left alone — `?zoom=` under 2.4 frames a head, and the stage
 now raises its own look target as the camera comes in, which is the same thing a
