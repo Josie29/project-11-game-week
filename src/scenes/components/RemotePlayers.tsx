@@ -8,6 +8,7 @@ import {
   blackjackSeatFacing,
   blackjackSeatSpot,
   CRAPS_ORIGIN,
+  crapsRailFacing,
   crapsRailSpot,
   TableId,
 } from '../casinoFloorLayout'
@@ -56,8 +57,9 @@ function seatedAt(
     const spot = crapsRailSpot(player.id, crapsShooter, crapsLineup)
     return {
       at: [CRAPS_ORIGIN[0] + spot[0], 0, CRAPS_ORIGIN[2] + spot[2]],
-      // Square to the felt, which is the way everybody at the rail faces.
-      facing: Math.PI,
+      // At the felt — square to it on the near rail, side-on from the two
+      // spots around the table's end. Same function as the local player.
+      facing: crapsRailFacing(spot),
     }
   }
 

@@ -340,7 +340,19 @@ export class Room implements DurableObject {
           seated: message.seated === true,
           table: typeof message.table === 'string' ? message.table : null,
         }
-        attachment.tookTableAt = attachment.identity.table === null ? null : Date.now()
+        /*
+         * Only stamped when the table actually changed, on the same rule the
+         * `seat` handler already follows. Every wardrobe change and rename
+         * re-announces as a join, so an unconditional stamp here sent a player
+         * to the back of the dice queue for putting a jacket on — and took the
+         * dice off the shooter mid-point, who is supposed to keep them until
+         * they seven out.
+         */
+        if (attachment.identity.table === null) {
+          attachment.tookTableAt = null
+        } else if (previousTable !== attachment.identity.table) {
+          attachment.tookTableAt = Date.now()
+        }
         /*
          * The claim is resolved before the welcome goes out, so the map the new
          * arrival receives already says whether they got the seat they asked

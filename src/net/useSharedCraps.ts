@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { RollOutcome } from '../games/craps/types'
-import { crapsRailSpot, TableId } from '../scenes/casinoFloorLayout'
+import { crapsRailHasRoom, crapsRailSpot, TableId } from '../scenes/casinoFloorLayout'
 import { CrapsBet } from '../scenes/crapsFeltLayout'
 import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
@@ -22,6 +22,14 @@ export interface SharedCraps {
   readonly shooterName: string | null
   /** Which place at the rail this player stands in. */
   readonly railSpot: readonly [number, number, number]
+  /**
+   * Whether the table can take this player.
+   *
+   * The spec caps the table at eight, one per rail spot. Always true playing
+   * alone, and always true for somebody already in the lineup — a full table
+   * must not refuse a player it already holds.
+   */
+  readonly hasRoom: boolean
   /** Whether anything is stopping a throw right now. */
   readonly canRoll: boolean
   /** Throws — locally when alone, by asking the room when not. */
@@ -127,6 +135,12 @@ export function useSharedCraps(): SharedCraps {
     shooterName,
     /** Where this player stands at the rail, shooter's end included. */
     railSpot: crapsRailSpot(selfId ?? '', shooterId, lineup),
+    /*
+     * Checked in Multiplayer whether or not this player is at the table yet —
+     * `shared` is false while they are still walking up, which is exactly when
+     * the answer gates the offer. Alone, the table is theirs.
+     */
+    hasRoom: mode !== PlayMode.Multiplayer || crapsRailHasRoom(selfId ?? '', lineup),
     /** True while the room is reachable. False means the table is waiting. */
     connected,
     isShooter,
