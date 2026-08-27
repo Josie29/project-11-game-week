@@ -1,6 +1,6 @@
 import { useFrame } from '@react-three/fiber'
-import { useMemo } from 'react'
-import { DoubleSide, type Texture } from 'three'
+import { useMemo, useRef } from 'react'
+import { DoubleSide, type Mesh, type MeshBasicMaterial, type Texture } from 'three'
 import { useTimeStore } from '../../store/useTimeStore'
 import {
   AISLE_CENTER_X,
@@ -15,6 +15,7 @@ import {
 } from '../casinoFloorLayout'
 import {
   getBalustradeTexture,
+  getFoamBandTexture,
   getMarbleTexture,
   getMistTexture,
   getStoneTexture,
@@ -70,12 +71,17 @@ function Cascade({
   period,
   z,
   opacity,
+  sway = 0,
 }: {
   texture: Texture
   period: number
   z: number
   opacity: number
+  /** Sideways drift of the sampling window, in texture widths. */
+  sway?: number
 }) {
+  const elapsed = useRef(0)
+
   useFrame((_state, delta) => {
     /*
      * `?freeze` holds the water as well as the clock and the turntables. An
@@ -84,9 +90,11 @@ function Cascade({
      * could see.
      */
     if (useTimeStore.getState().paused) {
-      texture.offset.y = 0
+      texture.offset.set(0, 0)
       return
     }
+
+    elapsed.current += delta
 
     /*
      * Downward on screen means *increasing* v, not decreasing it.
@@ -99,6 +107,15 @@ function Cascade({
      * cannot show. Wrapped to 0..1 so it does not grow without bound.
      */
     texture.offset.y = (texture.offset.y + delta / period) % 1
+
+    /*
+     * The sway is a slow sideways wander of the *sampling window*, not the
+     * mesh: the ropes drift across the sheet the way the throat of a real
+     * cascade wanders, without the sheet's edges ever leaving the lip.
+     */
+    if (sway > 0) {
+      texture.offset.x = Math.sin(elapsed.current * 0.9) * sway
+    }
   })
 
   return (
@@ -116,6 +133,165 @@ function Cascade({
         color="#a9dcf0"
         transparent
         opacity={opacity}
+        depthWrite={false}
+        toneMapped={false}
+      />
+    </mesh>
+  )
+}
+
+/*
+ * The heavy cords of water in front of the sheets.
+ *
+ * Narrow strips, each sampling its own column of the shared sheet drawing and
+ * falling at its own rate, slightly proud of the sheets. Two full-width layers
+ * scrolling in lockstep still read as one surface; a few strands overtaking
+ * that surface are what make the fall read as *volumes* of water rather than a
+ * curtain. Narrow on purpose — together they add well under a metre of
+ * blended width, where a third full sheet would add seven (see the mist note
+ * below for what full-screen overdraw costs here).
+ */
+const ROPES: readonly {
+  dx: number
+  width: number
+  period: number
+  z: number
+  opacity: number
+  column: number
+}[] = [
+  { dx: -2.9, width: 0.34, period: 0.62, z: 0.4, opacity: 0.5, column: 0.13 },
+  { dx: -1.7, width: 0.48, period: 0.92, z: 0.44, opacity: 0.42, column: 0.41 },
+  { dx: -0.4, width: 0.3, period: 0.58, z: 0.46, opacity: 0.55, column: 0.72 },
+  { dx: 0.8, width: 0.42, period: 0.8, z: 0.42, opacity: 0.46, column: 0.27 },
+  { dx: 2.1, width: 0.36, period: 0.66, z: 0.45, opacity: 0.5, column: 0.58 },
+  { dx: 3.0, width: 0.26, period: 0.98, z: 0.41, opacity: 0.4, column: 0.9 },
+]
+
+/** One cord: a narrow strip falling faster than the sheet behind it. */
+function Rope({ rope }: { rope: (typeof ROPES)[number] }) {
+  const texture = useMemo(() => {
+    const strip = getWaterSheetTexture(2.5, 1.6).clone()
+    strip.needsUpdate = true
+    // A strip this narrow shows one rope's width of the drawing; which rope it
+    // shows is picked by `column`, so no two strips fall in step or in rhyme.
+    strip.repeat.set(0.35, 1.3)
+    strip.offset.x = rope.column
+    return strip
+  }, [rope])
+
+  useFrame((_state, delta) => {
+    // Pinned under `?freeze` on the same terms as the sheets.
+    if (useTimeStore.getState().paused) {
+      texture.offset.y = 0
+      return
+    }
+    texture.offset.y = (texture.offset.y + delta / rope.period) % 1
+  })
+
+  return (
+    <mesh position={[AISLE_CENTER_X + rope.dx, POOL_LEVEL + FALL_HEIGHT / 2, ROOM.minZ + rope.z]}>
+      <planeGeometry args={[rope.width, FALL_HEIGHT]} />
+      <meshBasicMaterial
+        map={texture}
+        color="#c2e8f8"
+        transparent
+        opacity={rope.opacity}
+        depthWrite={false}
+        toneMapped={false}
+      />
+    </mesh>
+  )
+}
+
+/*
+ * Where the water lands.
+ *
+ * A drifting band of churn on the same terms as the mist billboards — soft
+ * puffs whose gradient reaches zero alpha, so there is no edge to give the
+ * quad away — plus expanding rings on the pool itself. The rings are what tie
+ * the cascade to the water: without them the sheet ends at a bright line and
+ * the pool lies perfectly still an inch away, which no amount of foam hides.
+ */
+const RIPPLES: readonly { dx: number; phase: number; reach: number }[] = [
+  { dx: -2.5, phase: 0.0, reach: 1.0 },
+  { dx: -0.9, phase: 0.45, reach: 1.2 },
+  { dx: 0.7, phase: 0.7, reach: 0.95 },
+  { dx: 2.3, phase: 0.2, reach: 1.15 },
+]
+
+/** How long one ring takes to spread and die, in seconds. */
+const RIPPLE_PERIOD = 2.6
+
+function ImpactRipples() {
+  const meshes = useRef<(Mesh | null)[]>([])
+  const elapsed = useRef(0)
+
+  useFrame((_state, delta) => {
+    // Held at zero under `?freeze`, so every capture gets the same rings at
+    // the same radii rather than a different splash per run.
+    if (!useTimeStore.getState().paused) elapsed.current += delta
+
+    RIPPLES.forEach((ripple, index) => {
+      const mesh = meshes.current[index]
+      if (!mesh) return
+
+      // Where this ring is in its life, 0 born to 1 gone.
+      const life = (elapsed.current / RIPPLE_PERIOD + ripple.phase) % 1
+      const spread = 0.25 + life * ripple.reach
+
+      // Flattened front-to-back: a ring spreading from a landing *line* meets
+      // its neighbours sideways long before it reaches the coping.
+      mesh.scale.set(spread, spread * 0.55, 1)
+      const material = mesh.material as MeshBasicMaterial
+      material.opacity = 0.32 * (1 - life)
+    })
+  })
+
+  return (
+    <group>
+      {RIPPLES.map((ripple, index) => (
+        <mesh
+          key={ripple.dx}
+          ref={(mesh) => {
+            meshes.current[index] = mesh
+          }}
+          rotation={[-Math.PI / 2, 0, 0]}
+          position={[AISLE_CENTER_X + ripple.dx, POOL_LEVEL + 0.02, ROOM.minZ + 0.85]}
+        >
+          <ringGeometry args={[0.86, 1, 32]} />
+          <meshBasicMaterial
+            color="#9fd8ec"
+            transparent
+            opacity={0}
+            depthWrite={false}
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+/** The churn band itself, drifting slowly along the waterline. */
+function FoamBand() {
+  const texture = useMemo(() => getFoamBandTexture(4), [])
+
+  useFrame((_state, delta) => {
+    // Pinned under `?freeze` on the same terms as the sheets.
+    if (useTimeStore.getState().paused) {
+      texture.offset.x = 0
+      return
+    }
+    texture.offset.x = (texture.offset.x + delta * 0.14) % 1
+  })
+
+  return (
+    <mesh position={[AISLE_CENTER_X, POOL_LEVEL + 0.24, ROOM.minZ + 0.55]}>
+      <planeGeometry args={[WATERFALL_WIDTH + 0.6, 0.55]} />
+      <meshBasicMaterial
+        map={texture}
+        transparent
+        opacity={0.85}
         depthWrite={false}
         toneMapped={false}
       />
@@ -215,7 +391,17 @@ export function WaterCourt() {
       </mesh>
 
       <Cascade texture={farSheet} period={FAR_PERIOD} z={ROOM.minZ + 0.16} opacity={0.85} />
-      <Cascade texture={nearSheet} period={NEAR_PERIOD} z={ROOM.minZ + 0.34} opacity={0.6} />
+      <Cascade
+        texture={nearSheet}
+        period={NEAR_PERIOD}
+        z={ROOM.minZ + 0.34}
+        opacity={0.6}
+        sway={0.04}
+      />
+
+      {ROPES.map((rope) => (
+        <Rope key={rope.dx} rope={rope} />
+      ))}
 
       {/*
         Foam at the waterline, kept to a hand's width.
@@ -233,6 +419,9 @@ export function WaterCourt() {
         <boxGeometry args={[WATERFALL_WIDTH, 0.06, 0.2]} />
         <meshBasicMaterial color="#9fd4e8" toneMapped={false} />
       </mesh>
+
+      <FoamBand />
+      <ImpactRipples />
 
       {/* The basin. Dark and nearly polished, so it carries the cascade. */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[COURT_CENTER_X, POOL_LEVEL, COURT_CENTER_Z]}>
