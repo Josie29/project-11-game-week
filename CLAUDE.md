@@ -90,6 +90,12 @@ pinned with a test.
   the blackjack stools' prompts.
 - **A seat you cannot choose is not a seat.** One prompt per stool; stools
   someone else holds are not offered at all.
+- **On a phone the prompt *is* the accept key.** Only one thing is offered at a
+  time and the card already names it and the verb, so `useActionKey` takes the
+  tap as well as the key and all four accepting scenes are unchanged. Two costs:
+  the card has to clear the on-screen stick, and the standing hint has to keep
+  naming the room's targets in both modes — "at a chair or the door" is what
+  `walkthrough.mjs` reads to know which room it is in.
 
 ## Commands
 
@@ -98,8 +104,10 @@ npm run dev         # vite, port 5180 by convention
 npm test            # vitest
 npm run typecheck   # tsc --noEmit, strict + exactOptionalPropertyTypes
 npm run build
-npm run shot <url> <out.png> [settleMs] [keys]
+npm run shot <url> <out.png> [settleMs] [keys] [WIDTHxHEIGHT]
 npm run shots [outDir]          # every scene; SHOTS_BASE_URL picks the server
+npm run shots:mobile            # the same scene list at 390x844, touch on
+npm run walkthrough:touch [url] # the same beats, driven by thumb
 npm run locate <url> [prefix]   # world positions of named objects
 npm run walkthrough [baseUrl]   # plays the app the way a player does
 npm run multiplayer [baseUrl]   # two players at once; needs the worker running
@@ -109,6 +117,13 @@ npm run worker:dev              # the presence worker, locally
 npm run worker:deploy           # the presence worker, to Cloudflare
 npm run typecheck:worker
 ```
+
+`npm run walkthrough:touch` drives the same beats on a phone: a portrait
+viewport, and every key replaced by the on-screen control that does the same
+job. Only `walk` and `press` know the difference, so every assertion and every
+capture is shared — a phone build that reaches the same beats is a phone build
+that works, and nothing else can say so. `npm run shots:mobile` renders the
+whole scene list at 390x844 for the same reason.
 
 ### The browser-driven checks take turns
 

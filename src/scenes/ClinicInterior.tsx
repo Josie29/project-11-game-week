@@ -6,6 +6,7 @@ import { SeatedLegs } from '../character/proportions'
 import { useAppearanceStore } from '../store/useAppearanceStore'
 import { useGameStore } from '../store/useGameStore'
 import { INTERACT_KEY } from '../world/controls'
+import { useCanvasAspect } from '../world/useCanvasAspect'
 import {
   BENCH_DEPTH,
   BENCH_OVERHANG,
@@ -18,6 +19,7 @@ import {
   CHAIR_Z,
   chairCameraAt,
   chairCameraTarget,
+  chairFov,
   chairIndex,
   chairSitSpot,
   COUNTER_DEPTH,
@@ -937,8 +939,11 @@ function WallProps() {
  */
 function ChairCamera({ chair }: { chair: number }) {
   const cameraRef = useRef<PerspectiveCameraImpl>(null)
+  const aspect = useCanvasAspect()
+  const portrait = aspect < 1
 
   const target = useMemo(() => new Vector3(...chairCameraTarget(chair)), [chair])
+  const seat = useMemo(() => chairCameraAt(chair, portrait), [chair, portrait])
 
   useFrame(() => {
     cameraRef.current?.lookAt(target)
@@ -948,8 +953,8 @@ function ChairCamera({ chair }: { chair: number }) {
     <PerspectiveCamera
       ref={cameraRef}
       makeDefault
-      fov={44}
-      position={[...chairCameraAt(chair)]}
+      fov={chairFov(aspect)}
+      position={[...seat]}
     />
   )
 }

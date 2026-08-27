@@ -21,7 +21,9 @@
     "mode-toggle": "node scripts/modeToggle.mjs",
     "shared-craps": "node scripts/sharedCraps.mjs",
     "shared-blackjack": "node scripts/sharedBlackjack.mjs",
-    "seat-claims": "node scripts/seatClaims.mjs"
+    "seat-claims": "node scripts/seatClaims.mjs",
+    "shots:mobile": "lockf -t 2400 .verify.lock env SHOTS_VIEWPORT=390x844 node scripts/shots.mjs",
+    "walkthrough:touch": "lockf -t 2400 .verify.lock node scripts/walkthrough.mjs --touch"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.8",

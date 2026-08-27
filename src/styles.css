@@ -44,6 +44,19 @@ body {
   min-height: 100dvh;
 }
 
+/*
+ * The drawing surface's box.
+ *
+ * Full-bleed everywhere except a portrait phone with a sheet up, where it stops
+ * above the sheet. R3F sizes its canvas from this element, so insetting it is
+ * all it takes for every camera in the game to be composed for the rectangle
+ * the player can actually see.
+ */
+.stage {
+  position: fixed;
+  inset: 0;
+}
+
 canvas {
   display: block;
   touch-action: none;
@@ -1180,6 +1193,242 @@ kbd {
   margin: 0;
   font-size: 0.8125rem;
   color: var(--color-neon-gold);
+}
+
+/* ---------- A phone held upright ---------- */
+
+/*
+ * Everything below is additive and gated on a touch device in portrait, so no
+ * landscape window and no mouse-driven machine sees any of it. That is the
+ * whole discipline of this block: a desktop-first game gets a phone layout by
+ * adding rules, never by editing the ones above.
+ *
+ * `pointer: coarse` rather than a width breakpoint. A narrow *browser window*
+ * on a desktop is still a desktop — it has a keyboard, the panels are meant to
+ * sit beside the scene, and turning them into bottom sheets because somebody
+ * dragged their window narrow would be a regression on the primary target.
+ */
+@media (orientation: portrait) and (pointer: coarse) {
+  /*
+   * The two side panels become bottom sheets.
+   *
+   * On a 390px screen `min(23rem, 100vw)` and `min(26rem, 100vw)` both resolve
+   * to the whole width, and a full-height panel then covers the entire game:
+   * the fitting panel — the one whose only job is to sit beside your reflection
+   * — hid the mirror, the plinth and the character completely. Half the screen
+   * each, and the scene keeps the half above.
+   */
+  .designer,
+  .shop {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: var(--sheet);
+    padding: var(--space-4);
+    padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--color-border);
+    /* The side gradients read as a smear across the full width; a flat surface
+       with a hard top edge reads as a sheet, which is what it now is. */
+    background: rgba(8, 6, 18, 0.94);
+  }
+
+  /*
+   * ...and the scene gets the rest of the screen rather than sharing it.
+   *
+   * `--sheet` is published from `SHEET_FRACTION` in `src/world/viewport.ts` at
+   * start-up, so the height of the panel and the height of the canvas cannot
+   * drift apart — which they would immediately, being in two files that no
+   * tooling checks against each other.
+   */
+  .stage[data-sheet='true'] {
+    bottom: var(--sheet);
+  }
+
+  /*
+   * The HUD keeps out of the notch and the home indicator.
+   *
+   * `.hud` is `inset: 0` with a flat padding, so without this the bankroll sits
+   * under the status bar and the bottom prompt under the gesture bar.
+   */
+  .hud {
+    padding: calc(var(--space-4) + env(safe-area-inset-top)) calc(var(--space-4) + env(safe-area-inset-right))
+      calc(var(--space-4) + env(safe-area-inset-bottom)) calc(var(--space-4) + env(safe-area-inset-left));
+  }
+
+  /*
+   * The clock moves under the bankroll rather than beside it.
+   *
+   * Both are absolutely positioned into the same top strip, which is wide
+   * enough for both on a desktop and is not here — the hour was printing
+   * straight through the money.
+   */
+  .hud__clock {
+    font-size: 1.25rem;
+  }
+
+  /*
+   * The craps rail's control bar, which is a sheet rather than an overlay.
+   *
+   * It carries a chip tray, four line bets and six numbers. As an overlay on a
+   * phone it covered the felt from the rail to the back wall — the pit the dice
+   * land in included — so the player waited for a roll they could not watch.
+   * `App` puts `data-sheet` on the stage for it, so the scene above is composed
+   * for the room it has left rather than being covered by this.
+   *
+   * Blackjack's bar is four buttons and is deliberately not in here.
+   */
+  .stage[data-sheet='true'] ~ .table-ui {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: var(--sheet);
+    padding: var(--space-3) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
+    transform: none;
+    overflow-y: auto;
+    border-top: 1px solid var(--color-border);
+    background: rgba(8, 6, 18, 0.94);
+  }
+
+  /*
+   * The point, the dice and what is at risk stay put while the bets scroll.
+   *
+   * They are the first row of the craps sheet and the only read-out in it, and
+   * a sheet you scroll to reach the numbers is a sheet where the answer to
+   * "what did I just roll" is off the top of the panel by the time you have
+   * placed the next bet.
+   */
+  .stage[data-sheet='true'] ~ .table-ui .table-ui__scores {
+    position: sticky;
+    top: calc(var(--space-3) * -1);
+    z-index: 1;
+    padding: var(--space-3) 0;
+    background: rgba(8, 6, 18, 0.94);
+  }
+
+  /* The control bar sits above the on-screen stick rather than under it. */
+  .table-ui {
+    bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+  }
+
+  /*
+   * ...and so does the prompt, which is the one that actually broke.
+   *
+   * The prompt sits at the bottom of the screen and the stick is drawn over
+   * that same strip. A scripted walk arrived at the till and found "Checkout —
+   * tap to step up" with the stick across it: the one card the whole
+   * interaction model rests on, and on a phone it was also the only card you
+   * could neither read nor press.
+   *
+   * Full width rather than centred, for the same reason: centred and clear of
+   * a 136px circle leaves a column on a 390px screen too narrow for "$1,420 of
+   * that is not yours".
+   */
+  .hud__prompt {
+    left: var(--space-4);
+    right: var(--space-4);
+    bottom: calc(13rem + env(safe-area-inset-bottom));
+    transform: none;
+  }
+
+
+
+  .welcome__panel,
+  .settings__panel {
+    padding: var(--space-4);
+  }
+}
+
+/*
+ * Key badges, on a device with no keys.
+ *
+ * `<kbd>` is used for exactly one thing in this project — telling the player
+ * which key does this — and on a touch device every one of them names a key
+ * that is not there. "Roll the dice [Space]" and "Leave table [Esc]" are
+ * instructions a thumb cannot follow.
+ *
+ * The same query `isTouchLayout` uses, and gated on the pointer rather than on
+ * the orientation: a tablet in landscape has no keyboard either.
+ */
+@media (pointer: coarse) and (hover: none) {
+  /*
+   * `.chip kbd` is listed because it is more specific than a bare `kbd` and
+   * would otherwise win the cascade — the chip badges stayed on screen while
+   * every other one went, which is worse than none of them going.
+   */
+  kbd,
+  .chip kbd {
+    display: none;
+  }
+}
+
+/* ---------- On-screen controls ---------- */
+
+/*
+ * The stick.
+ *
+ * Outside the portrait media block on purpose: it is drawn only when the game
+ * decides the device is touch-driven, and that decision is made once in
+ * `viewport.ts` rather than twice — here and there — where the two could
+ * disagree about what a phone is. A tablet in landscape gets a stick and gets
+ * none of the portrait layout, which is correct for both.
+ */
+.touch {
+  position: fixed;
+  inset: auto 0 0 0;
+  padding: var(--space-6) calc(var(--space-6) + env(safe-area-inset-right))
+    calc(var(--space-8) + env(safe-area-inset-bottom)) calc(var(--space-6) + env(safe-area-inset-left));
+  display: flex;
+  align-items: flex-end;
+  /* Everything around the stick belongs to the camera drag. */
+  pointer-events: none;
+  /* Under the settings panel, over the scene. */
+  z-index: 5;
+}
+
+.touch__stick {
+  /* 2 x STICK_TRAVEL in src/world/touchInput.ts, plus the knob's own radius. */
+  width: 8.5rem;
+  height: 8.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: rgba(8, 6, 18, 0.42);
+  backdrop-filter: blur(0.25rem);
+  pointer-events: auto;
+  /* Without this a drag on the stick scrolls the page instead of walking. */
+  touch-action: none;
+}
+
+.touch__knob {
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.16);
+  /* Position is written by the pointer handlers; this is where it rests. */
+  transform: translate(0, 0);
+}
+
+/*
+ * A prompt that is also the accept key.
+ *
+ * `.hud` is click-through so the canvas keeps its drags; this is the one child
+ * that takes pointer events back. Sized to a thumb rather than to its text —
+ * the smallest tap target anybody should have to hit is about 44px, and the
+ * one-line prompts come in under that on their own.
+ */
+.hud__prompt--tap {
+  min-height: 3rem;
+  width: fit-content;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  pointer-events: auto;
 }
 
 /*

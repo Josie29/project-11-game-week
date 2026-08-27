@@ -199,25 +199,39 @@ describe('the line from the arm to the bag', () => {
     const needle = DRAW_LINE_PATH[0]
     if (!needle) throw new Error('no line')
 
-    const eye = chairCameraAt(0)
     const at = chairCameraTarget(0)
 
-    // The camera's right vector in the xz plane: the view direction turned a
-    // quarter turn. Anything the line has along this shows up as screen width.
-    const viewX = at[0] - eye[0]
-    const viewZ = at[2] - eye[2]
-    const length = Math.hypot(viewX, viewZ)
-    const [rightX, rightZ] = [-viewZ / length, viewX / length]
+    /*
+     * Both seats, because there are two now. The narrow-screen camera sits much
+     * further out along +x to fit the recliner on a phone, which swings the view
+     * direction — and the whole point of this assertion is that the line's
+     * visibility is a fact about the *pair*, not about the line. A second camera
+     * added without re-running this is exactly how the tubing went missing the
+     * first two times.
+     */
+    for (const portrait of [false, true]) {
+      const eye = chairCameraAt(0, portrait)
 
-    const across = Math.abs(needle[0] * rightX + needle[2] * rightZ)
-    const up = Math.abs(needle[1])
+      // The camera's right vector in the xz plane: the view direction turned a
+      // quarter turn. Anything the line has along this shows up as screen width.
+      const viewX = at[0] - eye[0]
+      const viewZ = at[2] - eye[2]
+      const length = Math.hypot(viewX, viewZ)
+      const [rightX, rightZ] = [-viewZ / length, viewX / length]
 
-    expect(Math.hypot(across, up), 'the line is nearly edge-on to the camera').toBeGreaterThan(0.6)
+      const across = Math.abs(needle[0] * rightX + needle[2] * rightZ)
+      const up = Math.abs(needle[1])
 
-    // ...and the check has teeth: the version that shipped as a red stub, which
-    // ran from the arm to a bag on the tray, fails it.
-    const stub: readonly [number, number, number] = [-0.5, -0.1, -0.42]
-    const stubAcross = Math.abs(stub[0] * rightX + stub[2] * rightZ)
-    expect(Math.hypot(stubAcross, Math.abs(stub[1]))).toBeLessThan(0.6)
+      expect(
+        Math.hypot(across, up),
+        `the line is nearly edge-on to the ${portrait ? 'portrait' : 'landscape'} camera`,
+      ).toBeGreaterThan(0.6)
+
+      // ...and the check has teeth: the version that shipped as a red stub,
+      // which ran from the arm to a bag on the tray, fails it from either seat.
+      const stub: readonly [number, number, number] = [-0.5, -0.1, -0.42]
+      const stubAcross = Math.abs(stub[0] * rightX + stub[2] * rightZ)
+      expect(Math.hypot(stubAcross, Math.abs(stub[1]))).toBeLessThan(0.6)
+    }
   })
 })

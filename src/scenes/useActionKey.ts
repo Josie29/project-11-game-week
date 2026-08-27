@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { onInteract } from '../world/interact'
 
 /**
  * Runs `onPress` once per physical press of a key.
@@ -16,6 +17,12 @@ import { useEffect, useRef } from 'react'
  * The handler is held in a ref so a caller can pass a fresh closure every render
  * without the listener being torn down and rebuilt each time; a listener that
  * remounts mid-press can miss the keyup and strand the guard.
+ *
+ * A phone has no `F`, so this also listens for the HUD's prompt being tapped.
+ * Deliberately here rather than as a second hook: the prompt on screen and this
+ * key are the same offer, and the four scenes that accept it should not each
+ * have to know there are two ways to say yes. A tap has no auto-repeat, so it
+ * needs no guard of its own.
  *
  * @param key The key to watch, compared case-insensitively against `event.key`.
  * @param onPress Called on the leading edge of each press. Pass `null` to
@@ -36,6 +43,11 @@ export function useActionKey(key: string, onPress: (() => void) | null): void {
     }
 
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    const unsubscribe = onInteract(() => handler.current?.())
+
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      unsubscribe()
+    }
   }, [key])
 }
