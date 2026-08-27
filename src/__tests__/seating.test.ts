@@ -184,6 +184,16 @@ describe('the room’s seat map', () => {
     expect(claimRefused({ 2: THEM }, 2, null)).toBe(false)
     expect(claimRefused({ 2: THEM }, null, ME)).toBe(false)
   })
+
+  /*
+   * Catches the bug where pressing F at a free stool while another player was
+   * seated stood you straight back up before the room could grant the seat
+   * (issue #2): the map holds their stool, yours is still in flight, and
+   * "not mine yet" must not read as "refused".
+   */
+  it('does not read somebody else’s seat as a refusal of your own claim', () => {
+    expect(claimRefused({ 4: THEM }, 2, ME)).toBe(false)
+  })
 })
 
 describe('the player’s own chips', () => {
