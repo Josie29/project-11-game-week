@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Garment, HairStyle, PLAYER_GARMENTS, type Appearance } from '../character/appearance'
 import { GARMENT_COLORS, HAIR_COLORS, SKIN_TONES, type Swatch } from '../character/palette'
 import { Silhouette } from '../character/proportions'
@@ -112,6 +113,21 @@ export function CharacterDesigner() {
   const playerName = useAppearanceStore((state) => state.playerName)
   const setPlayerName = useAppearanceStore((state) => state.setPlayerName)
 
+  /*
+   * What the input shows while the player is typing, as distinct from what the
+   * store holds.
+   *
+   * The store sanitizes on every write — trimmed, whitespace collapsed, empty
+   * replaced by the fallback — and a controlled input fed that result cannot
+   * be typed in: the space in "Jo Jo" is deleted the keystroke it lands
+   * (`trim`), and clearing the field snaps it back to "Player" (the
+   * fallback). So the input owns a draft, every keystroke still writes the
+   * sanitized form to the store, and blur squares the draft with what
+   * actually stuck. An emptied field stays visibly empty — the placeholder
+   * already names the fallback, which is exactly what an empty name becomes.
+   */
+  const [nameDraft, setNameDraft] = useState(playerName)
+
   const done = () => {
     completeDesign()
     closeDesigner()
@@ -138,13 +154,19 @@ export function CharacterDesigner() {
         <input
           className="designer__name"
           type="text"
-          value={playerName}
+          value={nameDraft}
           maxLength={MAX_NAME_LENGTH}
           spellCheck={false}
           autoComplete="off"
           placeholder={FALLBACK_NAME}
           aria-label="Your name, shown above your character to other players"
-          onChange={(event) => setPlayerName(event.target.value)}
+          onChange={(event) => {
+            setNameDraft(event.target.value)
+            setPlayerName(event.target.value)
+          }}
+          onBlur={() => {
+            if (nameDraft.trim() !== '') setNameDraft(playerName)
+          }}
         />
         <p className="designer__hint">Shown over your head to anyone else on the strip.</p>
       </fieldset>
