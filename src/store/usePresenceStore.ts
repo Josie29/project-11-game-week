@@ -95,6 +95,16 @@ interface PresenceStore {
    * two cannot disagree about whether a gather is running.
    */
   betClocks: Readonly<Record<string, number>>
+  /**
+   * When the acting seat's turn last began, per table, on `performance.now()`.
+   *
+   * The face of the room's turn clock, on the same rule as `betClocks`: the
+   * worker arms its fifteen-second window at the deal, on every action it
+   * relays, and on the expiry it announces — and every one of those events
+   * reaches every client, so "latest of them plus `TURN_WINDOW_MS`" is the
+   * deadline without the deadline ever crossing the wire.
+   */
+  turnClocks: Readonly<Record<string, number>>
   /** This player's own id in the room, so the HUD can say "your roll". */
   selfId: string | null
   /** Asks the room to throw. It refuses unless it is this player's turn. */
@@ -158,6 +168,7 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     seats: {},
     bets: {},
     betClocks: {},
+    turnClocks: {},
     selfId: null,
 
     requestRoll: () => connection?.requestRoll(),
@@ -250,16 +261,27 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
           if (table !== TableId.Blackjack) return
           // The gather is over; the chips on the felt are the dealt hands now,
           // and the deal clock they were counting against is spent with them.
+          // The turn clock starts in their place: the room armed its own
+          // fifteen-second window in the same breath as this broadcast.
           set((state) => {
             const betClocks = { ...state.betClocks }
             delete betClocks[table]
-            return { bets: { ...state.bets, [table]: {} }, betClocks }
+            return {
+              bets: { ...state.bets, [table]: {} },
+              betClocks,
+              turnClocks: { ...state.turnClocks, [table]: performance.now() },
+            }
           })
           useBlackjackStore.getState().applyDeal(seed, bets, usePresenceStore.getState().selfId)
         },
 
         onAction: (table, id, action) => {
           if (table !== TableId.Blackjack) return
+
+          // The room re-arms its turn window on every action it relays — an
+          // action buys the next decision a fresh fifteen — so the face shown
+          // for it restarts on exactly the same event.
+          set((state) => ({ turnClocks: { ...state.turnClocks, [table]: performance.now() } }))
 
           /*
            * Insurance rides the action channel as `insure:<amount>` — the room
@@ -305,6 +327,9 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
          */
         onExpired: (table) => {
           if (table !== TableId.Blackjack) return
+          // The expiry hands the turn to the next seat, and the room re-arms
+          // its window as it announces it — restart the face to match.
+          set((state) => ({ turnClocks: { ...state.turnClocks, [table]: performance.now() } }))
           useBlackjackStore.getState().applyExpiry()
         },
 

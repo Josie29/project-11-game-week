@@ -16,6 +16,7 @@ import { useSharedBlackjack } from '../net/useSharedBlackjack'
 import { useBlackjackStore } from '../store/useBlackjackStore'
 import { useGameStore } from '../store/useGameStore'
 import { secondsUntilDeal } from '../world/dealClock'
+import { secondsUntilStand } from '../world/turnClock'
 import { MARKER_AMOUNT } from '../world/money'
 import { getVenue, type VenueId } from '../world/venues'
 import { useTableHotkeys } from './useTableHotkeys'
@@ -228,6 +229,32 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
   /** `— deals in Ns` while the gather runs, empty otherwise. */
   const countdownSuffix = dealCountdown === null ? '' : ` — deals in ${dealCountdown}s`
 
+  /*
+   * The turn clock, on the same pattern as the deal clock above: fifteen
+   * seconds per decision, restarted by the room on every action it relays,
+   * shown to the player acting and to everyone waiting on them alike.
+   */
+  const turnRunning =
+    table.shared && game.phase === RoundPhase.PlayerTurn && table.turnClockStartedAt !== null
+
+  const [turnCountdown, setTurnCountdown] = useState<number | null>(null)
+  const turnClockStartedAt = table.turnClockStartedAt
+  useEffect(() => {
+    if (!turnRunning || turnClockStartedAt === null) {
+      setTurnCountdown(null)
+      return
+    }
+
+    const update = () =>
+      setTurnCountdown(secondsUntilStand(turnClockStartedAt, performance.now()))
+    update()
+    const ticker = setInterval(update, 250)
+    return () => clearInterval(ticker)
+  }, [turnRunning, turnClockStartedAt])
+
+  /** `— 12s` beside whoever the table is waiting on, empty with no clock. */
+  const turnSuffix = turnCountdown === null ? '' : ` — ${turnCountdown}s`
+
   function handleLeave(): void {
     // Standing up abandons the hand, so clear the table for next time.
     resetRound()
@@ -330,6 +357,21 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
           Sitting this one out — you can bet on the next hand
         </p>
       )}
+
+      {/*
+        Whose decision the table is waiting on, with the room's fifteen-second
+        clock falling beside the name — the same count the acting player
+        watches by their buttons, so everybody at the table reads one number.
+      */}
+      {table.shared &&
+        game.phase === RoundPhase.PlayerTurn &&
+        !isPlayerTurn &&
+        table.waitingOn !== null && (
+          <p className="blackjack__waiting">
+            Waiting on {table.waitingOn}
+            {turnSuffix}
+          </p>
+        )}
 
       {insuranceOpen && (
           <>
@@ -448,6 +490,7 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
                     hands.length
                   } · $${staked} in play`
                 : `$${current?.bet ?? 0} in play`}
+              {turnSuffix}
             </span>
             <button
               type="button"

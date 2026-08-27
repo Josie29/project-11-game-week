@@ -1195,6 +1195,13 @@ kbd {
   color: var(--color-neon-gold);
 }
 
+/* Whose turn it is, and the clock they are on — one line, read by everyone. */
+.blackjack__waiting {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
 /* ---------- A phone held upright ---------- */
 
 /*

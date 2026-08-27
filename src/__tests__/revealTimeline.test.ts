@@ -87,7 +87,7 @@ describe('openingDealAt', () => {
   })
 
   // The solo cadence the captures are tuned to: player, dealer, player,
-  // dealer, one interval apart — the hole card leaves the shoe at 4.5s and the
+  // dealer, one interval apart — the hole card leaves the shoe at 3s and the
   // wedge move runs on past it, which is what the settles in `shots.mjs` and
   // the walkthrough's deal wait are sized against.
   it('keeps the solo deal on the same clock as before', () => {
@@ -183,13 +183,13 @@ describe('revealTimeline', () => {
 
   /*
    * The worst realistic case: a dealer drawing several small cards up to
-   * seventeen. Eight-plus seconds is the accepted price of the flat
-   * beat-and-a-half deal — but the `blackjack-dealer-draws` capture waits a
-   * fixed 15000ms (deal choreography plus this reveal), so if this ever grows
+   * seventeen. Six-plus seconds is the accepted price of the flat one-second
+   * deal — but the `blackjack-dealer-draws` capture waits a
+   * fixed 12000ms (deal choreography plus this reveal), so if this ever grows
    * past that budget the screenshot silently truncates a hand mid-reveal.
    */
   it('keeps even a long dealer hand inside the capture window', () => {
-    expect(revealTimeline(7).completeAt).toBeLessThan(9000)
+    expect(revealTimeline(7).completeAt).toBeLessThan(7000)
   })
 
   it('treats a degenerate card count as the opening two', () => {

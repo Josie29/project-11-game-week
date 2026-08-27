@@ -32,12 +32,12 @@ export const BUST_SWEEP_MS = 900
 /**
  * The gap between every card and the one before it, drawn or dealt.
  *
- * A flat beat and a half, deliberately without acceleration: a fixed interval
- * puts a seven-card dealer hand past eight seconds, and that cost is accepted
- * for a deal slow enough to be dramatic. The opening deal takes its stagger
- * from this same number, so the round is paced by one constant.
+ * A flat second, deliberately without acceleration: a fixed interval puts a
+ * seven-card dealer hand past six seconds, and that cost is accepted for a
+ * deal slow enough to be dramatic. The opening deal takes its stagger from
+ * this same number, so the round is paced by one constant.
  */
-export const DRAW_INTERVAL_MS = 1500
+export const DRAW_INTERVAL_MS = 1000
 
 /** Cards dealt face down at the start of a round: the dealer's hole card. */
 const OPENING_CARDS = 2

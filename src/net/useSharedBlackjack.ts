@@ -32,6 +32,17 @@ export interface SharedBlackjack {
   /** How many at the table have staked, and how many are being waited on. */
   readonly staked: number
   readonly seatedCount: number
+  /**
+   * When the acting seat's turn began, on `performance.now()`, or null when
+   * the room has never dealt. The room stands them `TURN_WINDOW_MS` after.
+   */
+  readonly turnClockStartedAt: number | null
+  /**
+   * Who the table is waiting on: "You" for this player, the acting player's
+   * name for anyone else, with the craps shooter's fallback for a peer the
+   * roster has no name for.
+   */
+  readonly waitingOn: string | null
   /** False while the socket is down; the table waits rather than dealing itself. */
   readonly connected: boolean
   /** True while watching a round this player did not bet into. */
@@ -70,6 +81,10 @@ export function useSharedBlackjack(): SharedBlackjack {
   const betClockStartedAt = usePresenceStore(
     (state) => state.betClocks[TableId.Blackjack] ?? null,
   )
+  const turnClockStartedAt = usePresenceStore(
+    (state) => state.turnClocks[TableId.Blackjack] ?? null,
+  )
+  const peers = usePresenceStore((state) => state.peers)
 
   const activeTable = useGameStore((state) => state.activeTable)
   const activeSeat = useGameStore((state) => state.activeSeat)
@@ -79,6 +94,9 @@ export function useSharedBlackjack(): SharedBlackjack {
   const decideInsurance = useBlackjackStore((state) => state.decideInsurance)
   const mySeatIndex = useBlackjackStore((state) => state.mySeatIndex)
   const activeSeatIndex = useBlackjackStore((state) => state.game.activeSeatIndex)
+  const activeSeatId = useBlackjackStore(
+    (state) => state.seatIds[state.game.activeSeatIndex] ?? null,
+  )
 
   /*
    * Keyed on the chosen mode, not on whether the socket is up right now.
@@ -122,11 +140,23 @@ export function useSharedBlackjack(): SharedBlackjack {
 
   const pendingBet = selfId === null ? 0 : (roomBets[selfId] ?? 0)
 
+  // Who holds the turn, by name — the craps shooter's rule exactly: this
+  // player is "You", the roster names the rest, and a peer who never gave a
+  // name is still somebody rather than nobody.
+  const waitingOn =
+    !shared || activeSeatId === null
+      ? null
+      : activeSeatId === selfId
+        ? 'You'
+        : (peers[activeSeatId]?.name ?? 'Another player')
+
   return {
     shared,
     takenSeats: seats,
     pendingBet,
     betClockStartedAt,
+    turnClockStartedAt,
+    waitingOn,
     staked: Object.keys(roomBets).length,
     // Everyone the room has seated, which is who the deal is waiting on.
     seatedCount: Object.keys(seatMap).length,

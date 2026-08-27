@@ -791,9 +791,9 @@ try {
   //    carry their shortcut in the label ("$10 1"), which makes an exact-name
   //    click brittle. Press the key the HUD tells the player to press.
   await press('Digit1')
-  // Wager travel plus the opening deal at a card every beat and a half, ending
-  // in the dealer's hole-card move — settled just under 6.3s after the stake.
-  await page.waitForTimeout(7200)
+  // Wager travel plus the opening deal at a card a second, ending in the
+  // dealer's hole-card move — settled just under 4.8s after the stake.
+  await page.waitForTimeout(5500)
   await expectText('DEALER', 'dealing a hand')
   await capture('15-hand-dealt')
 

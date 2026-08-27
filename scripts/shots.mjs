@@ -146,7 +146,7 @@ const SCENES = [
   // in it: a stool folds the legs under a floor-length hem, and the walk cycle
   // swings an arm holding a cane.
   { name: 'strip-dressed', path: '/?boot=strip&dressed&time=21:00&freeze', settleMs: 2400 },
-  { name: 'blackjack-dressed', path: '/?boot=settled&dressed&time=21:00&freeze', settleMs: 9000 },
+  { name: 'blackjack-dressed', path: '/?boot=settled&dressed&time=21:00&freeze', settleMs: 7500 },
   // The walkable casino floor. Every other casino link sits the player at a
   // table, so without this the room itself is never captured.
   { name: 'casino-floor', path: '/?boot=floor&time=21:00&freeze', settleMs: 2600 },
@@ -160,21 +160,21 @@ const SCENES = [
   // above the top of the frame from every position a capture can reach.
   { name: 'casino-vault', path: '/?boot=floor&tilt=-6&time=21:00&freeze', settleMs: 2600 },
   { name: 'blackjack-bet', path: '/?boot=casino&time=21:00&freeze', settleMs: 1800 },
-  // The opening deal runs a card every beat and a half, and the dealer ends it
-  // with the hole-card move — the second card levering the first face up —
-  // which finishes near 6s solo. Anything capturing a dealt hand waits for the
+  // The opening deal runs a card a second, and the dealer ends it with the
+  // hole-card move — the second card levering the first face up — which
+  // finishes near 4.4s solo. Anything capturing a dealt hand waits for the
   // whole choreography; anything capturing a settlement waits for the reveal
   // behind it too, since the reveal holds until the felt is settled.
-  { name: 'blackjack-dealt', path: '/?boot=table&time=21:00&freeze', settleMs: 7500 },
-  { name: 'blackjack-settled', path: '/?boot=settled&time=21:00&freeze', settleMs: 9000 },
-  { name: 'blackjack-split', path: '/?boot=split&time=21:00&freeze', settleMs: 7500, keys: ['p'] },
+  { name: 'blackjack-dealt', path: '/?boot=table&time=21:00&freeze', settleMs: 6000 },
+  { name: 'blackjack-settled', path: '/?boot=settled&time=21:00&freeze', settleMs: 7500 },
+  { name: 'blackjack-split', path: '/?boot=split&time=21:00&freeze', settleMs: 6000, keys: ['p'] },
   // The offer is up the moment the ace shows; the cards beneath it take the
   // full deal choreography to land, so it waits on the same clock as a deal.
-  { name: 'blackjack-insurance', path: '/?boot=insurance&time=21:00&freeze', settleMs: 7500 },
-  // Deal choreography (~5s left when the stand lands) plus the reveal, which
-  // `revealTimeline(7).completeAt < 9000` bounds in revealTimeline.test.ts —
+  { name: 'blackjack-insurance', path: '/?boot=insurance&time=21:00&freeze', settleMs: 6000 },
+  // Deal choreography (~3.4s left when the stand lands) plus the reveal, which
+  // `revealTimeline(7).completeAt < 7000` bounds in revealTimeline.test.ts —
   // if the reveal outgrows its share, that test fails before this truncates.
-  { name: 'blackjack-dealer-draws', path: '/?boot=draw&time=21:00&freeze', settleMs: 15000, keys: ['s'] },
+  { name: 'blackjack-dealer-draws', path: '/?boot=draw&time=21:00&freeze', settleMs: 12000, keys: ['s'] },
   { name: 'craps-comeout', path: '/?boot=craps&time=21:00&freeze', settleMs: 1800 },
   { name: 'craps-rolled', path: '/?boot=craps&time=21:00&freeze', settleMs: 3400, keys: [' '] },
 ]
