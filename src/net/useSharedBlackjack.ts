@@ -11,6 +11,8 @@ export interface SharedBlackjack {
   readonly shared: boolean
   /** False while the socket is down; the table waits rather than dealing itself. */
   readonly connected: boolean
+  /** True while watching a round this player did not bet into. */
+  readonly spectating: boolean
   /** True when it is this player's turn, or they are playing alone. */
   readonly isMyTurn: boolean
   /** Puts a wager in — locally when alone, into the gather when not. */
@@ -60,13 +62,18 @@ export function useSharedBlackjack(): SharedBlackjack {
    */
   const shared = mode === PlayMode.Multiplayer && activeTable === TableId.Blackjack
 
+  /** True when this player is watching a round they did not bet into. */
+  const spectating = shared && mySeatIndex < 0
+
   // Alone, every turn is yours. Shared, the engine decides the order and this
-  // only reports it — the refusal itself lives in `actAs`.
-  const isMyTurn = !shared || mySeatIndex === activeSeatIndex
+  // only reports it — the refusal itself lives in `actAs`. A spectator never
+  // has a turn, because they have no hand to take one with.
+  const isMyTurn = !shared || (!spectating && mySeatIndex === activeSeatIndex)
 
   return {
     shared,
     connected,
+    spectating,
     isMyTurn,
 
     wager: (amount) => {

@@ -128,6 +128,8 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
    * same condition it always was.
    */
   const isPlayerTurn = game.phase === RoundPhase.PlayerTurn && table.isMyTurn
+
+
   const isSettled = game.phase === RoundPhase.Settled
   /** The round is over *and* the dealer has finished showing their hand. */
   const isResolved = isSettled && revealComplete
@@ -230,7 +232,21 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
       )}
 
       <div className="table-ui__actions">
-        {isBetting && !isBroke && (
+        {/*
+        Watching a round somebody else is playing.
+
+        The table deals whoever backed a hand once the betting window closes, so
+        a player who was slow — or who chose to sit one out — sees the round play
+        with no hand in it. Saying so matters: cards appearing in front of other
+        people and none in front of you reads as the game having failed.
+      */}
+      {table.spectating && (
+        <p className="blackjack__sitting-out">
+          Sitting this one out — you can bet on the next hand
+        </p>
+      )}
+
+      {isBetting && !isBroke && (
           <>
             <span className="table-ui__prompt">Place your bet</span>
             {CHIP_DENOMINATIONS.map((amount, index) => (
