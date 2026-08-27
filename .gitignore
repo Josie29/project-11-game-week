@@ -17,3 +17,6 @@ shots/
 
 # Wrangler local state: miniflare caches, sqlite, tmp bundles.
 .wrangler/
+
+# The mutex the browser-driven checks queue on. See scripts/machineLoad.mjs.
+.verify.lock

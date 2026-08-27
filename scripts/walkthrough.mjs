@@ -1,6 +1,7 @@
 import { mkdir, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { chromium } from 'playwright-core'
+import { requireQuietMachine } from './machineLoad.mjs'
 
 /**
  * Drives the app the way a player does, and captures each beat.
@@ -17,6 +18,8 @@ import { chromium } from 'playwright-core'
  * milliseconds, which at 7.5 units per second moves the player about a
  * centimetre — the first version of this looked like the controls were dead.
  */
+
+requireQuietMachine('The walkthrough')
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 

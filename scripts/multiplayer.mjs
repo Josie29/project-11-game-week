@@ -1,6 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { chromium } from 'playwright-core'
+import { requireQuietMachine } from './machineLoad.mjs'
 
 /**
  * Drives two players at once and checks they can see each other.
@@ -15,6 +16,8 @@ import { chromium } from 'playwright-core'
  *
  * Usage: node scripts/multiplayer.mjs [baseUrl]
  */
+
+requireQuietMachine('The presence check')
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const BASE = process.argv[2] ?? 'http://localhost:5180'
