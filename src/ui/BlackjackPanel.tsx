@@ -16,7 +16,7 @@ import { useSharedBlackjack } from '../net/useSharedBlackjack'
 import { useBlackjackStore } from '../store/useBlackjackStore'
 import { useGameStore } from '../store/useGameStore'
 import { secondsUntilDeal } from '../world/dealClock'
-import { secondsUntilStand } from '../world/turnClock'
+import { secondsUntilStand, TURN_WINDOW_MS } from '../world/turnClock'
 import { MARKER_AMOUNT } from '../world/money'
 import { getVenue, type VenueId } from '../world/venues'
 import { useTableHotkeys } from './useTableHotkeys'
@@ -252,8 +252,17 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
     return () => clearInterval(ticker)
   }, [turnRunning, turnClockStartedAt])
 
-  /** `— 12s` beside whoever the table is waiting on, empty with no clock. */
-  const turnSuffix = turnCountdown === null ? '' : ` — ${turnCountdown}s`
+  /*
+   * `— 12s` beside whoever the table is waiting on; empty with no clock, and
+   * empty while the deal is still playing out. The clock face is stamped for
+   * the end of the deal animation, so until then the arithmetic reads *above*
+   * the window — a count that visibly ticks while cards are still flying is
+   * exactly what this hides.
+   */
+  const turnSuffix =
+    turnCountdown === null || turnCountdown > TURN_WINDOW_MS / 1000
+      ? ''
+      : ` — ${turnCountdown}s`
 
   function handleLeave(): void {
     // Standing up abandons the hand, so clear the table for next time.
