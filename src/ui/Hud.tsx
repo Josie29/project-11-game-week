@@ -1,11 +1,7 @@
 import { useEffect } from 'react'
 import { findItem } from '../character/catalog'
 import { approvalTotal, isFitting, onApproval } from '../character/fitting'
-import {
-  BLACKJACK_SEAT_COUNT,
-  STANDING_TABLES,
-  TABLE_LABELS,
-} from '../scenes/casinoFloorLayout'
+import { STANDING_TABLES, TABLE_LABELS } from '../scenes/casinoFloorLayout'
 import { useAppearanceStore } from '../store/useAppearanceStore'
 import { useSessionStore } from '../store/useSessionStore'
 import { Location, useGameStore } from '../store/useGameStore'
@@ -22,7 +18,6 @@ export function Hud() {
   const location = useGameStore((state) => state.location)
   const nearbyVenue = useGameStore((state) => state.nearbyVenue)
   const nearbyTable = useGameStore((state) => state.nearbyTable)
-  const nearbySeat = useGameStore((state) => state.nearbySeat)
   const activeTable = useGameStore((state) => state.activeTable)
   const atChair = useGameStore((state) => state.atChair)
   const nearbyChair = useGameStore((state) => state.nearbyChair)
@@ -60,19 +55,6 @@ export function Hud() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [toggleSettings])
-
-  /**
-   * What to call a stool.
-   *
-   * Blackjack names its ends rather than numbering its seats, and a player who
-   * does not know the terms still gets a phrase that changes as they walk,
-   * which is the part that matters — it says the choice is real.
-   */
-  function seatName(seat: number | null): string {
-    if (seat === 0) return 'first base'
-    if (seat === BLACKJACK_SEAT_COUNT - 1) return 'third base'
-    return 'this seat'
-  }
 
   const nearby = nearbyVenue ? getVenue(nearbyVenue) : null
   const venue = activeVenue !== null ? getVenue(activeVenue) : null
@@ -170,13 +152,14 @@ export function Hud() {
                 say which — offering a seat at a table that has none is the kind
                 of small lie that makes the rest read as approximate.
 
-                Which seat, too, now that there is a choice of them: walking
-                along the row past four stools and being told "sit" four times
-                does not say that moving changed anything. */}
+                Which stool it is, though, is not worth naming. Calling the ends
+                first base and third base and the middle three "this seat" reads
+                as three of them being unnamed rather than as a row of five, and
+                the terms mean nothing to a player who has not played before.
+                The prompt follows the stool you are standing at; it does not
+                have to say its name for that to be true. */}
             Press <kbd>{INTERACT_LABEL}</kbd> to{' '}
-            {STANDING_TABLES.has(nearbyTable)
-              ? 'take the rail'
-              : `sit at ${seatName(nearbySeat)}`}
+            {STANDING_TABLES.has(nearbyTable) ? 'take the rail' : 'sit at this seat'}
           </span>
         </div>
       )}

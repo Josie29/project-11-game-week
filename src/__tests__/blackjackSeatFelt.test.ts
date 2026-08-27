@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { MAX_HANDS } from '../games/blackjack/engine'
 import {
+  CENTER_SEAT,
   handAnchor,
   handAnchorX,
   isOnFelt,
@@ -47,17 +48,59 @@ describe('shared seat anchors', () => {
     expect(isOnFelt(0, 2.6, MARGIN)).toBe(false)
   })
 
-  // One seat is the solo table, and solo blackjack is on the demo path. If this
-  // drifts, every existing capture of a bet, a deal, a split and a settlement
-  // silently stops matching what ships.
-  it('leaves a one-seat table exactly where it was', () => {
+  // A lone player at the middle stool is the solo table, and solo blackjack is
+  // on the demo path. If this drifts, every existing capture of a bet, a deal,
+  // a split and a settlement silently stops matching what ships.
+  it('leaves a lone player at the middle stool exactly where they were', () => {
     for (let handCount = 1; handCount <= MAX_HANDS; handCount++) {
       for (let hand = 0; hand < handCount; hand++) {
-        const at = handAnchor(0, 1, hand, handCount)
+        const at = handAnchor(CENTER_SEAT, 1, hand, handCount)
 
         expect(at.x).toBe(handAnchorX(hand, handCount))
         expect(at.z).toBe(PLAYER_ROW_Z)
         expect(at.chipZ).toBe(CHIP_ROW_Z)
+      }
+    }
+  })
+
+  /*
+   * ...and a lone player anywhere else is dealt in front of *themselves*.
+   *
+   * The bug this states: sitting down at third base and being dealt to the
+   * centre line, a metre and a half away, across two empty stools. Being alone
+   * is not the same as being in the middle, and the felt only knew the first.
+   */
+  it('deals a lone player at any other stool to their own spot', () => {
+    for (let stool = 0; stool < SEAT_SPOTS.length; stool++) {
+      if (stool === CENTER_SEAT) continue
+
+      const at = handAnchor(stool, 1, 0, 1)
+      expect(at.x, `seat ${stool} is dealt somewhere else`).toBeCloseTo(SEAT_SPOTS[stool]!.x)
+      expect(at.x).not.toBeCloseTo(0)
+    }
+  })
+
+  /*
+   * The wide solo layout is only possible about the centre line, which is why
+   * it is conditioned on the middle stool rather than simply on being alone.
+   * Carried out to third base it puts a split hand a metre past the rail.
+   */
+  it('would put a solo split off the table at any other stool', () => {
+    const outer = SEAT_SPOTS[SEAT_SPOTS.length - 1]!.x + handAnchorX(1, 2)
+    expect(isOnFelt(outer, CHIP_ROW_Z, MARGIN)).toBe(false)
+  })
+
+  // Every seat a lone player can take has to hold their hand, their chips and
+  // every split of it — the outer stools are on the narrowest part of the felt.
+  it('keeps a lone player’s hand on the felt at every stool', () => {
+    for (let stool = 0; stool < SEAT_SPOTS.length; stool++) {
+      for (let handCount = 1; handCount <= MAX_HANDS; handCount++) {
+        for (let hand = 0; hand < handCount; hand++) {
+          const at = handAnchor(stool, 1, hand, handCount)
+
+          expect(isOnFelt(at.x, at.z, MARGIN), `cards: seat ${stool}`).toBe(true)
+          expect(isOnFelt(at.x, at.chipZ, MARGIN), `chips: seat ${stool}`).toBe(true)
+        }
       }
     }
   })

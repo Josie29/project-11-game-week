@@ -15,12 +15,14 @@ import {
   handAnchor,
   PAYOUT_NUDGE_X,
   PAYOUT_NUDGE_Z,
+  ownsTheFelt,
   PLAYER_DEPTH,
   SLAB_THICKNESS,
   stashOrigin,
   SURFACE_Y,
   TABLE_TOP_Y,
 } from '../tableLayout'
+import { seatOrDefault } from '../../world/seating'
 import { FLIP_DURATION_MS } from '../revealTimeline'
 import { getFeltTexture } from '../tableTexture'
 import { ChipStack } from './ChipStack'
@@ -143,6 +145,20 @@ export function BlackjackTable() {
   const seatStools = useBlackjackStore((state) => state.seatStools)
 
   /*
+   * The stool this player is actually sitting on.
+   *
+   * `seatStools` comes from the room and so is empty in a solo game — which
+   * used to leave the fallback at engine index 0 and every lone player's hand
+   * dealt to the centre line, however far along the table they had walked to
+   * sit. Their own seat is in the game store whether or not there is a room.
+   */
+  const myStool = seatOrDefault(useGameStore((state) => state.activeSeat))
+
+  /** Which stool an engine seat belongs to: the room's answer, then ours. */
+  const stoolOf = (seatIndex: number): number =>
+    seatStools[seatIndex] ?? (seatCount <= 1 ? myStool : seatIndex)
+
+  /*
    * Stakes in with the room but not yet dealt, each at its owner's own stool.
    *
    * Drawn only during the betting phase: once the deal lands these become the
@@ -231,7 +247,7 @@ export function BlackjackTable() {
         sitting in front of your neighbour, or on top of your own cards. See
         `stashOrigin`.
       */}
-      {seatCount <= 1 && <ChipStash amount={bankroll - uncollectedPayout} />}
+      {ownsTheFelt(myStool, seatCount) && <ChipStash amount={bankroll - uncollectedPayout} />}
 
       {/*
         Sliced rather than rendered whole: the engine resolves the dealer's
@@ -279,7 +295,7 @@ export function BlackjackTable() {
 
       {game.seats.flatMap((seat, seatIndex) => seat.hands.map((hand, handIndex) => {
         const at = handAnchor(
-          seatStools[seatIndex] ?? seatIndex,
+          stoolOf(seatIndex),
           seatCount,
           handIndex,
           seat.hands.length,
@@ -309,7 +325,7 @@ export function BlackjackTable() {
         const chipsGoHome = hand.payout > 0
         const restingSpot: readonly [number, number, number] = [anchorX, SURFACE_Y, at.chipZ]
         // Home is this seat's own chips, not the middle of the table.
-        const home = stashOrigin(seatStools[seatIndex] ?? seatIndex, seatCount)
+        const home = stashOrigin(stoolOf(seatIndex), seatCount)
         const chipTarget = isClearing
           ? chipsGoHome
             ? home

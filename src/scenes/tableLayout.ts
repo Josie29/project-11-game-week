@@ -184,11 +184,12 @@ export function feltEdgeZ(x: number): number {
 /**
  * Where this player's chips travel from, at whichever table they are at.
  *
- * A lone player owns the whole felt and keeps a tray on it. Five do not: the
- * tray is authored in the one band of the player's half that is clear of
- * everything, and that band is in front of the *middle* seat. Sat anywhere
- * else, a player watched their wager fly out of a tray parked in front of
- * somebody else — and at the centre seat it landed on their own cards.
+ * A lone player at the middle stool owns the whole felt and keeps a tray on it.
+ * Nobody else can: the tray is authored in the one band of the player's half
+ * that is clear of everything, and that band is in front of the middle seat.
+ * Sat anywhere else — with company or alone — a player watched their wager fly
+ * out of a tray parked in front of nobody, and at the centre seat of a shared
+ * table it landed on their own cards.
  *
  * So a shared table has no tray, and each player's chips come from the rail
  * directly in front of their own seat instead — which is where a real player's
@@ -204,7 +205,9 @@ export function stashOrigin(
   stool: number,
   seatCount: number,
 ): readonly [number, number, number] {
-  if (seatCount <= 1) return STASH_ORIGIN
+  // The tray sits in front of the middle stool, so it is only *your* tray when
+  // you are the one sitting there. See `ownsTheFelt`.
+  if (ownsTheFelt(stool, seatCount)) return STASH_ORIGIN
 
   const spot = SEAT_SPOTS[stool] ?? SEAT_SPOTS[0]!
   // Held far enough in from the edge that the whole stack is on the cloth
@@ -295,6 +298,39 @@ export const SHARED_ROW_Z = 0.84
  * table looks like, and it is also the only way five sets of chips stay on an
  * oval this size.
  */
+/**
+ * The middle stool, and the one a lone player takes by default.
+ *
+ * Lives here rather than beside the seats on the floor because it is a fact
+ * about the felt: it is the only stool whose betting spot is on the centre
+ * line, which is what makes the solo layout below possible at all.
+ * `DEFAULT_BLACKJACK_SEAT` is this, so the two cannot drift apart.
+ */
+export const CENTER_SEAT = 2
+
+/**
+ * Whether this player has the felt to themselves *and* is sat in the middle of
+ * it — the only case where the wide solo layout is geometrically possible.
+ *
+ * Being alone is not enough, which is the bug this predicate exists for: a lone
+ * player who walked to third base still had their cards dealt to the centre
+ * line, a metre and a half from where they were sitting, in front of two empty
+ * stools.
+ *
+ * It cannot simply follow the seat either, because the solo layout spends the
+ * whole width of the table: it puts split hands at ±`SPLIT_OFFSET`, and that
+ * offset carried out to third base lands the outer hand at about x = 2.9, on a
+ * felt that is 1.86 wide by the time it reaches the chip row. So the middle
+ * stool keeps the generous layout and every other stool takes its own spot,
+ * exactly as it would with somebody sitting next to it.
+ *
+ * @param stool Which of `SEAT_SPOTS` this player is at.
+ * @param seatCount How many hands are in play.
+ */
+export function ownsTheFelt(stool: number, seatCount: number): boolean {
+  return seatCount <= 1 && stool === CENTER_SEAT
+}
+
 export const SEAT_SPOTS: readonly { readonly x: number; readonly z: number }[] = [
   { x: -1.73, z: SHARED_ROW_Z },
   { x: -0.86, z: SHARED_ROW_Z },
@@ -326,10 +362,9 @@ export const SEAT_CHIP_GAP = CARD_HEIGHT / 2 + CHIP_RADIUS
 /**
  * Where one hand belongs: which stool, and which of that stool's hands.
  *
- * A one-seat table returns exactly what it always did — `handAnchorX` about the
- * centre line at `PLAYER_ROW_Z` — so solo blackjack is unchanged down to the
- * pixel and every capture of it still holds. The arc only exists once somebody
- * else sits down.
+ * A lone player at the middle stool gets exactly what they always did —
+ * `handAnchorX` about the centre line at `PLAYER_ROW_Z` — so solo blackjack is
+ * unchanged down to the pixel and every capture of it still holds.
  *
  * The first argument is which *stool*, not which of the engine's seats. The two
  * were the same thing while the room handed seats out in the order people bet;
@@ -345,7 +380,7 @@ export function handAnchor(
   handIndex: number,
   handCount: number,
 ): { x: number; z: number; chipZ: number } {
-  if (seatCount <= 1) {
+  if (ownsTheFelt(stool, seatCount)) {
     return {
       x: handAnchorX(handIndex, handCount),
       z: PLAYER_ROW_Z,

@@ -11,7 +11,7 @@
  */
 
 import { CAMERA_LOOK_HEIGHT, PLAY_FOV } from '../world/camera'
-import { PLAYER_SEATS } from './tableLayout'
+import { CENTER_SEAT, PLAYER_SEATS } from './tableLayout'
 
 export enum TableId {
   Blackjack = 'blackjack',
@@ -78,8 +78,13 @@ export const BLACKJACK_SEAT_COUNT = PLAYER_SEATS.length
  * The centre one, because that is where every solo player has sat since the
  * table was single-player. Every `?boot=` link claims it, so every capture of a
  * hand still frames exactly what it framed before seats could be chosen.
+ *
+ * Taken from the felt rather than restated: `CENTER_SEAT` is the stool whose
+ * betting spot is on the centre line, and that is the whole reason a lone
+ * player there can be dealt across the width of the table. Two numbers here
+ * would let the default seat and the only seat the solo layout fits drift apart.
  */
-export const DEFAULT_BLACKJACK_SEAT = 2
+export const DEFAULT_BLACKJACK_SEAT = CENTER_SEAT
 
 /** Proximity ids, one per stool, in the order they play. */
 export const BLACKJACK_SEAT_IDS: readonly string[] = Array.from(
