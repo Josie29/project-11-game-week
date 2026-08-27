@@ -74,6 +74,10 @@ const SCENES = [
   { name: 'strip-south-end', path: '/?boot=southend&time=12:00&freeze', settleMs: 2600 },
   { name: 'strip-north-end', path: '/?boot=northend&look=180&time=12:00&freeze', settleMs: 2600 },
   { name: 'strip-south-end-night', path: '/?boot=southend&time=21:00&freeze', settleMs: 2600 },
+  // The north end at night was the one junction/hour pairing without a shot,
+  // and it matters now: the high-rollers boards stand at both ends and glow
+  // after dark, so each end needs its night capture as much as its noon one.
+  { name: 'strip-north-end-night', path: '/?boot=northend&look=180&time=21:00&freeze', settleMs: 2600 },
   // Face-on, because the play camera sees every facade at a glancing angle and
   // a sliver of shop window cannot tell a built storefront from a broken one.
   { name: 'shopfront', path: '/?boot=shopfront&look=-90&time=21:00&freeze', settleMs: 2600 },
