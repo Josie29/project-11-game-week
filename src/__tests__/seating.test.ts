@@ -12,14 +12,8 @@ import {
   TableId,
 } from '../scenes/casinoFloorLayout'
 import { SEAT_SPOTS } from '../scenes/tableLayout'
-import {
-  claimRefused,
-  freeSeats,
-  seatOf,
-  seatOrDefault,
-  showsOwnChips,
-  takenSeats,
-} from '../world/seating'
+import { claimRefused, freeSeats, ownSeat, seatOf, takenSeats } from '../world/seating'
+import { ownsTheFelt } from '../scenes/tableLayout'
 
 /*
  * Seating, which is entirely invisible.
@@ -115,11 +109,11 @@ describe('who is sitting where', () => {
   // Every `?boot=` link seats the player without naming a seat, so the fallback
   // is what keeps every capture of a hand framing what it always framed.
   it('seats a lone player where one player has always sat', () => {
-    expect(seatOrDefault(null)).toBe(DEFAULT_BLACKJACK_SEAT)
-    expect(seatOrDefault(4)).toBe(4)
+    expect(ownSeat(TableId.Blackjack, null)).toBe(DEFAULT_BLACKJACK_SEAT)
+    expect(ownSeat(TableId.Blackjack, 4)).toBe(4)
     // Off the wire, so nonsense has to land somewhere drawable.
-    expect(seatOrDefault(99)).toBe(DEFAULT_BLACKJACK_SEAT)
-    expect(seatOrDefault(-1)).toBe(DEFAULT_BLACKJACK_SEAT)
+    expect(ownSeat(TableId.Blackjack, 99)).toBe(DEFAULT_BLACKJACK_SEAT)
+    expect(ownSeat(TableId.Blackjack, -1)).toBe(DEFAULT_BLACKJACK_SEAT)
   })
 
   it('recognises only the seats the table has', () => {
@@ -196,26 +190,31 @@ describe('the player’s own chips', () => {
   /*
    * The bug, stated directly: a tray of chips sitting on an empty blackjack
    * table, in front of an empty stool, for the whole time anyone walked the
-   * floor. Both tables stay mounted while the player is in the room, and the
-   * felt asked `seatOrDefault(activeSeat)` — which answers "the middle stool"
-   * for somebody who is not sitting anywhere at all.
+   * floor. Both tables stay mounted while the player is in the room, so the
+   * felt asks every frame which stool this player is on — and an answer that
+   * cannot say "none" said "the middle one".
+   *
+   * `ownSeat` keeps the null and `ownsTheFelt` refuses it, which is the whole
+   * of the fix: nobody at the table owns nothing on it.
    */
   it('are not on the felt when nobody is at the table', () => {
-    expect(showsOwnChips(null, null, 1)).toBe(false)
+    expect(ownSeat(null, null)).toBeNull()
+    expect(ownsTheFelt(ownSeat(null, null), 1)).toBe(false)
   })
 
   // Nor when the player is at the other table in the same room, which is drawn
   // at the same time and would otherwise leave their money behind them.
   it('are not on the felt while their owner is at craps', () => {
-    expect(showsOwnChips(TableId.Craps, null, 1)).toBe(false)
-    expect(showsOwnChips(TableId.Craps, DEFAULT_BLACKJACK_SEAT, 1)).toBe(false)
+    expect(ownSeat(TableId.Craps, null)).toBeNull()
+    expect(ownSeat(TableId.Craps, DEFAULT_BLACKJACK_SEAT)).toBeNull()
+    expect(ownsTheFelt(ownSeat(TableId.Craps, DEFAULT_BLACKJACK_SEAT), 1)).toBe(false)
   })
 
   // Sat at the middle stool alone: the tray is drawn, exactly as it always was.
   it('are on the felt for a lone player at the middle stool', () => {
-    expect(showsOwnChips(TableId.Blackjack, DEFAULT_BLACKJACK_SEAT, 1)).toBe(true)
+    expect(ownsTheFelt(ownSeat(TableId.Blackjack, DEFAULT_BLACKJACK_SEAT), 1)).toBe(true)
     // `?boot=` links seat the player without naming a stool.
-    expect(showsOwnChips(TableId.Blackjack, null, 1)).toBe(true)
+    expect(ownsTheFelt(ownSeat(TableId.Blackjack, null), 1)).toBe(true)
   })
 
   /*
@@ -224,9 +223,9 @@ describe('the player’s own chips', () => {
    * seat — so anywhere else it is a tray parked in front of a neighbour.
    */
   it('are not on the felt at any other stool, or at a shared table', () => {
-    expect(showsOwnChips(TableId.Blackjack, 0, 1)).toBe(false)
-    expect(showsOwnChips(TableId.Blackjack, BLACKJACK_SEAT_COUNT - 1, 1)).toBe(false)
-    expect(showsOwnChips(TableId.Blackjack, DEFAULT_BLACKJACK_SEAT, 2)).toBe(false)
+    expect(ownsTheFelt(ownSeat(TableId.Blackjack, 0), 1)).toBe(false)
+    expect(ownsTheFelt(ownSeat(TableId.Blackjack, BLACKJACK_SEAT_COUNT - 1), 1)).toBe(false)
+    expect(ownsTheFelt(ownSeat(TableId.Blackjack, DEFAULT_BLACKJACK_SEAT), 2)).toBe(false)
   })
 })
 

@@ -182,33 +182,24 @@ export function feltEdgeZ(x: number): number {
 }
 
 /**
- * Where this player's chips travel from, at whichever table they are at.
+ * Where a seated player's chips travel from: the rail in front of their stool.
  *
- * A lone player at the middle stool owns the whole felt and keeps a tray on it.
- * Nobody else can: the tray is authored in the one band of the player's half
+ * The tray at `STASH_ORIGIN` is the other half of this pair, and it belongs to
+ * the middle stool alone — it is authored in the one band of the player's half
  * that is clear of everything, and that band is in front of the middle seat.
- * Sat anywhere else — with company or alone — a player watched their wager fly
- * out of a tray parked in front of nobody, and at the centre seat of a shared
- * table it landed on their own cards.
+ * Anywhere else a player watched their wager fly out of a tray parked in front
+ * of nobody, and at the centre seat of a shared table it landed on their own
+ * cards.
  *
- * So a shared table has no tray, and each player's chips come from the rail
- * directly in front of their own seat instead — which is where a real player's
- * rack is. Derived from the table outline rather than chosen beside it: the
- * felt is an ellipse, so how far the rail reaches depends on how far out the
- * seat is, and third base has a good 34cm less table in front of it than the
- * middle seat does.
+ * So a shared table has no tray, and each player's chips come from where a real
+ * player's rack is. Derived from the table outline rather than chosen beside
+ * it: the felt is an ellipse, so how far the rail reaches depends on how far
+ * out the seat is, and third base has a good 34cm less table in front of it
+ * than the middle seat does.
  *
  * @param stool Which of `SEAT_SPOTS` this player is at.
- * @param seatCount How many hands are in play.
  */
-export function stashOrigin(
-  stool: number,
-  seatCount: number,
-): readonly [number, number, number] {
-  // The tray sits in front of the middle stool, so it is only *your* tray when
-  // you are the one sitting there. See `ownsTheFelt`.
-  if (ownsTheFelt(stool, seatCount)) return STASH_ORIGIN
-
+export function seatChipsOrigin(stool: number): readonly [number, number, number] {
   const spot = SEAT_SPOTS[stool] ?? SEAT_SPOTS[0]!
   // Held far enough in from the edge that the whole stack is on the cloth
   // rather than half of it hanging over the rail.
@@ -312,23 +303,31 @@ export const CENTER_SEAT = 2
  * Whether this player has the felt to themselves *and* is sat in the middle of
  * it — the only case where the wide solo layout is geometrically possible.
  *
- * Being alone is not enough, which is the bug this predicate exists for: a lone
- * player who walked to third base still had their cards dealt to the centre
- * line, a metre and a half from where they were sitting, in front of two empty
- * stools.
+ * The one place the table chooses between its two layouts, so it is the one
+ * place that has to be right. Three ways of being wrong, all of which shipped:
  *
- * It cannot simply follow the seat either, because the solo layout spends the
+ * Being alone is not enough. A lone player who walked to third base still had
+ * their cards dealt to the centre line, a metre and a half from where they were
+ * sitting, in front of two empty stools.
+ *
+ * Following the seat is not enough either, because the solo layout spends the
  * whole width of the table: it puts split hands at ±`SPLIT_OFFSET`, and that
  * offset carried out to third base lands the outer hand at about x = 2.9, on a
  * felt that is 1.86 wide by the time it reaches the chip row. So the middle
  * stool keeps the generous layout and every other stool takes its own spot,
  * exactly as it would with somebody sitting next to it.
  *
- * @param stool Which of `SEAT_SPOTS` this player is at.
+ * And `seatCount` alone cannot say whether anybody is here at all: the engine
+ * holds a one-seat game for an empty table just as it does for a lone player.
+ * A `null` seat is what separates them, which is why this takes one — a player
+ * who is not at this table owns nothing on it.
+ *
+ * @param seat Which of `SEAT_SPOTS` this player is at, or null if they are not
+ *   at this table.
  * @param seatCount How many hands are in play.
  */
-export function ownsTheFelt(stool: number, seatCount: number): boolean {
-  return seatCount <= 1 && stool === CENTER_SEAT
+export function ownsTheFelt(seat: number | null, seatCount: number): boolean {
+  return seatCount <= 1 && seat === CENTER_SEAT
 }
 
 export const SEAT_SPOTS: readonly { readonly x: number; readonly z: number }[] = [
@@ -359,35 +358,43 @@ export const SEAT_SPLIT_OFFSET = 0.26
  */
 export const SEAT_CHIP_GAP = CARD_HEIGHT / 2 + CHIP_RADIUS
 
+/** Where one hand's cards and its wager sit on the cloth. */
+export interface HandAnchor {
+  readonly x: number
+  readonly z: number
+  readonly chipZ: number
+}
+
+/*
+ * The felt has two layouts, and they are two functions rather than one with a
+ * flag. Only one place in the game chooses between them at run time; everywhere
+ * else — the pending wagers, every test — already knows which it wants, and had
+ * been saying so by passing a seat count it did not mean.
+ */
+
 /**
- * Where one hand belongs: which stool, and which of that stool's hands.
+ * The whole cloth, for one player sitting in the middle of it.
  *
- * A lone player at the middle stool gets exactly what they always did —
- * `handAnchorX` about the centre line at `PLAYER_ROW_Z` — so solo blackjack is
- * unchanged down to the pixel and every capture of it still holds.
+ * Exactly what solo blackjack has always drawn — `handAnchorX` about the centre
+ * line at `PLAYER_ROW_Z` — so every capture of a hand still holds. Only legal
+ * when `ownsTheFelt`, because it spends the full width of the table.
+ */
+export function soloAnchor(handIndex: number, handCount: number): HandAnchor {
+  return { x: handAnchorX(handIndex, handCount), z: PLAYER_ROW_Z, chipZ: CHIP_ROW_Z }
+}
+
+/**
+ * One spot per stool, for a table with people sitting at it.
  *
- * The first argument is which *stool*, not which of the engine's seats. The two
- * were the same thing while the room handed seats out in the order people bet;
- * now that a player picks their own, they are not — a table with two people at
+ * The argument is which *stool*, not which of the engine's seats. The two were
+ * the same thing while the room handed seats out in the order people bet; now
+ * that a player picks their own, they are not — a table with two people at
  * first base and third base has two engine seats and five felt spots, and the
  * cards belong in front of the person who staked them.
  *
  * @param stool Which of `SEAT_SPOTS`, first base to third base.
  */
-export function handAnchor(
-  stool: number,
-  seatCount: number,
-  handIndex: number,
-  handCount: number,
-): { x: number; z: number; chipZ: number } {
-  if (ownsTheFelt(stool, seatCount)) {
-    return {
-      x: handAnchorX(handIndex, handCount),
-      z: PLAYER_ROW_Z,
-      chipZ: CHIP_ROW_Z,
-    }
-  }
-
+export function seatAnchor(stool: number, handIndex: number, handCount: number): HandAnchor {
   const spot = SEAT_SPOTS[stool] ?? SEAT_SPOTS[0]!
   const spread =
     handCount <= 1

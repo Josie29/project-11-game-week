@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { MAX_HANDS } from '../games/blackjack/engine'
 import {
   CENTER_SEAT,
-  handAnchor,
   handAnchorX,
+  ownsTheFelt,
+  seatAnchor,
+  soloAnchor,
   isOnFelt,
   PLAYER_SEATS,
   SEAT_SPOTS,
@@ -26,7 +28,7 @@ describe('shared seat anchors', () => {
     for (let seat = 0; seat < SEAT_SPOTS.length; seat++) {
       for (let handCount = 1; handCount <= MAX_HANDS; handCount++) {
         for (let hand = 0; hand < handCount; hand++) {
-          const at = handAnchor(seat, SEAT_SPOTS.length, hand, handCount)
+          const at = seatAnchor(seat, hand, handCount)
 
           expect(
             isOnFelt(at.x, at.z, MARGIN),
@@ -54,7 +56,7 @@ describe('shared seat anchors', () => {
   it('leaves a lone player at the middle stool exactly where they were', () => {
     for (let handCount = 1; handCount <= MAX_HANDS; handCount++) {
       for (let hand = 0; hand < handCount; hand++) {
-        const at = handAnchor(CENTER_SEAT, 1, hand, handCount)
+        const at = soloAnchor(hand, handCount)
 
         expect(at.x).toBe(handAnchorX(hand, handCount))
         expect(at.z).toBe(PLAYER_ROW_Z)
@@ -74,10 +76,23 @@ describe('shared seat anchors', () => {
     for (let stool = 0; stool < SEAT_SPOTS.length; stool++) {
       if (stool === CENTER_SEAT) continue
 
-      const at = handAnchor(stool, 1, 0, 1)
+      // The choice of layout, which is the half that was wrong: being alone
+      // used to be enough to spread a hand across the whole cloth.
+      expect(ownsTheFelt(stool, 1), `seat ${stool} claims the whole felt`).toBe(false)
+
+      const at = seatAnchor(stool, 0, 1)
       expect(at.x, `seat ${stool} is dealt somewhere else`).toBeCloseTo(SEAT_SPOTS[stool]!.x)
       expect(at.x).not.toBeCloseTo(0)
     }
+  })
+
+  // ...and the middle stool alone does claim it, or solo blackjack silently
+  // stops being the game every capture is of.
+  it('gives the whole felt to a lone player in the middle, and only them', () => {
+    expect(ownsTheFelt(CENTER_SEAT, 1)).toBe(true)
+    expect(ownsTheFelt(CENTER_SEAT, 2)).toBe(false)
+    // Nobody at the table is not somebody at the middle stool.
+    expect(ownsTheFelt(null, 1)).toBe(false)
   })
 
   /*
@@ -96,7 +111,9 @@ describe('shared seat anchors', () => {
     for (let stool = 0; stool < SEAT_SPOTS.length; stool++) {
       for (let handCount = 1; handCount <= MAX_HANDS; handCount++) {
         for (let hand = 0; hand < handCount; hand++) {
-          const at = handAnchor(stool, 1, hand, handCount)
+          const at = ownsTheFelt(stool, 1)
+            ? soloAnchor(hand, handCount)
+            : seatAnchor(stool, hand, handCount)
 
           expect(isOnFelt(at.x, at.z, MARGIN), `cards: seat ${stool}`).toBe(true)
           expect(isOnFelt(at.x, at.chipZ, MARGIN), `chips: seat ${stool}`).toBe(true)

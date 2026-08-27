@@ -156,8 +156,13 @@ refusal as a test failure sends the next hour after a bug that is not there.
 ## New Features
 1. Make a semantically named git worktree
 2. Plan out the feature add using plan mode
-3. Implmeent code and test it
-4. If successful, pull latest main and merge into worktree if updates occurred. Resolve conflicts if necessary.
-5. Merge worktree into main and redeploy production
+3. Implment code
+4. Test deterministic / command style first
+5. then test visually if relevant against localhost
+6. If successful, pull latest main and merge into worktree if updates occurred. Resolve conflicts if necessary.
+7. Merge worktree into main and push to remote
+8. Deploy to vercel only from the clean updated main
+9. Clean up any feature/branches or git worktrees that remain.
 
 If any of these are unsuccessful fix changes and retry.
+
