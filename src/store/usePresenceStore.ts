@@ -260,6 +260,21 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
 
         onAction: (table, id, action) => {
           if (table !== TableId.Blackjack) return
+
+          /*
+           * Insurance rides the action channel as `insure:<amount>` — the room
+           * relays action strings without reading them, so a new decision
+           * needs no new message and no worker deploy. Parsed here because
+           * this is the seam where wire strings become engine calls.
+           */
+          if (action.startsWith('insure:')) {
+            const amount = Number(action.slice('insure:'.length))
+            if (Number.isInteger(amount) && amount >= 0) {
+              useBlackjackStore.getState().applyInsurance(id, amount)
+            }
+            return
+          }
+
           useBlackjackStore.getState().applyAction(id, action as PlayerAction)
         },
 

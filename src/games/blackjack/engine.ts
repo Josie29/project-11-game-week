@@ -18,7 +18,7 @@ export const DECK_COUNT = 6
 /** Reshuffle once this fraction of the shoe has been dealt. */
 const PENETRATION = 0.75
 
-/** Dealer draws until reaching this total, standing on soft 17. */
+/** Dealer draws until reaching this total, and hits it when it is soft. */
 const DEALER_STANDS_AT = 17
 
 const BLACKJACK = 21
@@ -41,6 +41,24 @@ const BLACKJACK_ODDS = { numerator: 3, denominator: 2 } as const
  */
 function blackjackPayout(bet: number): number {
   return bet + Math.floor((bet * BLACKJACK_ODDS.numerator) / BLACKJACK_ODDS.denominator)
+}
+
+/** Insurance pays 2:1, held as numerator and denominator on the same rule. */
+const INSURANCE_ODDS = { numerator: 2, denominator: 1 } as const
+
+/** Chips returned on a winning insurance bet: the stake back plus 2:1 on it. */
+function insuranceReturn(amount: number): number {
+  return amount + Math.floor((amount * INSURANCE_ODDS.numerator) / INSURANCE_ODDS.denominator)
+}
+
+/**
+ * The most insurance a stake buys: half of it, in whole dollars.
+ *
+ * Floored because half of an odd stake is not a dollar amount — the same
+ * whole-dollar rule as every payout, applied on the way in rather than out.
+ */
+function halfStake(bet: number): number {
+  return Math.floor(bet / 2)
 }
 
 /**
@@ -110,7 +128,13 @@ export function isBust(cards: readonly Card[]): boolean {
 }
 
 /** An empty seat, and the shape a seat is cleared back to between rounds. */
-const EMPTY_SEAT: Seat = { hands: [], activeHandIndex: 0, totalPayout: 0 }
+const EMPTY_SEAT: Seat = {
+  hands: [],
+  activeHandIndex: 0,
+  totalPayout: 0,
+  insuranceBet: 0,
+  insurancePayout: 0,
+}
 
 /**
  * Shared empty list, so `handsOf` on a seat that does not exist returns the
@@ -138,9 +162,31 @@ export function handsOf(state: GameState, seatIndex = 0): readonly Hand[] {
   return state.seats[seatIndex]?.hands ?? NO_HANDS
 }
 
-/** Total currently staked across one seat's hands. */
+/**
+ * Total currently staked by one seat: its hands plus any insurance wager.
+ *
+ * Insurance counts because this is the figure callers debit by difference —
+ * one rule covers doubling, splitting and insuring, and a stake this number
+ * did not rise by is a stake nobody was charged for.
+ */
 export function totalStaked(state: GameState, seatIndex = 0): number {
-  return handsOf(state, seatIndex).reduce((sum, hand) => sum + hand.bet, 0)
+  const insurance = state.seats[seatIndex]?.insuranceBet ?? 0
+  return handsOf(state, seatIndex).reduce((sum, hand) => sum + hand.bet, insurance)
+}
+
+/** The most insurance a seat may take: half its stake, in whole dollars. */
+export function maxInsurance(state: GameState, seatIndex = 0): number {
+  return halfStake(state.seats[seatIndex]?.hands[0]?.bet ?? 0)
+}
+
+/** This seat's insurance wager: null while it is still deciding, zero if declined. */
+export function insuranceOf(state: GameState, seatIndex = 0): number | null {
+  return state.seats[seatIndex]?.insuranceBet ?? 0
+}
+
+/** True while an insurance window is open and this seat has not decided. */
+export function canInsure(state: GameState, seatIndex = 0): boolean {
+  return state.phase === RoundPhase.Insurance && state.seats[seatIndex]?.insuranceBet === null
 }
 
 /** Chips returned to one seat, stakes included. Zero until settlement. */
@@ -273,14 +319,18 @@ function finishHand(hand: Hand, outcome: RoundOutcome | null, payout: number): H
   return { ...hand, outcome, payout, isFinished: true }
 }
 
-/** Closes the round, summing what every hand returned for the seat that holds it. */
+/**
+ * Closes the round, summing what every hand returned for the seat that holds
+ * it — plus the seat's insurance return, which is money on the same
+ * debit-on-wager credit-on-settlement terms as any hand's.
+ */
 function settleRound(state: GameState): GameState {
   return {
     ...state,
     phase: RoundPhase.Settled,
     seats: state.seats.map((seat) => ({
       ...seat,
-      totalPayout: seat.hands.reduce((sum, hand) => sum + hand.payout, 0),
+      totalPayout: seat.hands.reduce((sum, hand) => sum + hand.payout, seat.insurancePayout),
     })),
   }
 }
@@ -331,30 +381,18 @@ export function placeBets(state: GameState, bets: readonly number[]): GameState 
     index = toDealer.nextIndex
   }
 
-  const dealerNatural = isNaturalBlackjack(dealerHand)
-
   const seats = seatCards.map((cards, seatIndex): Seat => {
     // Every seat is dealt exactly one hand; splits come later.
-    const bet = bets[seatIndex] ?? 0
     const hand: Hand = {
       cards,
-      bet,
+      bet: bets[seatIndex] ?? 0,
       outcome: null,
       payout: 0,
       fromSplit: false,
       isFinished: false,
     }
 
-    let settled = hand
-    if (isNaturalBlackjack(cards)) {
-      settled = dealerNatural
-        ? finishHand(hand, RoundOutcome.Push, bet)
-        : finishHand(hand, RoundOutcome.PlayerBlackjack, blackjackPayout(bet))
-    } else if (dealerNatural) {
-      settled = finishHand(hand, RoundOutcome.DealerWin, 0)
-    }
-
-    return { hands: [settled], activeHandIndex: 0, totalPayout: 0 }
+    return { hands: [hand], activeHandIndex: 0, totalPayout: 0, insuranceBet: 0, insurancePayout: 0 }
   })
 
   const dealt: GameState = {
@@ -366,10 +404,114 @@ export function placeBets(state: GameState, bets: readonly number[]): GameState 
     activeSeatIndex: 0,
   }
 
+  /*
+   * An ace up opens the insurance window before anything else can happen.
+   *
+   * Everything the deal would otherwise decide — the dealer's peek, naturals
+   * paid or pushed — waits for the window to close, because insurance taken
+   * once the hole card's fate is known is not a bet. Seats whose stake is too
+   * small to insure (half of $1 is not a dollar amount) are declined for
+   * them, so the window never waits on a decision with no possible yes.
+   */
+  const upcard = dealerHand[0]
+  if (upcard !== undefined && upcard.rank === Rank.Ace) {
+    const offered: GameState = {
+      ...dealt,
+      phase: RoundPhase.Insurance,
+      seats: seats.map((seat) => ({
+        ...seat,
+        insuranceBet: halfStake(seat.hands[0]?.bet ?? 0) >= 1 ? null : 0,
+      })),
+    }
+    return resolveInsuranceIfDecided(offered)
+  }
+
+  // No ace up: the dealer peeks at once, exactly as before insurance existed.
+  const peeked = { ...dealt, seats: seats.map((seat) => settleNaturalsAtDeal(seat, isNaturalBlackjack(dealerHand))) }
+
   // Hands the deal already decided leave nothing to act on, so the same
   // advance the player's turn uses settles the round without the dealer
   // drawing — a dealt natural never buys the dealer another card.
-  return advanceOrResolve(dealt)
+  return advanceOrResolve(peeked)
+}
+
+/**
+ * Settles what the opening deal itself decides about one seat's single hand:
+ * a natural paid 3:2, a push of naturals, or a loss to a dealer natural.
+ */
+function settleNaturalsAtDeal(seat: Seat, dealerNatural: boolean): Seat {
+  const hand = seat.hands[0]
+  if (hand === undefined) return seat
+
+  let settled = hand
+  if (isNaturalBlackjack(hand.cards)) {
+    settled = dealerNatural
+      ? finishHand(hand, RoundOutcome.Push, hand.bet)
+      : finishHand(hand, RoundOutcome.PlayerBlackjack, blackjackPayout(hand.bet))
+  } else if (dealerNatural) {
+    settled = finishHand(hand, RoundOutcome.DealerWin, 0)
+  }
+
+  return settled === hand ? seat : { ...seat, hands: [settled] }
+}
+
+/**
+ * Records one seat's insurance decision — an amount in whole dollars, with
+ * zero declining — and closes the window once every seat has decided.
+ *
+ * Any seat may decide at any time while the window is open: insurance is a
+ * window the whole table sits in, not a turn that travels round it. That is
+ * the deal window's shape rather than the turn clock's, and it is why the
+ * shared table needs no new ordering — every client applies each decision in
+ * the room's order, and whichever one lands last closes the window
+ * identically everywhere.
+ *
+ * @param seatIndex The seat deciding, named by the caller for the same reason
+ *   `actAs` names one: at a shared table the engine cannot guess who is asking.
+ * @param amount Whole dollars, up to half the seat's stake. Zero declines.
+ * @throws {Error} If no insurance window is open, if the seat has already
+ *   decided, or if the amount is not a whole-dollar sum the stake covers.
+ */
+export function takeInsurance(state: GameState, seatIndex: number, amount: number): GameState {
+  if (state.phase !== RoundPhase.Insurance) {
+    throw new Error(`Cannot take insurance during phase "${state.phase}"`)
+  }
+
+  const seat = requireSeat(state, seatIndex)
+  if (seat.insuranceBet !== null) {
+    throw new Error(`Seat ${seatIndex} has already decided on insurance`)
+  }
+
+  const cap = maxInsurance(state, seatIndex)
+  if (!Number.isInteger(amount) || amount < 0 || amount > cap) {
+    throw new Error(`Insurance must be whole dollars between 0 and ${cap}, received ${amount}`)
+  }
+
+  return resolveInsuranceIfDecided(withSeat(state, seatIndex, { ...seat, insuranceBet: amount }))
+}
+
+/**
+ * Closes the insurance window once the last seat has decided, or returns the
+ * state unchanged while somebody is still thinking.
+ *
+ * Closing is the dealer's peek. Insurance settles first — three times the
+ * wager back on a natural, nothing otherwise — and only then are naturals
+ * settled and play released, so an insured hand that lost to a dealer natural
+ * carries both results into the same settlement.
+ */
+function resolveInsuranceIfDecided(state: GameState): GameState {
+  if (state.seats.some((seat) => seat.insuranceBet === null)) return state
+
+  const dealerNatural = isNaturalBlackjack(state.dealerHand)
+
+  const seats = state.seats.map((seat) =>
+    settleNaturalsAtDeal(
+      { ...seat, insurancePayout: dealerNatural ? insuranceReturn(seat.insuranceBet ?? 0) : 0 },
+      dealerNatural,
+    ),
+  )
+
+  return advanceOrResolve({ ...state, phase: RoundPhase.PlayerTurn, seats })
 }
 
 /**
@@ -394,12 +536,14 @@ export function placeBet(state: GameState, amount: number): GameState {
  * Plays out the dealer hand and scores every hand still in contention, at
  * every seat.
  *
- * The dealer draws while below 17 and stands on soft 17 — because `handValue`
- * already returns the best total, a plain `total < 17` test yields
- * stand-on-soft-17. If no hand anywhere at the table is still live the dealer
- * does not draw at all; there is nothing left to beat. That is a table-wide
- * test rather than a per-seat one, because there is one dealer hand: a seat
- * that busted out cannot decide whether the seat beside it sees another card.
+ * The dealer draws while below 17, and draws again on a *soft* 17 — the house
+ * rule the spec names. A plain `total < 17` test against `handValue`'s best
+ * total is exactly stand-on-soft-17, which is how the wrong rule shipped; the
+ * soft case has to be asked for by name. If no hand anywhere at the table is
+ * still live the dealer does not draw at all; there is nothing left to beat.
+ * That is a table-wide test rather than a per-seat one, because there is one
+ * dealer hand: a seat that busted out cannot decide whether the seat beside it
+ * sees another card.
  */
 function resolveDealer(state: GameState): GameState {
   const contested = state.seats.some((seat) => seat.hands.some((hand) => hand.outcome === null))
@@ -408,7 +552,12 @@ function resolveDealer(state: GameState): GameState {
   const dealerHand = [...state.dealerHand]
   let index = state.shoeIndex
 
-  while (handValue(dealerHand).total < DEALER_STANDS_AT) {
+  const mustDraw = (): boolean => {
+    const { total, isSoft } = handValue(dealerHand)
+    return total < DEALER_STANDS_AT || (total === DEALER_STANDS_AT && isSoft)
+  }
+
+  while (mustDraw()) {
     const { card, nextIndex } = draw(state.shoe, index)
     dealerHand.push(card)
     index = nextIndex

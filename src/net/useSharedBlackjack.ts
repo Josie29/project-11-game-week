@@ -42,6 +42,8 @@ export interface SharedBlackjack {
   readonly wager: (amount: number) => void
   /** Hits, stands, doubles or splits. */
   readonly act: (action: PlayerAction) => void
+  /** Answers an insurance offer: an amount to take it, zero to decline. */
+  readonly insure: (amount: number) => void
 }
 
 /**
@@ -74,6 +76,7 @@ export function useSharedBlackjack(): SharedBlackjack {
   const standUp = useGameStore((state) => state.standUp)
   const placeWager = useBlackjackStore((state) => state.placeWager)
   const takeAction = useBlackjackStore((state) => state.takeAction)
+  const decideInsurance = useBlackjackStore((state) => state.decideInsurance)
   const mySeatIndex = useBlackjackStore((state) => state.mySeatIndex)
   const activeSeatIndex = useBlackjackStore((state) => state.game.activeSeatIndex)
 
@@ -149,6 +152,19 @@ export function useSharedBlackjack(): SharedBlackjack {
       if (shared && !connected) return
       if (shared) sendAction(action)
       else takeAction(action)
+    },
+
+    insure: (amount) => {
+      /*
+       * On the wire it is an action string — `insure:12` — because the room
+       * relays those without reading them, and a decision that needs no new
+       * message type needs no worker deploy either. Applied on the echo, like
+       * every action, so the window closes at the same point in the room's
+       * sequence on every client.
+       */
+      if (shared && !connected) return
+      if (shared) sendAction(`insure:${amount}`)
+      else decideInsurance(amount)
     },
   }
 }

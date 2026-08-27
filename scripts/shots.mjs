@@ -166,6 +166,8 @@ const SCENES = [
   { name: 'blackjack-dealt', path: '/?boot=table&time=21:00&freeze', settleMs: 4500 },
   { name: 'blackjack-settled', path: '/?boot=settled&time=21:00&freeze', settleMs: 5000 },
   { name: 'blackjack-split', path: '/?boot=split&time=21:00&freeze', settleMs: 4500, keys: ['p'] },
+  // The offer itself, and the settled round it releases when declined.
+  { name: 'blackjack-insurance', path: '/?boot=insurance&time=21:00&freeze', settleMs: 4500 },
   // Bounded by `revealTimeline(7).completeAt < 7000` in revealTimeline.test.ts;
   // if the reveal outgrows the wait, that test fails before this truncates.
   { name: 'blackjack-dealer-draws', path: '/?boot=draw&time=21:00&freeze', settleMs: 7500, keys: ['s'] },

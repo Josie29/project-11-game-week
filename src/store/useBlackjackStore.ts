@@ -10,6 +10,7 @@ import {
   createGameFromShoe,
   placeBet,
   startNextRound,
+  takeInsurance,
   totalPaid,
   totalStaked,
 } from '../games/blackjack/engine'
@@ -70,6 +71,8 @@ interface BlackjackStore {
 
   placeWager: (amount: number) => void
   takeAction: (action: PlayerAction) => void
+  /** Answers a solo insurance offer: an amount to take it, zero to decline. */
+  decideInsurance: (amount: number) => void
   nextRound: () => void
 
   /**
@@ -104,6 +107,8 @@ interface BlackjackStore {
   ) => void
   /** Applies somebody's action, refusing it if it is not their turn. */
   applyAction: (senderId: string, action: PlayerAction) => void
+  /** Applies somebody's insurance decision, refusing a second or an oversized one. */
+  applyInsurance: (senderId: string, amount: number) => void
   /** The turn clock ran out. Stand, which can neither bust nor spend. */
   applyExpiry: () => void
   /** Clears the table when the player walks out mid-round. */
@@ -367,6 +372,30 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
       )
     },
 
+    decideInsurance: (amount) => {
+      const { game } = get()
+      if (game.phase !== RoundPhase.Insurance) return
+      if (amount > 0 && amount > useGameStore.getState().bankroll) return
+      if (isBusy()) return
+
+      let next: GameState
+      try {
+        // Solo play is the one-seat case, so the deciding seat is seat 0.
+        next = takeInsurance(game, 0, amount)
+      } catch {
+        // Already decided, or an amount the stake does not cover.
+        return
+      }
+
+      // The same rule as doubling and splitting: charge whatever the total
+      // staked went up by, which for insurance is the premium itself.
+      const extraStake = totalStaked(next) - totalStaked(game)
+      if (extraStake > 0) useGameStore.getState().adjustBankroll(-extraStake)
+
+      set({ game: next })
+      creditIfSettled(next)
+    },
+
     mySeatIndex: 0,
     seatIds: [],
     seatStools: [],
@@ -435,6 +464,33 @@ export const useBlackjackStore = create<BlackjackStore>()((set, get) => {
         return
       }
 
+      const extraStake = totalStaked(next, mySeatIndex) - totalStaked(game, mySeatIndex)
+      if (extraStake > 0) useGameStore.getState().adjustBankroll(-extraStake)
+
+      set({ game: next })
+      creditIfSettled(next)
+    },
+
+    applyInsurance: (senderId, amount) => {
+      const { game, seatIds, mySeatIndex } = get()
+      const seatIndex = seatIds.indexOf(senderId)
+      if (seatIndex === -1) return
+
+      /*
+       * Applied on the echo, like every action: the room's order is the order,
+       * and whichever decision arrives last closes the window on every client
+       * at the same point in the sequence.
+       */
+      let next: GameState
+      try {
+        next = takeInsurance(game, seatIndex, amount)
+      } catch {
+        // No window open, already decided, or an amount the stake does not
+        // cover. Every client refuses it identically.
+        return
+      }
+
+      // Only this player's premium leaves this player's bankroll.
       const extraStake = totalStaked(next, mySeatIndex) - totalStaked(game, mySeatIndex)
       if (extraStake > 0) useGameStore.getState().adjustBankroll(-extraStake)
 

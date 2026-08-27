@@ -11,6 +11,7 @@ which is why `npm run walkthrough` drives the real UI instead.
 | `?boot=settled` | a hand played out |
 | `?boot=split` | a stacked pair, ready to split |
 | `?boot=resplit` | a pair, with a third of the same rank behind it |
+| `?boot=insurance` | an ace showing, the insurance offer up |
 | `?boot=push` | two twenties, so a push's wording can be read |
 | `?boot=draw` | a dealer who must draw twice |
 | `?boot=craps` | at the craps rail with a pass line down |
