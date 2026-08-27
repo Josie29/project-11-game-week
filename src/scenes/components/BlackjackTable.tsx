@@ -15,14 +15,13 @@ import {
   handAnchor,
   PAYOUT_NUDGE_X,
   PAYOUT_NUDGE_Z,
-  ownsTheFelt,
   PLAYER_DEPTH,
   SLAB_THICKNESS,
   stashOrigin,
   SURFACE_Y,
   TABLE_TOP_Y,
 } from '../tableLayout'
-import { seatOrDefault } from '../../world/seating'
+import { seatOrDefault, showsOwnChips } from '../../world/seating'
 import { FLIP_DURATION_MS } from '../revealTimeline'
 import { getFeltTexture } from '../tableTexture'
 import { ChipStack } from './ChipStack'
@@ -145,14 +144,20 @@ export function BlackjackTable() {
   const seatStools = useBlackjackStore((state) => state.seatStools)
 
   /*
-   * The stool this player is actually sitting on.
+   * Where this player is, and on which stool.
    *
    * `seatStools` comes from the room and so is empty in a solo game — which
    * used to leave the fallback at engine index 0 and every lone player's hand
    * dealt to the centre line, however far along the table they had walked to
    * sit. Their own seat is in the game store whether or not there is a room.
+   *
+   * `activeTable` is the other half, and the half `seatOrDefault` cannot
+   * answer: it turns any input into a stool, so "not at this table at all" and
+   * "at the middle stool" arrive here as the same value.
    */
-  const myStool = seatOrDefault(useGameStore((state) => state.activeSeat))
+  const activeTable = useGameStore((state) => state.activeTable)
+  const activeSeat = useGameStore((state) => state.activeSeat)
+  const myStool = seatOrDefault(activeSeat)
 
   /** Which stool an engine seat belongs to: the room's answer, then ours. */
   const stoolOf = (seatIndex: number): number =>
@@ -241,13 +246,20 @@ export function BlackjackTable() {
         The player's own chips, in their own well. Winnings still out on the
         felt are held back so the same money is not shown twice.
 
-        Solo only. The well is authored in the one band of the player's half
-        that is clear of everything, and that band is in front of the middle
-        seat — so at a shared table it is a tray of somebody else's chips
-        sitting in front of your neighbour, or on top of your own cards. See
-        `stashOrigin`.
+        Only while its owner is sat here, and only at the middle stool. The well
+        is authored in the one band of the player's half that is clear of
+        everything, and that band is in front of the middle seat — so at a
+        shared table it is a tray of somebody else's chips sitting in front of
+        your neighbour, or on top of your own cards. See `stashOrigin`.
+
+        And it is the *player's* money rather than the table's furniture, so it
+        leaves with them. Both tables stay mounted for as long as the player is
+        in the room, so without that it was a tray of chips on an empty table in
+        front of an empty stool, for the whole time anyone walked the floor.
       */}
-      {ownsTheFelt(myStool, seatCount) && <ChipStash amount={bankroll - uncollectedPayout} />}
+      {showsOwnChips(activeTable, activeSeat, seatCount) && (
+        <ChipStash amount={bankroll - uncollectedPayout} />
+      )}
 
       {/*
         Sliced rather than rendered whole: the engine resolves the dealer's
