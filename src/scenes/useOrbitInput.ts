@@ -1,7 +1,6 @@
 import { useThree } from '@react-three/fiber'
 import { useEffect, useRef, type RefObject } from 'react'
 import { MathUtils } from 'three'
-import { onRecentre } from '../world/touchMove'
 
 export interface OrbitState {
   /** Direction the camera looks, as a yaw about Y. */
@@ -186,11 +185,8 @@ export function useOrbitInput(defaults: OrbitState, limits: OrbitLimits): OrbitI
     element.addEventListener('pointercancel', onPointerUp)
     element.addEventListener('wheel', onWheel, { passive: false })
     window.addEventListener('keydown', onKeyDown)
-    // The touch overlay's Recentre button, which is this key by another name.
-    const unsubscribe = onRecentre(reset)
 
     return () => {
-      unsubscribe()
       element.removeEventListener('pointerdown', onPointerDown)
       element.removeEventListener('pointermove', onPointerMove)
       element.removeEventListener('pointerup', onPointerUp)

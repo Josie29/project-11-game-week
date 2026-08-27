@@ -23,25 +23,3 @@ export function setTouchMove(next: StickVector): void {
 export function getTouchMove(): StickVector {
   return current
 }
-
-/**
- * "Put the camera back behind me", which the keyboard spells `R`.
- *
- * An event rather than a flag anybody polls. `useOrbitInput` already owns the
- * `R` key for every camera in the game — the walking rig and both tables share
- * it — so the button has to reach exactly the same handler, and a subscription
- * is the only shape that cannot drop a press between two frames.
- */
-let listeners: (() => void)[] = []
-
-export function requestRecentre(): void {
-  for (const listener of listeners) listener()
-}
-
-/** Subscribes to the recentre button. Returns the unsubscribe. */
-export function onRecentre(listener: () => void): () => void {
-  listeners = [...listeners, listener]
-  return () => {
-    listeners = listeners.filter((each) => each !== listener)
-  }
-}

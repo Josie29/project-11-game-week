@@ -98,7 +98,17 @@ async function walk(keys, ms) {
    * against each other. The button gets its own beat further down, which is
    * where a claim about it belongs.
    */
-  await page.keyboard.press('KeyR')
+  /*
+   * Sent to the body rather than to whatever happens to hold focus.
+   *
+   * `page.keyboard` delivers to the focused element, and by this point that is
+   * whichever button the last beat clicked — or nothing at all, if the panel it
+   * lived in has since unmounted. The listener is on `window` and a keypress
+   * with no focused element still reaches it, but "still reaches it" is a
+   * property of the page's focus state rather than of this call, and this call
+   * is what every walking leg's frame of reference depends on.
+   */
+  await page.locator('body').press('KeyR')
   await page.waitForTimeout(40)
 
   if (TOUCH) {
@@ -175,14 +185,17 @@ async function press(key) {
     return
   }
 
-  if (key === 'KeyR') {
-    await page.locator('.touch__recentre').click({ timeout: 20000 })
-    return
-  }
-
   if (key === 'KeyF') {
-    // The prompt card is the accept key. Only ever one is up at a time.
-    await page.locator('.hud__prompt--tap').first().click({ timeout: 8000 })
+    /*
+     * The prompt card is the accept key. Only ever one is up at a time.
+     *
+     * Generous, because Playwright will not click a moving target and this one
+     * moves: the card is re-laid-out as the player walks the last stride into
+     * range, and settling takes wall-clock seconds at the frame rate this
+     * renders at. Eight seconds timed out on a card the log shows it had
+     * already found.
+     */
+    await page.locator('.hud__prompt--tap').first().click({ timeout: 30000 })
     return
   }
 
@@ -409,19 +422,11 @@ try {
    *     Escape closing it is the claim that the key keeps its one meaning
    *     everywhere: leave the thing you are in.
    */
-  /*
-   * The two controls a phone has and a desktop does not, before anything
-   * depends on them.
-   *
-   * The stick is exercised by every walking leg below. Recentre is not — the
-   * legs press the key — so without this the one button on screen that has no
-   * keyboard twin would ship unchecked.
-   */
+  // The one control a phone has and a desktop does not. Every walking leg
+  // below drives it; this only says it arrived.
   if (TOUCH) {
     await page.locator('.touch__stick').waitFor({ state: 'visible', timeout: 20000 })
-    await press('KeyR')
-    await page.waitForTimeout(400)
-    console.log('     the stick and Recentre are on screen')
+    console.log('     the stick is on screen')
   }
 
   await press('KeyM')

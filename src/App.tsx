@@ -183,7 +183,7 @@ export function App() {
       {!isDesigning && !isWelcoming && <Hud />}
 
       {/*
-        The stick and the recentre button, on a device with no keyboard.
+        The stick, on a device with no keyboard.
 
         Not while a menu is up, and not in the designer or at a table: there is
         nothing to walk in any of those, and a stick over a scene the player

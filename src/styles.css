@@ -1316,16 +1316,15 @@ kbd {
   /*
    * ...and so does the prompt, which is the one that actually broke.
    *
-   * The prompt sits at the bottom of the screen and the stick and Recentre are
-   * drawn over that same strip. A scripted walk arrived at the till and found
-   * "Checkout — tap to step up" with the stick across its left half and the
-   * Recentre button across its right: the one card the whole interaction model
-   * rests on, and on a phone it was also the only card you could neither read
-   * nor press.
+   * The prompt sits at the bottom of the screen and the stick is drawn over
+   * that same strip. A scripted walk arrived at the till and found "Checkout —
+   * tap to step up" with the stick across it: the one card the whole
+   * interaction model rests on, and on a phone it was also the only card you
+   * could neither read nor press.
    *
    * Full width rather than centred, for the same reason: centred and clear of
-   * the controls means clear of a 136px circle and a button, which on a 390px
-   * screen leaves a column too narrow for "$1,420 of that is not yours".
+   * a 136px circle leaves a column on a 390px screen too narrow for "$1,420 of
+   * that is not yours".
    */
   .hud__prompt {
     left: var(--space-4);
@@ -1368,10 +1367,10 @@ kbd {
 /* ---------- On-screen controls ---------- */
 
 /*
- * The stick and the recentre button.
+ * The stick.
  *
- * Outside the portrait media block on purpose: these are drawn only when the
- * game decides the device is touch-driven, and that decision is made once in
+ * Outside the portrait media block on purpose: it is drawn only when the game
+ * decides the device is touch-driven, and that decision is made once in
  * `viewport.ts` rather than twice — here and there — where the two could
  * disagree about what a phone is. A tablet in landscape gets a stick and gets
  * none of the portrait layout, which is correct for both.
@@ -1383,8 +1382,7 @@ kbd {
     calc(var(--space-8) + env(safe-area-inset-bottom)) calc(var(--space-6) + env(safe-area-inset-left));
   display: flex;
   align-items: flex-end;
-  justify-content: space-between;
-  /* The gap between and around the controls belongs to the camera drag. */
+  /* Everything around the stick belongs to the camera drag. */
   pointer-events: none;
   /* Under the settings panel, over the scene. */
   z-index: 5;
@@ -1413,18 +1411,6 @@ kbd {
   background: rgba(255, 255, 255, 0.16);
   /* Position is written by the pointer handlers; this is where it rests. */
   transform: translate(0, 0);
-}
-
-.touch__recentre {
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: rgba(8, 6, 18, 0.62);
-  backdrop-filter: blur(0.25rem);
-  color: var(--color-text);
-  font-family: var(--font-ui);
-  font-size: 0.8125rem;
-  pointer-events: auto;
 }
 
 /*

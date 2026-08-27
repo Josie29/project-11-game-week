@@ -1,9 +1,16 @@
 import { useCallback, useRef } from 'react'
 import { stickKnob, stickVector, STICK_IDLE } from '../world/touchInput'
-import { requestRecentre, setTouchMove } from '../world/touchMove'
+import { setTouchMove } from '../world/touchMove'
 
 /**
- * The on-screen stick, and the button that puts the camera back.
+ * The on-screen stick.
+ *
+ * It was the stick *and* a button that put the camera back behind the player,
+ * which turned out to be a control with nothing to do. The walking camera
+ * already swings back on its own once a deliberate look-around has had its
+ * moment — that is what `MANUAL_HOLD_MS` in `WalkingPlayer` is for — and the
+ * one camera that does not, the seated one at a table, is up only while these
+ * controls are hidden. The button could not appear anywhere its job existed.
  *
  * Three things worth knowing about where this sits in the tree.
  *
@@ -101,19 +108,6 @@ export function TouchControls() {
       >
         <div ref={knobRef} className="touch__knob" />
       </div>
-
-      {/*
-        The `R` key has no equivalent on a phone, and the camera drifting behind
-        the player is the one control a player cannot discover by trying things.
-      */}
-      <button
-        type="button"
-        className="touch__recentre"
-        onClick={requestRecentre}
-        aria-label="Recentre the camera"
-      >
-        Recentre
-      </button>
     </div>
   )
 }
