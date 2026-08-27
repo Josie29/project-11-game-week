@@ -183,45 +183,16 @@ function drawFloor(): Texture {
   return finish(ctx)
 }
 
-/**
- * How polished the floor is, per point.
+/*
+ * There is no floor roughness map, and that is deliberate.
  *
- * A real polished floor is not uniformly polished: it is worn where people walk
- * and glassy where they do not, and that unevenness is most of what reads as
- * "polished" rather than "shiny". Fed to `roughnessMap`, where black is a mirror
- * and white is matt.
+ * Varying the polish across the floor looked better than a single roughness
+ * value and cost a second texture sample on the largest plane in the room. Beat
+ * 8 of the walkthrough — the walk to the till — is a fixed number of key bursts,
+ * so slower frames cover less ground and the player strolls past the counter
+ * without being offered it. With the map in, that beat failed here and passed on
+ * main, twice each. It is the third thing this room has had to give back.
  */
-function drawFloorRoughness(): Texture {
-  const ctx = context(256, 256)
-
-  /*
-   * Near white, and varying only a little.
-   *
-   * `roughnessMap` *multiplies* the material's `roughness`, so a mid-grey map
-   * does not mean "medium rough" — it halves whatever the material asked for.
-   * A first pass at #6b6b6b took an intended 0.48 down to about 0.14, and the
-   * floor did exactly what `ShopInterior` already has a note about: it
-   * reflected instead of catching the light, every soft downlight pool
-   * vanished, and what was left were two hard specular dots.
-   *
-   * White is "leave it alone". The range here is 0.84 to 1.0, which is a tenth
-   * of a roughness unit either side of the value the material sets.
-   */
-  ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, 256, 256)
-
-  // Very slightly glassier down the middle, where the floor is walked and
-  // polished, than at the edges where the fixtures stand.
-  const sheen = ctx.createRadialGradient(128, 128, 10, 128, 128, 150)
-  sheen.addColorStop(0, '#d6d6d6')
-  sheen.addColorStop(1, '#ffffff')
-  ctx.fillStyle = sheen
-  ctx.fillRect(0, 0, 256, 256)
-
-  const texture = new CanvasTexture(ctx.canvas)
-  texture.anisotropy = 4
-  return texture
-}
 
 /**
  * Height field for a velvet nap: two crossed waves, fine and shallow.
@@ -235,7 +206,7 @@ function velvetHeights(): number[] {
 
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      // Twenty-four cycles across the tile, which is a couple of millimetres of
+      // Twenty-odd cycles across the tile, which is a couple of millimetres of
       // pile once it is repeated over a plinth.
       const nap =
         Math.sin((x / size) * Math.PI * 48) * 0.5 + Math.sin((y / size) * Math.PI * 44) * 0.5
@@ -249,7 +220,6 @@ function velvetHeights(): number[] {
 let wall: Texture | null = null
 let velvet: Texture | null = null
 let floor: Texture | null = null
-let floorRoughness: Texture | null = null
 
 /** The bays cached per wall length, so each wall keeps its own repeat. */
 const wallByBays = new Map<number, Texture>()
@@ -286,10 +256,6 @@ export function getShopFloorTexture(): Texture {
   return floor
 }
 
-export function getShopFloorRoughnessTexture(): Texture {
-  floorRoughness ??= drawFloorRoughness()
-  return floorRoughness
-}
 
 /**
  * Velvet nap, for the fitting plinth, its rug and the window platform.

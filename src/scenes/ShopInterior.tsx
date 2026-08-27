@@ -68,7 +68,6 @@ import {
 } from './shopLayout'
 import { getPriceCardTexture } from './priceCardTexture'
 import {
-  getShopFloorRoughnessTexture,
   getShopFloorTexture,
   getShopWallTexture,
   getVelvetNormalTexture,
@@ -595,7 +594,6 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
 
   const velvet = getVelvetNormalTexture()
   const floorTexture = getShopFloorTexture()
-  const floorRoughness = getShopFloorRoughnessTexture()
 
   const solids = useMemo(() => obstacles(), [])
 
@@ -751,23 +749,20 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
           flat quad the exit paints there — which then read as a plank.
         */}
         {/*
-          The pigment and the polish are both maps now.
+          Pigment only. The `roughnessMap` went back.
 
-          `roughnessMap` is the one that earns its place: a floor at one
-          roughness across twelve metres is uniformly shiny, which reads as
-          plastic. Varying it — glassier down the middle, duller at the edges
-          where the fixtures stand — is most of what says "polished". The base
-          value stays where it was for the reason recorded below it.
+          Varying the polish across the floor was the nicest thing on it and the
+          most expensive: a second texture sample on the largest plane in the
+          room, which fills most of the screen. Beat 8 of the walkthrough — the
+          walk to the till — is a fixed number of key bursts, so slower frames
+          cover less ground and the player walks straight past the counter. That
+          beat failed here and passed on main, twice each, until this came out.
+
+          No `color` alongside the map either: a colour multiplies the map, and
+          both were the floor's dark plum, so keeping it darkened the floor twice
+          and sank the room.
         */}
-        {/* No `color` alongside the map: a colour multiplies the map, and both
-            of these are the floor's dark plum, so keeping it darkened the floor
-            twice and sank the whole room. */}
-        <meshStandardMaterial
-          map={floorTexture}
-          roughnessMap={floorRoughness}
-          roughness={0.48}
-          metalness={0.22}
-        />
+        <meshStandardMaterial map={floorTexture} roughness={0.48} metalness={0.22} />
       </mesh>
 
       {/*
