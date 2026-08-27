@@ -25,6 +25,8 @@ interface JoinMessage {
   readonly seated?: unknown
   readonly table?: unknown
   readonly seat?: unknown
+  /** A secret the client keeps per tab, so its player id survives reconnects. */
+  readonly token?: unknown
 }
 
 interface MoveMessage {
@@ -139,7 +141,12 @@ type Incoming =
  * else's screen while still connected.
  */
 interface Attachment {
-  readonly id: string
+  /**
+   * Mutable for exactly one writer: the `join` handler, which swaps the
+   * minted placeholder for the token-derived id so a reconnecting tab keeps
+   * being the same player. Everything else treats it as settled.
+   */
+  id: string
   identity: Record<string, unknown> | null
   pose: { x: number; z: number; yaw: number; speed: number } | null
   /**
@@ -277,6 +284,27 @@ function die(): number {
   return (bytes[0]! % 6) + 1
 }
 
+/**
+ * The public player id for a client-held secret.
+ *
+ * The hash, never the token, is what every peer sees — in the roster, the
+ * seat map and the deal — so copying an id off the wire gets an impersonator
+ * nothing: producing the same id would mean inverting SHA-256. The same
+ * token therefore yields the same id on every reconnect, which is the whole
+ * fix for a returning player being minted as a second person.
+ *
+ * @param token The client's per-tab secret, as it arrived on the wire.
+ */
+async function playerIdFrom(token: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))
+
+  // 16 bytes as hex: the same shape and uniqueness class as the uuids minted
+  // for tokenless clients, so nothing downstream can tell the eras apart.
+  return Array.from(new Uint8Array(digest).slice(0, 16))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+}
+
 export class Room implements DurableObject {
   constructor(private readonly state: DurableObjectState) {}
 
@@ -301,8 +329,14 @@ export class Room implements DurableObject {
      */
     this.state.acceptWebSocket(server)
 
-    // `crypto.randomUUID` server-side on purpose: a client-supplied id could be
-    // used to impersonate somebody already in the room.
+    /*
+     * A placeholder until the join arrives. A client that sends a `token`
+     * gets an id hashed from it — stable across reconnects, which is what
+     * stops a returning player being minted as a second person. Minted here
+     * server-side because a client-supplied *id* could impersonate somebody
+     * already in the room: every id is on the wire for all peers to read, so
+     * the stable id has to be derived from a secret rather than sent as one.
+     */
     const attachment: Attachment = {
       id: crypto.randomUUID(),
       identity: null,
@@ -338,6 +372,38 @@ export class Room implements DurableObject {
     switch (message.t) {
       case 'join': {
         /*
+         * A returning player, not a new one.
+         *
+         * The id is the hash of a secret the client keeps per tab, so the
+         * same tab reconnecting is the same person — the fix for the seated
+         * ghost, which was a reconnect being minted as a second player while
+         * the runtime took minutes to notice the first socket die. The corpse
+         * is closed without ceremony: `announceDeparture` sees the survivor
+         * wearing the same id and says nothing, so whichever order the close
+         * lands in, nobody watches themselves leave.
+         *
+         * What the round already knew about the player crosses over — their
+         * queue position and any wager in the gather — so a blip mid-gather
+         * does not quietly turn their stake into a spectator's empty seat.
+         */
+        let carried: Attachment | null = null
+        if (typeof message.token === 'string' && message.token.length >= 16 && message.token.length <= 128) {
+          attachment.id = await playerIdFrom(message.token)
+
+          for (const socket of this.state.getWebSockets()) {
+            if (socket === ws) continue
+            const held = socket.deserializeAttachment() as Attachment | null
+            if (held?.id !== attachment.id) continue
+            carried = held
+            try {
+              socket.close(1000, 'replaced by a newer connection')
+            } catch {
+              // Already closing; the survivor check covers every ordering.
+            }
+          }
+        }
+
+        /*
          * Captured before the identity is overwritten.
          *
          * Every wardrobe change, rename and sitting-down re-announces as a
@@ -347,7 +413,9 @@ export class Room implements DurableObject {
          */
         const previousTable = typeof attachment.identity?.table === 'string'
           ? attachment.identity.table
-          : null
+          : typeof carried?.identity?.table === 'string'
+            ? carried.identity.table
+            : null
 
         attachment.identity = {
           name: message.name,
@@ -369,6 +437,20 @@ export class Room implements DurableObject {
           attachment.tookTableAt = null
         } else if (previousTable !== attachment.identity.table) {
           attachment.tookTableAt = Date.now()
+        }
+        /*
+         * Rejoining the table they never meant to leave. The fresh socket has
+         * no queue stamp and no wager, and leaving them empty would send a
+         * reconnecting player to the back of the dice queue and drop their
+         * stake out of a gather they already paid into.
+         */
+        if (carried !== null && carried.identity?.table === attachment.identity.table) {
+          attachment.tookTableAt = carried.tookTableAt
+          attachment.bet = carried.bet
+          // The dice too: a shooter whose network blipped is still the
+          // shooter, not a walk-up who has to wait for the line to come round.
+          attachment.canShoot = carried.canShoot
+          attachment.holdsDice = carried.holdsDice
         }
         /*
          * Changing table is one of the three things allowed to move the dice:
@@ -592,7 +674,21 @@ export class Room implements DurableObject {
 
     // Ties broken by id so every client and the room agree on the same order.
     line.sort((a, b) => a.at - b.at || a.id.localeCompare(b.id))
-    return line.slice(0, MAX_AT_TABLE).map(({ id, socket }) => ({ id, socket }))
+
+    /*
+     * One entry per player, however many sockets currently wear the id. In
+     * the window between a reconnect and the old socket's close landing, a
+     * player is briefly two sockets — and a queue that counted both would
+     * wait on a bet from a corpse before dealing anybody.
+     */
+    const seen = new Set<string>()
+    const unique = line.filter(({ id }) => {
+      if (seen.has(id)) return false
+      seen.add(id)
+      return true
+    })
+
+    return unique.slice(0, MAX_AT_TABLE).map(({ id, socket }) => ({ id, socket }))
   }
 
   /**
@@ -625,6 +721,9 @@ export class Room implements DurableObject {
       if (socket === ws) continue
 
       const held = socket.deserializeAttachment() as Attachment | null
+      // Same id, same player: the corpse of your own last connection is not a
+      // rival incumbent, however long its close takes to land.
+      if (held?.id === attachment.id) continue
       if (held?.identity?.table === table && held.seat === seat) return null
     }
 
@@ -1045,6 +1144,22 @@ export class Room implements DurableObject {
     const attachment = ws.deserializeAttachment() as Attachment | null
     if (!attachment) return
 
+    /*
+     * A dead socket is only a departed player when it was their last one.
+     *
+     * A reconnect replaces the socket in half a second; the runtime can take
+     * minutes to notice the old one die. Whichever order those land in, the
+     * rule is the same: while a live socket wears this id, nobody left — no
+     * `left` (which would delete the live figure from every client keyed on
+     * the id), no freed stool, no shooter handover. This one check is what
+     * lets the join path close a corpse without any ceremony.
+     */
+    for (const socket of this.state.getWebSockets()) {
+      if (socket === ws) continue
+      const held = socket.deserializeAttachment() as Attachment | null
+      if (held?.id === attachment.id) return
+    }
+
     this.broadcast(ws, { t: 'left', id: attachment.id })
 
     /*
@@ -1112,6 +1227,7 @@ export class Room implements DurableObject {
   /** Everyone in the room except `self`, with whatever pose they last sent. */
   private roster(self: WebSocket): unknown[] {
     const peers: unknown[] = []
+    const selfId = (self.deserializeAttachment() as Attachment | null)?.id ?? null
 
     for (const socket of this.state.getWebSockets()) {
       if (socket === self) continue
@@ -1119,6 +1235,9 @@ export class Room implements DurableObject {
       const attachment = socket.deserializeAttachment() as Attachment | null
       // Someone mid-handshake has no identity yet; they will announce themselves.
       if (!attachment?.identity) continue
+      // Your own corpse, its close still in flight — a welcome that listed it
+      // would have a reconnecting player watching themselves sit at the table.
+      if (attachment.id === selfId) continue
 
       peers.push({ id: attachment.id, ...attachment.identity, pose: attachment.pose })
     }
