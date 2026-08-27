@@ -195,6 +195,19 @@ interface GameStore {
    * is how a ponytail shaped like a limb shipped. `?turn=180` is the fix.
    */
   designerYaw: number
+  /**
+   * Elevation the dressing-room camera starts at, in radians above the figure.
+   *
+   * The other half of `designerYaw`, and it exists because the audit that
+   * prompted it could not be reproduced from a URL. Four of the findings — the
+   * skin showing at a skirted waist, the hip block, the sole plate under a
+   * shoe, the collar reading as a donut — are only visible from above, and
+   * `?turn=` covers yaw alone. Reaching that angle meant scripting a pointer
+   * drag against the canvas, which is a capture nobody can retake from a link.
+   */
+  designerPitch: number | null
+  /** How far the dressing-room camera starts from the figure. `?zoom=`. */
+  designerDistance: number | null
 
   enterVenue: (id: VenueId) => void
   leaveVenue: () => void
@@ -293,6 +306,8 @@ export const useGameStore = create<GameStore>()(
       initialCameraYaw: 0,
       initialCameraPitch: null,
       designerYaw: 0,
+      designerPitch: null,
+      designerDistance: null,
 
       enterVenue: (id) =>
         set({

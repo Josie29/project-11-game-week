@@ -2,24 +2,76 @@ import { describe, expect, it } from 'vitest'
 import { Garment, PLAYER_GARMENTS } from '../character/appearance'
 import {
   DEFAULT_BODY_OPTIONS,
+  forearmParts,
   restPoseSegments,
   thighParts,
   torsoParts,
   upperArmParts,
   type BodyOptions,
 } from '../character/bodyParts'
-import { faceParts, faceSurfaceZ, FACES } from '../character/face'
+import { faceParts, faceSurfaceZ, FACES, panelSagitta } from '../character/face'
 import {
   fightingSurfaces,
   floatingParts,
   listBounds,
   partHalfExtents,
+  PartShape,
   translateParts,
   type Part,
+  type Vec3,
 } from '../character/parts'
-import { metricsFor, PROPORTIONS, Silhouette } from '../character/proportions'
+import {
+  metricsFor,
+  PROPORTIONS,
+  Silhouette,
+  type BodyProportions,
+} from '../character/proportions'
 
 const SILHOUETTES = Object.values(Silhouette)
+
+/**
+ * How far a face panel may stand off the skin, on top of the sagitta.
+ *
+ * Not zero: a feature has to stand off the skin or it is buried in it, and a
+ * pupil has to stand off the sclera under it or the two share a plane and
+ * strobe. This is the front of the outermost layer of that ladder, and no more.
+ *
+ * Worth stating what it still catches, since a tolerance that admits everything
+ * would be worse than no test. The eye panels this was written for stood
+ * seventeen millimetres proud at their outer corners — an order of magnitude
+ * past the sagitta plus this — and showed as white rectangles outside the
+ * head's own outline from any angle past three-quarters.
+ */
+const CORNER_TOLERANCE = 0.007
+
+/** Where on the skull a feature sits, as the point its own centre is over. */
+function surfacePointFor(body: BodyProportions, part: Part): Vec3 {
+  const [x, y] = part.at
+  return [x, y, faceSurfaceZ(body, x, y)]
+}
+
+/**
+ * How far a part's centre sits in front of a point on the skin.
+ *
+ * Along the part's own facing, which for a turned panel is the skull's normal
+ * where it sits. Positive is out of the head.
+ */
+function distanceAlongNormal(part: Part, surface: Vec3): number {
+  const facing = partFacing(part)
+
+  return (
+    (part.at[0] - surface[0]) * facing[0] +
+    (part.at[1] - surface[1]) * facing[1] +
+    (part.at[2] - surface[2]) * facing[2]
+  )
+}
+
+/** A part's own +Z, turned by its Euler XYZ rotation, as three.js applies one. */
+function partFacing(part: Part): Vec3 {
+  const [pitch, yaw] = part.rotation ?? [0, 0, 0]
+
+  return [Math.sin(yaw), -Math.cos(yaw) * Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)]
+}
 
 /** Every combination the player can actually put on the designer's figure. */
 function playerOutfits(): BodyOptions[] {
@@ -232,20 +284,60 @@ describe('bodyParts', () => {
       const body = PROPORTIONS[silhouette]
 
       for (const part of faceParts(body)) {
-        const [x, y, z] = part.at
-        const surface = faceSurfaceZ(body, Math.abs(x), y)
-        // Read off the part rather than its `size`, which means radii on a
-        // sphere and full extents on a box — the face now uses both.
-        const halfDepth = partHalfExtents(part)[2]
+        /*
+         * Measured along the part's own facing rather than down the z axis.
+         *
+         * A panel lies along the surface now — turned to the skull's normal
+         * where it sits — so "how far is its front from the skin" is a distance
+         * along that normal, and reading its z extent instead would report a
+         * correctly seated eye on a cheek as floating.
+         */
+        const half = partHalfExtents(part)[2]
+        const centre = surfacePointFor(body, part)
+        const along = distanceAlongNormal(part, centre)
+
+        expect(along + half, `${part.name} on ${silhouette} is buried under the skin`)
+          .toBeGreaterThan(0)
+        expect(along - half, `${part.name} on ${silhouette} floats off the face`).toBeLessThan(0)
+      }
+    }
+  })
+
+  /*
+   * No corner of a drawn feature pokes out of the head.
+   *
+   * The defect this is for is invisible from the front and unmistakable from
+   * anywhere past three-quarters: a face panel is a flat box, and left facing
+   * square down the z axis its outer corners stand nearly two centimetres
+   * proud of a curved skull — so the far eye rendered as a white rectangle
+   * *outside* the head's silhouette and the brow as a dark bar beside it, on
+   * every hairstyle and every silhouette. Every capture this project ever took
+   * of a face was taken from the front.
+   *
+   * The allowance is the sagitta — how far the skull falls away under a
+   * rectangle laid flat on it — because that is what a tangent panel genuinely
+   * costs and no arrangement of flat panels can do better. Anything past that
+   * is a panel that is not lying on the surface, which is the bug.
+   */
+  it('keeps every corner of every face panel against the skull', () => {
+    for (const silhouette of SILHOUETTES) {
+      const body = PROPORTIONS[silhouette]
+
+      for (const part of faceParts(body)) {
+        if (part.shape !== PartShape.Box) continue
+
+        const [halfWidth, halfHeight, halfDepth] = partHalfExtents(part)
+        const size = [halfWidth * 2, halfHeight * 2] as const
+        const allowed =
+          panelSagitta(body, part.at[0], part.at[1], size) + CORNER_TOLERANCE
+
+        const centre = surfacePointFor(body, part)
+        const front = distanceAlongNormal(part, centre) + halfDepth
 
         expect(
-          z - halfDepth,
-          `${part.name} on ${silhouette} floats off the face`,
-        ).toBeLessThan(surface)
-        expect(
-          z + halfDepth,
-          `${part.name} on ${silhouette} is buried under the skin`,
-        ).toBeGreaterThan(surface)
+          front,
+          `${part.name} on ${silhouette} stands off the head by ${(front * 1000).toFixed(1)}mm`,
+        ).toBeLessThan(allowed)
       }
     }
   })
@@ -292,25 +384,50 @@ describe('bodyParts', () => {
       const shoulders = torsoParts(body, DEFAULT_BODY_OPTIONS).find(
         (part) => part.name === 'shoulders',
       )
-      const deltoid = upperArmParts(body, DEFAULT_BODY_OPTIONS).find(
-        (part) => part.name === 'deltoid',
-      )
 
       expect(shoulders, `${silhouette} has no shoulder mass`).toBeDefined()
-      expect(deltoid, `${silhouette} has no deltoid to cap the arm`).toBeDefined()
-      if (!shoulders || !deltoid) continue
+      if (!shoulders) continue
 
       expect(
         shoulders.size[0],
         `${silhouette} leaves a gap between shoulder and arm`,
       ).toBeGreaterThan(body.shoulderX)
+    }
+  })
 
-      // And the cap on the arm covers the cylinder's own top.
-      const upperArm = upperArmParts(body, DEFAULT_BODY_OPTIONS).find(
-        (part) => part.name === 'upper-arm',
-      )
-      expect(deltoid.size[0]).toBeGreaterThan(upperArm?.size[0] ?? 0)
-      expect(deltoid.at[1] + deltoid.size[1], `${silhouette} leaves the arm's top cap bare`).toBeGreaterThan(0)
+  /*
+   * And the arm has no flat cap at the socket for the shoulder to have to hide.
+   *
+   * This started as a cap: an upper arm was a cylinder, so its flat top sat in
+   * the open at the joint as a hard disc, and a sphere was added to cover it.
+   * The sphere had to be the arm's own radius or it read as a shoulder pad —
+   * and at exactly the arm's radius the two surfaces meet *tangentially*, which
+   * at any tessellation gives a staggered, dotted ring round the arm that reads
+   * as a scar. It was the last survivor of the same defect as the old hairline.
+   *
+   * A capsule has no boundary to stagger because there is nothing for it to be
+   * a boundary between, and its own hemisphere caps the socket. So the check is
+   * no longer "is there a cap" but "is there anything that needs one".
+   */
+  it('gives the arm no flat cap at the shoulder or the elbow', () => {
+    for (const silhouette of SILHOUETTES) {
+      const body = PROPORTIONS[silhouette]
+
+      for (const options of playerOutfits()) {
+        const arm = [
+          ...upperArmParts(body, options),
+          ...forearmParts(body, options),
+        ].filter((part) => part.name === 'upper-arm' || part.name === 'forearm')
+
+        expect(arm.length, `${silhouette} has lost an arm segment`).toBe(2)
+
+        for (const part of arm) {
+          expect(
+            part.shape,
+            `${part.name} on ${silhouette} in ${options.garment} would show a flat cap`,
+          ).toBe(PartShape.Capsule)
+        }
+      }
     }
   })
 

@@ -10,6 +10,7 @@
  * Pure, like the rest of `src/character/`.
  */
 
+import { lipFor } from './palette'
 import type { ShopItem } from './catalog'
 import type { ResolvedAppearance } from './appearance'
 
@@ -38,16 +39,18 @@ export interface PartPalette {
  */
 export const MANNEQUIN_FORM = '#c6b9a6'
 
-const SCLERA = '#f4f2ee'
-const PUPIL = '#20161a'
 /*
- * Darker than a lip actually is, on purpose.
+ * Warm and slightly off-white, not paper.
  *
- * At `#8a4f45` the mouth sat within a shade of every skin tone in the palette
- * and simply vanished on the darker three — a face with eyes, brows and no
- * mouth. A drawn feature has to read against the skin behind it, and there are
- * six skins.
+ * At `#f4f2ee` the two eyes were the brightest thing on the whole figure —
+ * brighter than any skin in the palette and brighter than most garments — so
+ * they pulled the eye before the face did and read as googly. An eye white is
+ * in shadow under a brow; this is what that looks like.
  */
+const SCLERA = '#ded6cd'
+const PUPIL = '#20161a'
+
+/** What an item's or a hairpiece's mouth would be, if either had one. */
 const LIP = '#5c2f2c'
 
 /**
@@ -75,7 +78,8 @@ export function figurePalette(
     hair: mannequin ? MANNEQUIN_FORM : appearance.hair,
     sclera: SCLERA,
     pupil: PUPIL,
-    lip: LIP,
+    // Derived from the skin, so the mouth reads on all six — see `lipFor`.
+    lip: lipFor(skin),
   }
 }
 

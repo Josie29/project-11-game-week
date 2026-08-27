@@ -99,3 +99,52 @@ export function shadeHex(hex: string, amount: number): string {
   }
   return out
 }
+
+/**
+ * Blends two hex colours.
+ *
+ * @param from Six-digit hex colour.
+ * @param to Six-digit hex colour to move toward.
+ * @param amount How far to move, clamped to [0, 1].
+ * @returns A six-digit hex colour.
+ * @throws {TypeError} If either argument is not a six-digit hex colour.
+ */
+export function mixHex(from: string, to: string, amount: number): string {
+  if (!HEX_PATTERN.test(from) || !HEX_PATTERN.test(to)) {
+    throw new TypeError(`mixHex expected six-digit hex colours, got "${from}" and "${to}"`)
+  }
+
+  const weight = Math.max(0, Math.min(1, amount))
+
+  let out = '#'
+  for (let offset = 1; offset < 7; offset += 2) {
+    // Two hex digits per channel, so step the slice two at a time.
+    const a = Number.parseInt(from.slice(offset, offset + 2), 16)
+    const b = Number.parseInt(to.slice(offset, offset + 2), 16)
+    out += Math.round(a + (b - a) * weight).toString(16).padStart(2, '0')
+  }
+  return out
+}
+
+/**
+ * A lip colour that reads against the skin it is drawn on.
+ *
+ * Derived rather than fixed, and this is the second attempt at the problem. A
+ * single hex was chosen dark enough to show on the pale skins and landed within
+ * a shade of the two darkest ones — a face with eyes, brows and no mouth, on a
+ * third of the swatches the designer offers. Darkening it further only moves
+ * which skins it disappears on.
+ *
+ * Taking the skin down and then pulling it toward a warm red keeps the same
+ * *relationship* on all six: always a step darker than the face, always more
+ * saturated than the face, and never the same colour as it.
+ *
+ * @param skin Six-digit hex skin tone.
+ * @returns A six-digit hex colour for the mouth.
+ */
+export function lipFor(skin: string): string {
+  return mixHex(shadeHex(skin, -0.35), LIP_TINT, 0.45)
+}
+
+/** The warm red every lip is pulled toward. Read off `art/refs/`. */
+const LIP_TINT = '#b04a52'

@@ -190,25 +190,38 @@ function unscaledHalfExtents(part: Part): Vec3 {
   }
 }
 
-/** Rotates a point by an Euler XYZ triple. Hand-rolled to keep this module pure. */
+/**
+ * Rotates a point by an Euler XYZ triple, as three.js applies one.
+ *
+ * Order matters and this had it backwards. `Euler` order `'XYZ'` — which is
+ * three.js's default and what every `rotation` prop here is read as — builds
+ * the matrix `RX · RY · RZ`, so a *point* is turned by Z first and X last. This
+ * turned it X first, which agrees for every part rotated about a single axis
+ * and quietly disagrees for any part rotated about two or three.
+ *
+ * Nothing on the figure had three until the face panels were laid along the
+ * skull's normal, at which point the predicates were measuring a different
+ * shape from the one being drawn — which is the one thing this module exists
+ * not to do. Hand-rolled, still, to keep `src/character/` free of `three`.
+ */
 function rotatePoint(point: Vec3, rotation: Vec3): Vec3 {
   const [rx, ry, rz] = rotation
   let [x, y, z] = point
 
-  // X
-  const cosX = Math.cos(rx)
-  const sinX = Math.sin(rx)
-  ;[y, z] = [y * cosX - z * sinX, y * sinX + z * cosX]
+  // Z
+  const cosZ = Math.cos(rz)
+  const sinZ = Math.sin(rz)
+  ;[x, y] = [x * cosZ - y * sinZ, x * sinZ + y * cosZ]
 
   // Y
   const cosY = Math.cos(ry)
   const sinY = Math.sin(ry)
   ;[x, z] = [x * cosY + z * sinY, -x * sinY + z * cosY]
 
-  // Z
-  const cosZ = Math.cos(rz)
-  const sinZ = Math.sin(rz)
-  ;[x, y] = [x * cosZ - y * sinZ, x * sinZ + y * cosZ]
+  // X
+  const cosX = Math.cos(rx)
+  const sinX = Math.sin(rx)
+  ;[y, z] = [y * cosX - z * sinX, y * sinX + z * cosX]
 
   return [x, y, z]
 }
@@ -265,22 +278,22 @@ export function partBounds(part: Part): Bounds {
   return { minX, maxX, minY, maxY, minZ, maxZ }
 }
 
-/** The inverse of `rotatePoint`: undoes an Euler XYZ triple, Z first. */
+/** The inverse of `rotatePoint`: undoes an Euler XYZ triple, X first. */
 function unrotatePoint(point: Vec3, rotation: Vec3): Vec3 {
   const [rx, ry, rz] = rotation
   let [x, y, z] = point
 
-  const cosZ = Math.cos(rz)
-  const sinZ = Math.sin(rz)
-  ;[x, y] = [x * cosZ + y * sinZ, -x * sinZ + y * cosZ]
+  const cosX = Math.cos(rx)
+  const sinX = Math.sin(rx)
+  ;[y, z] = [y * cosX + z * sinX, -y * sinX + z * cosX]
 
   const cosY = Math.cos(ry)
   const sinY = Math.sin(ry)
   ;[x, z] = [x * cosY - z * sinY, x * sinY + z * cosY]
 
-  const cosX = Math.cos(rx)
-  const sinX = Math.sin(rx)
-  ;[y, z] = [y * cosX + z * sinX, -y * sinX + z * cosX]
+  const cosZ = Math.cos(rz)
+  const sinZ = Math.sin(rz)
+  ;[x, y] = [x * cosZ + y * sinZ, -x * sinZ + y * cosZ]
 
   return [x, y, z]
 }

@@ -12,6 +12,13 @@
  * across all three so the follow camera does not need to know which one it is
  * looking at.
  *
+ * The division between leg and torso is the second stylisation, and it moves
+ * the other way from the first. Anatomically the leg is about 1.6 times the
+ * torso, and at seven and a half heads that reads fine; under a head this large
+ * it reads as a small body on long legs, because the head has taken the space
+ * the torso would have had. Roughly four centimetres came off each leg and went
+ * into every torso.
+ *
  * The one place this deliberately departs from that sheet is the head. The
  * sheet is drawn at roughly seven and a half heads, which is life drawing, and
  * at the size a figure occupies on the strip it reads as a suit with a pebble
@@ -61,7 +68,41 @@ export interface BodyProportions {
   readonly shin: number
   readonly torsoHeight: number
   readonly torsoWidth: number
+  /**
+   * Front to back, at the chest.
+   *
+   * Roughly three quarters of the width on every silhouette, and that ratio is
+   * the point. It was around three fifths, and every torso section was then
+   * squashed by it *again*, so the figure was a vertical plank from armpit to
+   * ankle in profile while the head above it was a solid ellipsoid — which
+   * reads worse than if both had been flat, because the head sets the
+   * expectation the body then fails. Nothing in a front view could show it.
+   */
   readonly torsoDepth: number
+  /**
+   * Half-width at the chest, and at the natural waist.
+   *
+   * These are what make the three builds three *shapes* rather than one shape
+   * at three sizes. They were both fractions of `torsoWidth`, so the only
+   * difference between the masculine figure and the feminine one below the
+   * shoulder was scale — the broad build was the narrow build enlarged, nip and
+   * all, which is not what separates them.
+   *
+   * The masculine figure is a V dropped onto a rectangle: the shoulders reach
+   * well past the chest, the chest is clearly wider than the waist, and the
+   * waist and hip are within a couple of centimetres of each other so there is
+   * no nip below the ribs at all. That last part is what separates *muscular*
+   * from *heavy* — a broad figure with the same hourglass as the narrow one is
+   * simply the narrow one enlarged, which is how the first pass at this came
+   * out. The feminine figure is the opposite in every respect: chest and hip
+   * near enough equal, with a deep nip between them.
+   *
+   * The hip is not here because it is not free: it is `hipWidth` plus the thigh
+   * hanging off it — see `hipRadius` — and a pelvis narrower than its own legs
+   * is a figure whose thighs step out sideways at the hip.
+   */
+  readonly chestWidth: number
+  readonly waistWidth: number
   /**
    * Half the distance between the shoulder joints.
    *
@@ -90,15 +131,17 @@ export interface BodyProportions {
 export const PROPORTIONS: Record<Silhouette, BodyProportions> = {
   [Silhouette.Feminine]: {
     silhouette: Silhouette.Feminine,
-    thigh: 0.435,
-    shin: 0.44,
-    torsoHeight: 0.535,
+    thigh: 0.415,
+    shin: 0.42,
+    torsoHeight: 0.575,
     torsoWidth: 0.39,
-    torsoDepth: 0.25,
-    shoulderX: 0.255,
+    torsoDepth: 0.292,
+    chestWidth: 0.212,
+    waistWidth: 0.148,
+    shoulderX: 0.248,
     upperArm: 0.24,
     forearm: 0.222,
-    hipWidth: 0.108,
+    hipWidth: 0.114,
     neckHeight: 0.042,
     headWidth: 0.272,
     headHeight: 0.322,
@@ -107,15 +150,17 @@ export const PROPORTIONS: Record<Silhouette, BodyProportions> = {
   },
   [Silhouette.Masculine]: {
     silhouette: Silhouette.Masculine,
-    thigh: 0.4,
-    shin: 0.415,
-    torsoHeight: 0.59,
-    torsoWidth: 0.5,
-    torsoDepth: 0.3,
-    shoulderX: 0.325,
+    thigh: 0.378,
+    shin: 0.395,
+    torsoHeight: 0.632,
+    torsoWidth: 0.46,
+    torsoDepth: 0.344,
+    chestWidth: 0.242,
+    waistWidth: 0.204,
+    shoulderX: 0.292,
     upperArm: 0.25,
     forearm: 0.23,
-    hipWidth: 0.128,
+    hipWidth: 0.098,
     neckHeight: 0.042,
     headWidth: 0.298,
     headHeight: 0.318,
@@ -124,15 +169,17 @@ export const PROPORTIONS: Record<Silhouette, BodyProportions> = {
   },
   [Silhouette.Androgynous]: {
     silhouette: Silhouette.Androgynous,
-    thigh: 0.415,
-    shin: 0.428,
-    torsoHeight: 0.563,
+    thigh: 0.393,
+    shin: 0.407,
+    torsoHeight: 0.603,
     torsoWidth: 0.44,
-    torsoDepth: 0.274,
-    shoulderX: 0.285,
+    torsoDepth: 0.328,
+    chestWidth: 0.22,
+    waistWidth: 0.178,
+    shoulderX: 0.272,
     upperArm: 0.245,
     forearm: 0.225,
-    hipWidth: 0.115,
+    hipWidth: 0.108,
     neckHeight: 0.042,
     headWidth: 0.285,
     headHeight: 0.32,

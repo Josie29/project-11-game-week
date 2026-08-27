@@ -53,19 +53,193 @@ function depthRatio(body: BodyProportions): number {
  * A fraction of the torso is the honest relationship. The narrow figure gets
  * narrow limbs for free, and a change to the build carries all the way down.
  */
-const ARM_RADIUS = 0.21
-const FOREARM_RADIUS = 0.165
-const THIGH_RADIUS = 0.25
-const SHIN_RADIUS = 0.225
+const ARM_RADIUS = 0.162
+const THIGH_RADIUS = 0.225
+
+/**
+ * How much narrower a limb is at the joint than at its root.
+ *
+ * One number for both legs and arms, because the defect it fixes was the same
+ * at the knee and the elbow: the parent's end radius, the joint sphere and the
+ * child's start radius were three numbers chosen separately, so every joint on
+ * the figure was a visible step *and* a shading seam. The child limb now starts
+ * at exactly the radius its parent ended on and the joint sphere is derived
+ * from that one number, so there is nothing left for them to disagree about.
+ */
+const JOINT_TAPER = 0.76
+
+/** How far the joint sphere stands proud of the two limbs it bridges. */
+const JOINT_SWELL = 1.03
 
 /** The upper arm's radius, which the shoulder and every sleeve are sized from. */
 export function armRadius(body: BodyProportions): number {
   return body.torsoWidth * ARM_RADIUS
 }
 
-/** The forearm's radius, which the cuff, the hand and a worn watch are sized from. */
+/** The elbow's radius: where the upper arm ends and the forearm begins. */
 export function forearmRadius(body: BodyProportions): number {
-  return body.torsoWidth * FOREARM_RADIUS
+  return armRadius(body) * JOINT_TAPER
+}
+
+/** The thigh's radius at the hip, which the pelvis has to be wide enough to hold. */
+export function thighRadius(body: BodyProportions): number {
+  return body.torsoWidth * THIGH_RADIUS
+}
+
+/** The knee's radius: where the thigh ends and the shin begins. */
+export function shinRadius(body: BodyProportions): number {
+  return thighRadius(body) * JOINT_TAPER
+}
+
+/**
+ * How much wider the pelvis is than the legs hanging off it.
+ *
+ * Six per cent, and the *derivation* is the point rather than the number. The
+ * hips were a chosen fraction of the torso and the thighs were another, so on
+ * every silhouette `hipWidth + thighRadius` overshot the pelvis and both legs
+ * stepped out sideways with a hard horizontal edge at the hip. It is the same
+ * relationship `shoulderX` already has with the arm, and it was missing here.
+ */
+const HIP_CLEARANCE = 1.06
+
+/**
+ * The widest the pelvis reaches: the hip joint plus the thigh hanging off it.
+ *
+ * Everything that has to cover a hip is measured from this — the pelvis
+ * section, the skirt's waist, a gown's. Read off the leg rather than chosen,
+ * so a wider build cannot grow past its own clothes.
+ */
+export function hipRadius(body: BodyProportions): number {
+  return (body.hipWidth + thighRadius(body)) * HIP_CLEARANCE
+}
+
+/**
+ * How wide the pelvis still is where the legs take over.
+ *
+ * The thighs' own reach, exactly. Chosen independently it was narrower, so at
+ * the crotch line the pelvis stopped and two legs continued out past where it
+ * had been — a hard horizontal edge across the top of both thighs, which on a
+ * trousered figure read as the hem of a pair of shorts.
+ */
+function crotchRadius(body: BodyProportions): number {
+  return body.hipWidth + thighRadius(body)
+}
+
+/** The narrowest point of the torso. What separates a figure from a barrel. */
+export function waistRadius(body: BodyProportions): number {
+  return body.waistWidth
+}
+
+/** The widest point of the torso, and the half-width the whole build is named for. */
+export function chestRadius(body: BodyProportions): number {
+  return body.chestWidth
+}
+
+/**
+ * Where the torso has narrowed to by the time it reaches the neck.
+ *
+ * It was three tenths of the torso's width, which on the broad build is a
+ * twenty-eight-centimetre shelf across the top of the shoulders with a neck
+ * sticking out of the middle of it — the trapezius never sloped at all, and
+ * the crew neckline drawn at that radius read as a yoke seam halfway out to
+ * the arm rather than as a collar.
+ */
+function neckRadius(body: BodyProportions): number {
+  return body.torsoWidth * 0.21
+}
+
+/*
+ * Where each torso section starts and stops, as fractions of the torso's height.
+ *
+ * Written out because four sections have to agree about six boundaries, and
+ * every one of those agreements used to be a pair of numbers a reader had to
+ * add up. Each section's top radius is the next one's bottom radius and each
+ * one overlaps its neighbour slightly, so the torso is one continuous taper:
+ * widest at the hip, nipped at the waist, wide again at the chest.
+ */
+export const CROTCH_Y = -0.1
+export const HIP_LINE_Y = 0.16
+export const NATURAL_WAIST_Y = 0.45
+/**
+ * Where the chest stops widening and the trapezius takes over.
+ *
+ * High, and deliberately under the shoulder mass. The junction between two
+ * cone sections is a crease wherever the slope changes sign, and this one
+ * changes it hard — the torso widens up to here and narrows sharply above it.
+ * Lower down it drew a hard horizontal line across the chest of every garment;
+ * up here the shoulders cover it.
+ */
+export const CHEST_TOP_Y = 0.9
+
+/**
+ * How far a worn garment's own section boundaries sit from the body's.
+ *
+ * Outerwear is a second stack of tapered sections over the first, authored in a
+ * different file against the same torso height — so every boundary in one had a
+ * standing chance of landing on a boundary in the other, and several did, on
+ * one silhouette at a time as the depth ratios moved. Chasing them one at a
+ * time is a losing game: the fix is to derive the garment's boundaries from the
+ * body's and separate them by a fixed clearance, so a coincidence is no longer
+ * something that *can* happen.
+ *
+ * Three per cent of the torso's height is about a centimetre and a half on
+ * every build, which is two orders of magnitude past what the depth buffer can
+ * resolve at this camera.
+ */
+export const GARMENT_CLEARANCE = 0.03
+
+/**
+ * How high up the body a pair of trousers reaches.
+ *
+ * The natural waist, which is where the colour change between a top and a
+ * bottom belongs. It used to fall at the hip line, so on every trousered
+ * garment the pelvis was a distinctly wider block in the trouser colour with a
+ * hard edge across the top of it — gym shorts worn over a suit.
+ */
+export const TROUSER_LINE_Y = NATURAL_WAIST_Y
+
+/** Where a skirt's waistband sits: above the hip, below the natural waist. */
+export const SKIRT_WAIST_Y = 0.26
+
+/**
+ * Where a necklace lies, as a fraction of the torso's height.
+ *
+ * Exported because `anchorFor` has to agree with the yoke this file draws, and
+ * it did not: the neck slot sat a fifth of the torso *below* the top of it,
+ * which is the middle of the chest. High enough that the torso has actually
+ * narrowed toward the neck by the time it gets here — at the collarbone the
+ * body is still nearly as wide as the shoulders, and a ring sized to clear it
+ * there is a hoop resting on both of them.
+ */
+export const NECK_BASE_Y = 0.965
+
+/**
+ * The torso's half-width at a height, following the taper the sections draw.
+ *
+ * Exported because a skirt and a gown both have to meet the body at their own
+ * waistband, and "wide enough to clear the thighs" — which is all either of
+ * them was ever asked — says nothing about that. A waistband narrower than the
+ * body leaves the body poking through it; one wider than the body leaves an
+ * open annulus you can see straight down inside the skirt through, which is
+ * exactly what put two crescents of bare thigh at a dress's hips.
+ *
+ * @param body The figure being measured.
+ * @param y Height above the hip, as a fraction of the torso's height.
+ * @returns The half-width there, in world units.
+ */
+export function torsoRadiusAt(body: BodyProportions, y: number): number {
+  const lerp = (from: number, to: number, at: number, start: number, end: number): number =>
+    from + (to - from) * Math.min(1, Math.max(0, (at - start) / (end - start)))
+
+  if (y <= HIP_LINE_Y) return lerp(crotchRadius(body), hipRadius(body), y, CROTCH_Y, HIP_LINE_Y)
+  if (y <= NATURAL_WAIST_Y) {
+    return lerp(hipRadius(body), waistRadius(body), y, HIP_LINE_Y, NATURAL_WAIST_Y)
+  }
+  if (y <= CHEST_TOP_Y) {
+    return lerp(waistRadius(body), chestRadius(body), y, NATURAL_WAIST_Y, CHEST_TOP_Y)
+  }
+
+  return lerp(chestRadius(body), neckRadius(body), y, CHEST_TOP_Y, 1)
 }
 
 function limb(
@@ -170,41 +344,70 @@ export const DEFAULT_BODY_OPTIONS: BodyOptions = {
  * @returns The parts, in draw order.
  */
 export function torsoParts(body: BodyProportions, options: BodyOptions): readonly Part[] {
-  const { torsoWidth: tw, torsoHeight: th, neckHeight: nh } = body
+  const { torsoWidth: tw, torsoHeight: th, torsoDepth: td, neckHeight: nh } = body
   const { headWidth: hw, headHeight: hh, headDepth: hd } = body
-  void hd
   const squash: Vec3 = [1, 1, depthRatio(body)]
+
+  const hipR = hipRadius(body)
+  const waistR = waistRadius(body)
+  const chestR = chestRadius(body)
+  const neckR = neckRadius(body)
+
+  /*
+   * Where the trouser colour stops.
+   *
+   * At the natural waist on a trousered figure, which is where a waistband
+   * belongs; at the hip on a skirted one, because the skirt's own waistband
+   * takes over there and what is under it is a lining rather than a garment.
+   */
+  const lowerRole = ColorRole.Secondary
+  const midRole = options.hasSkirt ? ColorRole.Primary : ColorRole.Secondary
+  /*
+   * The shoulder mass is bare only on a genuinely strapped garment.
+   *
+   * A cocktail dress keeps it: the mass reaches the sockets, so painting it
+   * skin puts a band of skin right across the top of the chest, and what it
+   * covers on a dress reads as a cap sleeve — which is a dress. A bought gown
+   * draws its own straps and does want the shoulder bare beside them.
+   */
+  const shoulderRole = options.bareArms ? ColorRole.Skin : ColorRole.Primary
+
+  const cylinder = (
+    name: string,
+    fromY: number,
+    toY: number,
+    fromR: number,
+    toR: number,
+    role: ColorRole,
+  ): Part =>
+    limb(
+      name,
+      [0, th * ((fromY + toY) / 2), 0],
+      // A cylinder's `size` is [radiusTop, height, radiusBottom]; `toY` is the
+      // upper end, so its radius is the first of the three.
+      [toR, th * (toY - fromY), fromR],
+      role,
+      { scale: squash, segments: 28 },
+    )
 
   const headY = th + nh + hh / 2
   const parts: Part[] = [
     /*
-     * The torso as three tapered sections rather than one box.
-     *
-     * Hips, waist and chest, each a squashed cylinder taking its width from
-     * the one below. The waist is the narrowest and the chest the widest,
-     * which is the whole of the difference between a figure and a crate.
-     */
-    /*
      * Four sections whose radii meet exactly where they touch.
      *
      * Each section's top radius is the next one's bottom radius, so the torso
-     * is one continuous taper — wide at the pelvis, narrowest at the top of the
-     * waist, wide again at the chest. Sections chosen independently gave a
-     * visible step at every junction and, at the hip, a flare wider than the
-     * thighs under it: the figure was wearing a hoop skirt.
+     * is one continuous taper — widest at the pelvis, narrowest at the waist,
+     * wide again at the chest. Sections chosen independently gave a visible
+     * step at every junction and, at the hip, a flare wider than the thighs
+     * under it: the figure was wearing a hoop skirt.
+     *
+     * The boundaries are named constants rather than four pairs of numbers,
+     * because `torsoRadiusAt` has to agree with them exactly and a skirt that
+     * misses the body by a centimetre is an open hole you can see down.
      */
-    limb('hips', [0, th * 0.1, 0], [tw * 0.46, th * 0.32, tw * 0.5], ColorRole.Secondary, {
-      scale: squash,
-      segments: 24,
-    }),
-    limb('waist', [0, th * 0.38, 0], [tw * 0.42, th * 0.32, tw * 0.46], ColorRole.Primary, {
-      scale: squash,
-      segments: 24,
-    }),
-    limb('chest', [0, th * 0.68, 0], [tw * 0.5, th * 0.36, tw * 0.42], ColorRole.Primary, {
-      scale: squash,
-      segments: 24,
-    }),
+    cylinder('pelvis', CROTCH_Y, HIP_LINE_Y, crotchRadius(body), hipR, lowerRole),
+    cylinder('hips', HIP_LINE_Y, NATURAL_WAIST_Y, hipR, waistR, midRole),
+    cylinder('chest', NATURAL_WAIST_Y, CHEST_TOP_Y, waistR, chestR, ColorRole.Primary),
     /*
      * The trapezius: a cone from the chest's own width up to the neck.
      *
@@ -214,38 +417,69 @@ export function torsoParts(body: BodyProportions, options: BodyOptions): readonl
      * running it up to something close to the neck is what turns that step into
      * a slope, and a slope is most of what "sloped shoulders" means.
      */
-    limb('yoke', [0, th * 0.885, 0], [tw * 0.3, th * 0.17, tw * 0.5], ColorRole.Primary, {
-      scale: squash,
-      segments: 24,
-    }),
+    cylinder('yoke', CHEST_TOP_Y, 1, chestR, neckR, ColorRole.Primary),
+
+    /*
+     * The seat, as a mass rather than another section.
+     *
+     * What puts an S in the profile, and a blob for the same reason the calf is
+     * one: a stack of cylinders can taper but it cannot bulge in one direction
+     * only, and offsetting whole sections in z would break the one thing the
+     * stack does well — every section's radius meeting its neighbour's exactly.
+     *
+     * There was a matching one at the chest and it is gone. The problem with a
+     * bulge on the *front* of a torso is that it has a silhouette edge, and a
+     * silhouette edge in the middle of a garment is a hard shading break across
+     * the chest that reads as a second garment worn over the first. Behind, the
+     * same shape is a seat and there is nothing there for it to cut across.
+     */
+    blob(
+      'seat',
+      /*
+       * Only just proud of the pelvis. At six tenths of the torso's depth
+       * behind the centre line it was five centimetres past the hips section,
+       * and from directly behind its silhouette edge read as a dark oval on
+       * the lower back — a bustle. A seat is a swell, not a shelf.
+       */
+      [0, th * 0.098, -td * 0.1],
+      [hipR * 0.88, th * 0.155, td * 0.4],
+      lowerRole,
+      { finish: Finish.Cloth, segments: 24 },
+    ),
+
     /*
      * One shoulder mass across the whole line, out to both sockets.
      *
-     * Two small spheres set inboard of the arms is what the capture shows and
-     * it reads as shoulder pads: each ball floated above and inside the arm it
+     * Two small spheres set inboard of the arms is what the capture showed and
+     * it read as shoulder pads: each ball floated above and inside the arm it
      * was meant to cap, leaving the upper arm's own flat top on show underneath
      * it. The arms hang at `shoulderX`, so the shoulders have to *reach*
      * `shoulderX` — anything narrower is a gap by construction, whatever it is
-     * shaped like. An ellipsoid falls away toward the ends on its own, which is
-     * the slope; the deltoid on each arm covers the last of the joint and, being
-     * on the arm, stays covering it when the arm moves.
+     * shaped like.
+     *
+     * Deliberately *shallower* than the torso it sits on, which is the fix for
+     * the other half of the complaint. At a third of the torso's depth again it
+     * stood proud of the chest, so its own silhouette edge cut a hard horizontal
+     * shading break across the front of every garment — on a dress it read as a
+     * strapless band worn over the frock. Held inside the yoke's own surface it
+     * has no front-facing edge at all and shows only out at the ends, where the
+     * sockets are and where it is actually needed.
+     *
+     * And it stops *at* the socket rather than reaching past it. Carried out
+     * over the arm, a mass this flat tapers to a point above the sleeve — so
+     * each shoulder ended in a spike with a hard crease running up to the neck,
+     * and the armpit under it was a notch. Taller and narrower is rounder at
+     * the end, and the arm's own capsule cap is what covers the last of the
+     * joint anyway.
      */
     blob(
       'shoulders',
       [0, th * SHOULDER_TORSO_FRACTION, 0],
-      [body.shoulderX + armRadius(body) * 0.15, th * 0.13, body.torsoDepth * 0.5],
-      ColorRole.Primary,
-      { finish: Finish.Cloth, segments: 22 },
+      [body.shoulderX + armRadius(body) * 0.12, th * 0.13, td * 0.45],
+      shoulderRole,
+      { finish: shoulderRole === ColorRole.Skin ? Finish.Matte : Finish.Cloth, segments: 24 },
     ),
 
-    /*
-     * A neck, not a stem.
-     *
-     * It was 5.2cm across under a head 19.5cm wide, and with the shoulders
-     * where they are that left a hand's width of bare column between the jaw
-     * and the collar. Widening it is half the fix; `neckHeight` coming down in
-     * `proportions.ts` is the other half.
-     */
     /*
      * Tapered, and stopped well short of the mouth.
      *
@@ -257,12 +491,12 @@ export function torsoParts(body: BodyProportions, options: BodyOptions): readonl
      */
     limb('neck', [0, th + nh * 0.5 - 0.07, 0], [tw * 0.17, nh + 0.22, tw * 0.25], ColorRole.Skin, {
       finish: Finish.Matte,
-      segments: 20,
+      segments: 24,
     }),
     // The skull, rounded. Its bounding box is unchanged, so hair still fits.
     // 48 segments, not 24: the hairline is the boundary between this surface
     // and the hair shell over it, and a coarse skull makes a ragged one.
-    blob('head', [0, headY, 0], [hw / 2, hh / 2, hd / 2], ColorRole.Skin, { segments: 48 }),
+    blob('head', [0, headY, 0], [hw / 2, hh / 2, hd / 2], ColorRole.Skin, { segments: 72 }),
     // The ears, in the head's own frame. A dummy keeps them: they are the
     // shape of a head rather than something drawn on a face.
     ...translateParts(earParts(body), [0, headY, 0]),
@@ -278,25 +512,50 @@ export function torsoParts(body: BodyProportions, options: BodyOptions): readonl
 }
 
 /**
+ * A ring lying flat around the body, squashed to the body's own section.
+ *
+ * A torus starts in the XY plane, so `LIE_FLAT` turns its local Y into world Z
+ * — which means squashing it front-to-back is a scale on *Y*, not on Z. Every
+ * ring on this figure had it on Z, so a collar meant to follow an oval torso
+ * was a circle that had been flattened *vertically* instead: tight at the
+ * sides, standing well proud at the front and back, and too shallow in section
+ * for its own radius. That is the white donut a shirt collar was reading as.
+ */
+function ringAround(
+  name: string,
+  at: Vec3,
+  radius: number,
+  tube: number,
+  role: ColorRole,
+  body: BodyProportions,
+  extra: Partial<Part> = {},
+): Part {
+  return {
+    name,
+    shape: PartShape.Torus,
+    at,
+    size: [radius, tube, radius],
+    role,
+    rotation: [Math.PI / 2, 0, 0],
+    segments: 28,
+    finish: Finish.Cloth,
+    scale: [1, depthRatio(body), 1],
+    ...extra,
+  }
+}
+
+/**
  * The detail that tells one starter garment from another.
  *
  * Only what a given outfit actually has. A shirt panel on a tee reads as a bib
  * stuck to the chest, which is why this is a switch rather than a set of flags.
  */
 function garmentParts(body: BodyProportions, options: BodyOptions): Part[] {
-  const { torsoWidth: tw, torsoHeight: th, torsoDepth: td } = body
-  const chestZ = tw * 0.5 * depthRatio(body)
+  const { torsoWidth: tw, torsoHeight: th } = body
+  const chestZ = chestRadius(body) * depthRatio(body)
   const parts: Part[] = []
 
   const hasShirt = options.garment === Garment.Suit || options.garment === Garment.ShirtAndSkirt
-  /*
-   * The front detail, on its own ladder of depth planes.
-   *
-   * Each panel is 8mm deep and they step 6mm apart, so no two of them ever
-   * share a plane whatever the silhouette's proportions work out to. Hand-set
-   * offsets did not survive three different depth ratios — the pair that
-   * collided moved from one silhouette to the next.
-   */
   /*
    * Each panel reaches back *into* the chest and stands a different distance
    * proud of it. Both halves matter: a panel that only sits in front of the
@@ -304,17 +563,35 @@ function garmentParts(body: BodyProportions, options: BodyOptions): Part[] {
    * back face are four coincident planes. So the fronts step 6mm apart and the
    * backs step 2mm, and every panel is buried in the chest by at least 4mm.
    */
-  const layerAt = (index: number): number =>
-    (chestZ - 0.004 - index * 0.002 + (chestZ + 0.004 + index * 0.006)) / 2
-  const layerDepth = (index: number): number => 0.008 + index * 0.008
-  const showFront = hasShirt && !options.coveredByOuterwear
+  const layerFront = (index: number): number => chestZ + 0.008 + index * 0.006
+  const layerBack = (index: number): number => chestZ - 0.032 - index * 0.004
+  const layerAt = (index: number): number => (layerFront(index) + layerBack(index)) / 2
+  const layerDepth = (index: number): number => layerFront(index) - layerBack(index)
+  const showFront = !options.coveredByOuterwear
 
-  if (showFront) {
+  /*
+   * The shirt front is a suit's, and nothing else's.
+   *
+   * It exists to be the strip of shirt showing between two lapels, and on the
+   * shirt-and-skirt — where the whole top is already the shirt — it drew a
+   * lighter rectangle down the chest that read as a patch pocket sewn onto a
+   * blouse. `hasShirt` was the wrong question: the panel is about the *jacket*
+   * over it.
+   */
+  if (options.garment === Garment.Suit && showFront) {
     parts.push({
       name: 'shirt-panel',
       shape: PartShape.Box,
-      at: [0, th * 0.63, layerAt(0)],
-      size: [tw * 0.24, th * 0.44, layerDepth(0)],
+      /*
+       * Stops above the waistband rather than running past it.
+       *
+       * A shirt front and a tie end where the trousers begin — which is what
+       * they do — and until they did, the two of them and the waistband ring
+       * were three hand-placed shapes overlapping in the same few centimetres
+       * of chest, landing on each other's planes one silhouette at a time.
+       */
+      at: [0, th * 0.69, layerAt(0)],
+      size: [tw * 0.18, th * 0.38, layerDepth(0)],
       role: ColorRole.Shirt,
       finish: Finish.Cloth,
     })
@@ -333,79 +610,110 @@ function garmentParts(body: BodyProportions, options: BodyOptions): Part[] {
          * pair that strobes when someone buys a jacket. Deeper here costs
          * nothing — the lapel is still proud of the chest when no jacket is on.
          */
-        at: [side * tw * 0.145, th * 0.76, layerAt(1)],
-        size: [tw * 0.085, th * 0.28, layerDepth(1)],
+        // Collar to button, and turned out hard enough to read as a V. Short
+        // and near-upright they were two grey slabs on a chest — patch pockets.
+        at: [side * tw * 0.2, th * 0.75, layerAt(1)],
+        size: [tw * 0.13, th * 0.3, layerDepth(1)],
         /*
-         * The jacket's own colour, in satin.
+         * The jacket's own cloth, a step lighter, in satin.
          *
-         * They were `Trim`, which on a charcoal suit is a mid grey — two pale
-         * rectangles stuck to a near-black chest, and they read as luggage
-         * labels. A dinner jacket's lapel is the same cloth with a different
-         * sheen, and that is exactly what a lower roughness gives: the shape
-         * catches the rim light and shows without being a different object.
+         * Two goes at this and the second overshot. As `Trim` — a mid grey on a
+         * charcoal suit — they were two pale rectangles stuck to a near-black
+         * chest and read as luggage labels. Moved to the jacket's exact colour
+         * they read as nothing at all: a plain dark top with a tie down it. A
+         * dinner jacket's lapel is the same cloth one shade up with a different
+         * sheen, which is what `primaryTrim` already is, and the low roughness
+         * is what makes the shape catch the rim light.
          */
-        role: ColorRole.Primary,
-        rotation: [0, 0, side * 0.3],
+        role: ColorRole.Trim,
+        rotation: [0, 0, side * 0.42],
         finish: Finish.Leather,
       })),
       {
         name: 'tie',
         shape: PartShape.Box,
-        at: [0, th * 0.6, layerAt(2)],
-        size: [tw * 0.075, th * 0.42, layerDepth(2)],
+        // Runs all the way up to the collar. Stopped short, a tie is a red bar
+        // lying on a chest with a hand's width of suit above it.
+        at: [0, th * 0.735, layerAt(2)],
+        size: [tw * 0.08, th * 0.41, layerDepth(2)],
         role: ColorRole.Accent,
         finish: Finish.Cloth,
       },
       /*
-       * A rounded knot rather than a small box.
+       * A knot, which is a wedge rather than a bead.
        *
-       * It looks like a knot, which is reason enough, and it also takes the
-       * front of a suit out of a whole family of near-misses: a box this size
-       * has a flat top and bottom that landed within a fifth of a millimetre
-       * of the lapel's, the yoke's and a worn pendant's in turn, each on a
-       * different silhouette, because all four are hand-placed on one chest.
-       * A curved surface has no face to fight with.
+       * It was a small box, and a box this size has a flat top and bottom that
+       * landed within a fifth of a millimetre of the lapel's, the yoke's and a
+       * worn pendant's in turn — all four are hand-placed on one chest. The
+       * sphere that replaced it fought with nothing and read as a red ball
+       * balanced on a tie. A truncated cone tipped forward off the collar is a
+       * knot, and being tipped it has no axis-aligned face to fight with
+       * either: the shape and the fix are the same thing.
        */
       {
         name: 'tie-knot',
-        shape: PartShape.Sphere,
-        at: [0, th * 0.845, layerAt(3)],
-        size: [tw * 0.058, tw * 0.034, layerDepth(3) / 2],
+        shape: PartShape.Cylinder,
+        // Its own depth rather than a rung of the panel ladder: the knot is
+        // tipped, so its bounds depend on that tilt and stopped lining up with
+        // the rungs the moment the panels were deepened.
+        at: [0, th * 0.93, chestZ + 0.02],
+        // [radiusTop, height, radiusBottom] — the third of these used to be the
+        // layer's *depth*, which after the panels were deepened made the knot a
+        // twenty-centimetre red disc lying across the chest.
+        size: [tw * 0.042, tw * 0.08, tw * 0.058],
+        rotation: [0.22, 0, 0],
         role: ColorRole.Accent,
         finish: Finish.Cloth,
-        segments: 14,
+        segments: 18,
       },
     )
   }
 
   // A crew neck, which is all a tee has and all it should have.
-  if (options.garment === Garment.TeeAndJeans || options.garment === Garment.Scrubs) {
-    parts.push({
-      name: 'neckline',
-      shape: PartShape.Torus,
-      at: [0, th * 0.96, 0],
-      size: [tw * 0.2, tw * 0.032, tw * 0.2],
-      role: ColorRole.Shirt,
-      rotation: [Math.PI / 2, 0, 0],
-      segments: 20,
-      finish: Finish.Cloth,
-      scale: [1, 1, depthRatio(body) + 0.18],
-    })
+  if (
+    !options.bareArms &&
+    (options.garment === Garment.TeeAndJeans || options.garment === Garment.Scrubs)
+  ) {
+    parts.push(
+      ringAround(
+        'neckline',
+        [0, th, 0],
+        torsoRadiusAt(body, 1) * 1.04,
+        tw * 0.026,
+        ColorRole.Shirt,
+        body,
+      ),
+    )
   }
 
-  // The collar every garment with a shirt under it shows at the back of the neck.
-  if (hasShirt) {
-    parts.push({
-      name: 'collar',
-      shape: PartShape.Torus,
-      at: [0, th * 0.97, 0],
-      size: [tw * 0.215, tw * 0.038, tw * 0.215],
-      role: ColorRole.Shirt,
-      rotation: [Math.PI / 2, 0, 0],
-      segments: 20,
-      finish: Finish.Cloth,
-      scale: [1, 1, depthRatio(body) + 0.2],
-    })
+  /*
+   * The collar every garment with a shirt under it shows at the back of the
+   * neck — unless a gown is over the top of it.
+   *
+   * A jacket leaves a shirt collar showing and should; a strapless gown does
+   * not, and left in it drew a white ring and a band of the suit's own cloth
+   * across the collarbones above the neckline. `bareArms` is the gown's own
+   * flag: it is the one item that covers the shoulders completely.
+   */
+  if (hasShirt && !options.bareArms) {
+    parts.push(
+      /*
+       * At the base of the neck, not halfway out to the shoulder.
+       *
+       * Drawn at the torso's own radius three per cent down from the top it was
+       * twenty-eight centimetres across — wider than the head above it — and
+       * read as a clerical collar. A shirt collar goes round a neck, and the
+       * torso has only narrowed to a neck at the very top of the yoke.
+       */
+      ringAround(
+        'collar',
+        [0, th, 0],
+        torsoRadiusAt(body, 1) * 1.16,
+        tw * 0.028,
+        ColorRole.Shirt,
+        body,
+      ),
+    )
   }
 
   if (options.staff) {
@@ -420,6 +728,28 @@ function garmentParts(body: BodyProportions, options: BodyOptions): Part[] {
   }
 
   /*
+   * The waistband, on a trousered figure.
+   *
+   * The colour change between a top and a bottom is a hard horizontal edge
+   * wherever it falls, and an edge with nothing on it reads as two garments
+   * that do not meet. A band at the natural waist is what a real one has, and
+   * it is the cheapest glamour on the figure — a line of trim catching the rim
+   * light exactly where the silhouette is narrowest.
+   */
+  if (!options.hasSkirt) {
+    parts.push(
+      ringAround(
+        'waistband',
+        [0, th * TROUSER_LINE_Y, 0],
+        torsoRadiusAt(body, TROUSER_LINE_Y) * 1.02,
+        tw * 0.019,
+        ColorRole.Trim,
+        body,
+      ),
+    )
+  }
+
+  /*
    * The garment's own skirt.
    *
    * Suppressed when a gown is equipped, since that item draws a longer one of
@@ -427,32 +757,115 @@ function garmentParts(body: BodyProportions, options: BodyOptions): Part[] {
    * a cocktail dress and left the character in bare legs.
    */
   if (options.hasSkirt && !options.suppressSkirt) {
-    const length = options.seated ? 0.2 : 0.4
-
-    parts.push({
-      name: 'skirt',
-      shape: PartShape.Cylinder,
-      at: [0, th * 0.06 - length / 2, 0],
-      /*
-       * Wide enough at the waist to cover the top of the thigh.
-       *
-       * It was `tw * 0.44`, which is narrower than the hip joint plus the
-       * thigh's own radius — so a wedge of bare leg showed at each hip, above
-       * the hem and below the waist, on every skirted garment. Visible in any
-       * front-on capture and in none of the tests, because a skirt and a leg
-       * are in different segments and were only ever checked apart.
-       */
-      size: [tw * 0.66, length, tw * 0.8],
-      role: ColorRole.Secondary,
-      segments: 24,
-      open: true,
-      finish: Finish.Cloth,
-      scale: [1, 1, depthRatio(body) + 0.1],
-    })
+    parts.push(...skirtParts(body, options.seated))
   }
 
-  void td
   return parts
+}
+
+/**
+ * How far below the hip a skirt hangs, standing and seated.
+ *
+ * Seated is short enough to clear a stool: a full-length hem drops through the
+ * seat and the thighs the moment the hips come down and the legs fold forward,
+ * which is only ever visible from the table camera.
+ */
+const SKIRT_HEM_Y = -0.36
+const SEATED_SKIRT_HEM_Y = -0.16
+
+/**
+ * The starter skirt: a waistband that meets the body, and a flare below it.
+ *
+ * It was one open cone whose waist was half again as wide as the hips inside
+ * it, so there was a nine-centimetre annulus at the top you could see straight
+ * down through — onto the tops of two bare thighs and the inside of the skirt.
+ * From the front the bodice hid it; from anywhere above it was two crescents of
+ * skin at the hips, on every skirted garment in the game.
+ *
+ * Two sections rather than one, and the split is what makes it work. The upper
+ * takes the *body's* own front-to-back squash, so its top rim meets the torso
+ * all the way round with nothing to see down; the lower is nearly circular in
+ * plan, which is what a skirt is and what the single section could never be
+ * while its top had to meet an oval body. Their overlap hides both free edges.
+ *
+ * @param body The figure it hangs on.
+ * @param seated Shortens it to clear a stool.
+ * @returns The parts, in draw order.
+ */
+function skirtParts(body: BodyProportions, seated: boolean): Part[] {
+  const th = body.torsoHeight
+  const hipR = hipRadius(body)
+
+  const top = th * SKIRT_WAIST_Y
+  const hem = seated ? SEATED_SKIRT_HEM_Y : SKIRT_HEM_Y
+  const drop = top - hem
+
+  /** Where the upper section ends, and where the flare picks it up. */
+  const upperBottom = top - drop * 0.38
+  const flareTop = top - drop * 0.16
+
+  return [
+    {
+      name: 'skirt-waist',
+      shape: PartShape.Cylinder,
+      at: [0, (top + upperBottom) / 2, 0],
+      // Only just proud of the torso, and squashed exactly as the torso is, so
+      // the rim meets the body rather than standing off it.
+      size: [torsoRadiusAt(body, SKIRT_WAIST_Y) * 1.03, top - upperBottom, hipR * 1.06],
+      role: ColorRole.Secondary,
+      segments: 28,
+      open: true,
+      finish: Finish.Cloth,
+      scale: [1, 1, depthRatio(body)],
+    },
+    {
+      name: 'skirt',
+      shape: PartShape.Cylinder,
+      at: [0, (flareTop + hem) / 2, 0],
+      size: [hipR * 1.12, flareTop - hem, hipR * 1.62],
+      role: ColorRole.Secondary,
+      segments: 30,
+      open: true,
+      finish: Finish.Cloth,
+      // Nearly round in plan, which is what a skirt is. Held at the torso's own
+      // ratio it was a blade nineteen centimetres deep and twenty-six across.
+      scale: [1, 1, depthRatio(body) * 0.3 + 0.7],
+    },
+    /*
+     * The waistband, which seals the top rim and is worth having anyway.
+     *
+     * A free edge at the top of a shell is a hole however well it is fitted,
+     * and this is the one edge on the skirt a camera above the figure can find.
+     */
+    ringAround(
+      'skirt-band',
+      [0, top, 0],
+      torsoRadiusAt(body, SKIRT_WAIST_Y) * 1.03,
+      body.torsoWidth * 0.03,
+      ColorRole.Accent,
+      body,
+      { finish: Finish.Leather },
+    ),
+    /*
+     * And a piped hem, which seals the other one.
+     *
+     * A truncated cone cut off square reads as a lampshade — a hard polygonal
+     * edge is the single most obviously untailored thing a garment can end on.
+     */
+    {
+      name: 'skirt-hem',
+      shape: PartShape.Torus,
+      at: [0, hem, 0],
+      size: [hipR * 1.62, body.torsoWidth * 0.02, hipR * 1.62],
+      // The skirt's own cloth: as an accent it read as a hoop sewn into the
+      // hem rather than as a hem.
+      role: ColorRole.Secondary,
+      rotation: [Math.PI / 2, 0, 0],
+      segments: 30,
+      finish: Finish.Cloth,
+      scale: [1, depthRatio(body) * 0.3 + 0.7, 1],
+    },
+  ]
 }
 
 /* ------------------------------------------------------------------- legs */
@@ -461,16 +874,26 @@ function garmentParts(body: BodyProportions, options: BodyOptions): Part[] {
 export function thighParts(body: BodyProportions, options: BodyOptions): readonly Part[] {
   const role = options.hasSkirt ? ColorRole.Skin : ColorRole.Secondary
   const finish = options.hasSkirt ? Finish.Matte : Finish.Cloth
-  const radius = body.torsoWidth * THIGH_RADIUS
+  const radius = thighRadius(body)
+  const knee = shinRadius(body)
 
   return [
-    limb('thigh', [0, -body.thigh / 2, 0], [radius, body.thigh, radius * 0.78], role, {
+    limb('thigh', [0, -body.thigh / 2, 0], [radius, body.thigh, knee], role, {
       finish,
-      segments: 20,
+      segments: 28,
     }),
-    blob('knee', [0, -body.thigh, 0], [radius * 0.8, radius * 0.66, radius * 0.8], role, {
+    /*
+     * The knee, derived from the two radii it bridges rather than chosen.
+     *
+     * Every joint on the figure used to be a visible ring, because the parent's
+     * end radius, the joint sphere and the child's start radius were three
+     * separate decisions: the shin was wider than the thigh's knee end, so the
+     * leg stepped *out* at the knee, and the sphere meant to hide that was
+     * narrower than either of them.
+     */
+    blob('knee', [0, -body.thigh, 0], [knee * JOINT_SWELL, knee * 0.88, knee * JOINT_SWELL], role, {
       finish,
-      segments: 18,
+      segments: 22,
     }),
   ]
 }
@@ -486,30 +909,43 @@ export function thighParts(body: BodyProportions, options: BodyOptions): readonl
  */
 const ANKLE_FRACTION = 0.17
 
+/**
+ * How much narrower the ankle is than the knee.
+ *
+ * It was six tenths of the *shin's* radius under a calf almost a third wider
+ * again, which on a chunky figure reads as a stick pushed into a shoe. A
+ * stylised leg narrows at the ankle; it does not become wire.
+ */
+const ANKLE_TAPER = 0.72
+
 /** The shin, in the knee joint's frame. Tapers from knee to ankle. */
 export function shinParts(body: BodyProportions, options: BodyOptions): readonly Part[] {
   const role = options.hasSkirt ? ColorRole.Skin : ColorRole.Secondary
   const finish = options.hasSkirt ? Finish.Matte : Finish.Cloth
-  const radius = body.torsoWidth * SHIN_RADIUS
+  // Starts at exactly the radius the thigh finished on, so the knee is a swell
+  // rather than a step.
+  const knee = shinRadius(body)
+  const ankle = knee * ANKLE_TAPER
 
   // Overshoots the ankle a little so the foot has something to join into.
   const length = body.shin * (1 - ANKLE_FRACTION) + 0.02
 
   return [
-    limb('shin', [0, -length / 2, 0], [radius, length, radius * 0.68], role, {
+    limb('shin', [0, -length / 2, 0], [knee, length, ankle], role, {
       finish,
-      segments: 20,
+      segments: 28,
     }),
     // The calf, which is what makes a leg read as a leg rather than a pipe.
     blob(
       'calf',
-      [0, -length * 0.36, -radius * 0.18],
-      [radius * 0.78, length * 0.3, radius * 0.74],
+      [0, -length * 0.34, -knee * 0.2],
+      [knee * 0.84, length * 0.3, knee * 0.82],
       role,
-      { finish },
+      { finish, segments: 20 },
     ),
-    blob('ankle', [0, -length + 0.014, 0], [radius * 0.6, radius * 0.44, radius * 0.6], ColorRole.Skin, {
+    blob('ankle', [0, -length + 0.014, 0], [ankle * 1.04, ankle * 0.8, ankle * 1.04], ColorRole.Skin, {
       finish: Finish.Matte,
+      segments: 20,
     }),
   ]
 }
@@ -533,143 +969,317 @@ export function footParts(body: BodyProportions): readonly Part[] {
    * and both shoes ended up inside the footrest.
    */
   const floor = 0
-  const radius = body.torsoWidth * SHIN_RADIUS
+  const radius = shinRadius(body)
 
   return [
     blob(
       'foot',
-      [0, floor + radius * 0.5, radius * 0.6],
-      [radius * 0.66, radius * 0.4, radius * 1.3],
+      [0, floor + radius * 0.52, radius * 0.62],
+      [radius * 0.78, radius * 0.46, radius * 1.5],
       ColorRole.Shoes,
-      { finish: Finish.Leather },
+      { finish: Finish.Leather, segments: 22 },
     ),
     blob(
       'heel-cup',
-      [0, floor + radius * 0.55, -radius * 0.24],
-      [radius * 0.58, radius * 0.47, radius * 0.52],
+      [0, floor + radius * 0.58, -radius * 0.26],
+      [radius * 0.7, radius * 0.54, radius * 0.62],
       ColorRole.Shoes,
-      { finish: Finish.Leather },
+      { finish: Finish.Leather, segments: 20 },
     ),
     /*
-     * The sole, kept inside the foot above it.
+     * The sole, rounded rather than a box.
      *
-     * A box wider and longer than the shape it supports is a plinth, and that
-     * is what it looked like under the dark shoes: a slab of black sticking
-     * out behind each heel.
+     * A rectangle inscribed in an ellipse still shows its corners, which is
+     * what this was: a slab whose four corners stuck out past a rounded shoe in
+     * every direction and read, from above, as a display plinth under each
+     * foot. Its extents were inside the upper's and it still looked wrong,
+     * because the shape was wrong rather than the size.
      */
-    {
-      name: 'foot-sole',
-      shape: PartShape.Box,
-      at: [0, floor + 0.012, radius * 0.42],
-      size: [radius * 1.1, 0.024, radius * 2.1],
-      role: ColorRole.Shoes,
-      finish: Finish.Leather,
-    },
+    blob(
+      'foot-sole',
+      [0, floor + radius * 0.12, radius * 0.5],
+      [radius * 0.74, radius * 0.16, radius * 1.42],
+      ColorRole.Shoes,
+      { finish: Finish.Leather, segments: 22 },
+    ),
   ]
 }
 
 /* ------------------------------------------------------------------- arms */
 
-/** The upper arm, in the shoulder joint's frame. */
-export function upperArmParts(body: BodyProportions, options: BodyOptions): readonly Part[] {
-  // A sleeveless dress, or a gown worn over the top, leaves the arm bare.
-  const sleeved = !options.bareArms && options.garment !== Garment.CocktailDress
-  const role = sleeved ? ColorRole.Primary : ColorRole.Skin
-  const finish = sleeved ? Finish.Cloth : Finish.Matte
-  const radius = armRadius(body)
+/**
+ * How far down the upper arm each garment's sleeve reaches.
+ *
+ * `null` is bare — a cocktail dress, or anything under a gown. `1` runs on into
+ * the forearm. A tee's sleeve stopping at the elbow was what made the broad
+ * build read as wearing a puffed blouse: a short sleeve ends on the *arm*, well
+ * above the joint, and it is the length of the sleeve rather than the width of
+ * the arm that says which garment it is.
+ */
+function sleeveReach(options: BodyOptions): number | null {
+  if (sleevelessGarment(options)) return null
+  if (sleevedToWrist(options)) return 1
 
-  return [
-    /*
-     * The deltoid, which the rig never had.
-     *
-     * An upper arm is a cylinder, so left alone its flat top cap sits in the
-     * open at the shoulder joint — visible as a hard disc under the shoulder in
-     * any front view. This caps it, and it lives on the *arm* rather than the
-     * torso deliberately: a cap on the torso stops covering the joint the
-     * moment the arm swings, which is every frame the figure is walking.
-     */
-    /*
-     * A cap on the arm, not a pauldron over it.
-     *
-     * At 14% wider than the arm it read as a shoulder pad with a hard seam
-     * where it met the sleeve — a mushroom. It only has to cover the
-     * cylinder's own flat top, so it is the arm's width and taller than it is
-     * wide.
-     */
-    blob(
-      'deltoid',
-      [0, -radius * 0.34, 0],
-      [radius * 1.01, radius * 1.3, radius * 1.01],
-      role,
-      { finish, segments: 20 },
-    ),
-    limb('upper-arm', [0, -body.upperArm / 2, 0], [radius, body.upperArm, radius * 0.82], role, {
-      finish,
-      segments: 20,
-    }),
-    blob('elbow', [0, -body.upperArm, 0], [radius * 0.8, radius * 0.72, radius * 0.8], role, {
-      finish,
-    }),
-  ]
+  return options.garment === Garment.ShirtAndSkirt ? 0.62 : 0.5
 }
 
-/** The forearm, in the elbow joint's frame. */
+/**
+ * The upper arm, in the shoulder joint's frame.
+ *
+ * One capsule, where it used to be a cap, a tapered cylinder and a joint ball.
+ *
+ * The three-piece version had the defect the whole figure kept producing: a
+ * hemisphere capping a cylinder of the *same* radius meets it tangentially, and
+ * two low-poly surfaces meeting tangentially have a polygon boundary that
+ * staggers — a dotted, stair-stepped ring round the arm that reads as a scar.
+ * Widening the cap steepens the crossing and fixes the stagger by making the
+ * cap a mushroom, which is what the previous attempt did and what it was
+ * rejected for.
+ *
+ * A capsule has no boundary to stagger, because there is nothing for it to be a
+ * boundary between. It also caps the shoulder socket for free, which is the
+ * entire job the deltoid was added to do.
+ */
+export function upperArmParts(body: BodyProportions, options: BodyOptions): readonly Part[] {
+  const radius = armRadius(body)
+  const reach = sleeveReach(options)
+
+  const parts: Part[] = [
+    {
+      name: 'upper-arm',
+      shape: PartShape.Capsule,
+      // Its top hemisphere sits in the shoulder socket and its bottom one is
+      // the elbow, so the straight section is what is left between them.
+      at: [0, -body.upperArm / 2, 0],
+      size: [radius, Math.max(0.001, body.upperArm - radius * 1.1), radius],
+      // The arm itself is always skin; a sleeve is a garment drawn over it.
+      role: ColorRole.Skin,
+      finish: Finish.Matte,
+      segments: 26,
+    },
+  ]
+
+  if (reach !== null) {
+    /*
+     * The sleeve as its own shell over the arm, ending on a flat rim.
+     *
+     * This is the last place on the figure where two low-poly surfaces of very
+     * similar radius met at a shallow angle. Colouring the top half of the arm
+     * one way and the bottom half another meant the boundary was wherever a
+     * sleeve mesh happened to intersect an arm mesh, and it staggered — a
+     * dotted ring round each arm that read as a torn sleeve. Raising segment
+     * counts only ever made it finer.
+     *
+     * A shell standing a few millimetres proud ends on its own cap, which is a
+     * crisp circle at any tessellation, and it is what real clothing does at
+     * exactly this seam for exactly this reason.
+     */
+    const sleeve = radius * 1.04
+    const hemY = -body.upperArm * reach
+
+    /*
+     * A capsule, not a cylinder, and the shoulder is why.
+     *
+     * A cylinder's flat top cap sits in the open above the joint — the arms
+     * came out with a hard square plate on each shoulder, which read as armour.
+     * The torso's shoulder mass cannot hide it: at the socket's own x that
+     * ellipsoid has narrowed almost to nothing, so there is nothing there to
+     * bury a cap in.
+     */
+    parts.push({
+      name: 'sleeve',
+      shape: PartShape.Capsule,
+      at: [0, hemY / 2, 0],
+      size: [sleeve, Math.max(0.001, -hemY - sleeve * 1.05), sleeve],
+      role: ColorRole.Primary,
+      finish: Finish.Cloth,
+      segments: 26,
+    })
+
+    // A rolled hem where a short sleeve ends. A long one ends at the cuff.
+    if (reach < 1) {
+      parts.push({
+        name: 'sleeve-hem',
+        shape: PartShape.Torus,
+        at: [0, hemY + sleeve * 0.52, 0],
+        size: [sleeve * 0.99, radius * 0.1, sleeve * 0.99],
+        // The garment's own cloth. As `Trim` it was a shade lighter than the
+        // sleeve, which on a dark tee is a bright band round each arm.
+        role: ColorRole.Primary,
+        rotation: [Math.PI / 2, 0, 0],
+        segments: 26,
+        finish: Finish.Cloth,
+      })
+    }
+  }
+
+  return parts
+}
+
+/** Whether the garment leaves the arm bare from the shoulder down. */
+function sleevelessGarment(options: BodyOptions): boolean {
+  return options.bareArms || options.garment === Garment.CocktailDress
+}
+
+/** Whether the garment's sleeve runs all the way to the wrist. */
+function sleevedToWrist(options: BodyOptions): boolean {
+  return (
+    !options.bareArms &&
+    (options.garment === Garment.Suit || options.garment === Garment.Scrubs)
+  )
+}
+
+/** The forearm, in the elbow joint's frame. A capsule, for the arm's reasons. */
 export function forearmParts(body: BodyProportions, options: BodyOptions): readonly Part[] {
-  const sleeved =
-    !options.bareArms && (options.garment === Garment.Suit || options.garment === Garment.Scrubs)
-  const role = sleeved ? ColorRole.Primary : ColorRole.Skin
+  const sleeved = sleevedToWrist(options)
   const radius = forearmRadius(body)
 
-  return [
-    limb('forearm', [0, -body.forearm / 2, 0], [radius, body.forearm, radius * 0.78], role, {
-      finish: sleeved ? Finish.Cloth : Finish.Matte,
-      segments: 20,
-    }),
-    // The cuff, where a sleeve ends and the wrist begins.
-    limb(
-      'cuff',
-      [0, -body.forearm + radius * 0.3, 0],
-      [radius * 0.9, radius * 0.4, radius * 0.9],
-      ColorRole.Shirt,
-      { finish: Finish.Cloth },
-    ),
+  const parts: Part[] = [
+    {
+      name: 'forearm',
+      shape: PartShape.Capsule,
+      at: [0, -body.forearm / 2, 0],
+      size: [radius, Math.max(0.001, body.forearm - radius * 1.1), radius],
+      role: ColorRole.Skin,
+      finish: Finish.Matte,
+      segments: 26,
+    },
   ]
+
+  /*
+   * A long sleeve and the cuff that ends it, and only where there is a shirt.
+   *
+   * A tee and a cocktail dress were both rendering a band at the wrist, which
+   * is a cuff on a bare arm — the same class of error as the shirt panel on a
+   * tee, and just as easy to miss because a pale ring on a pale wrist reads as
+   * a highlight until you look for it.
+   */
+  if (sleeved) {
+    /*
+     * Straight-sided, and wider than the arm the whole way down.
+     *
+     * This tapered toward a "wrist" that was a fraction of the forearm's own
+     * radius — arithmetic left over from when the forearm was a tapered
+     * cylinder. Against the capsule that replaced it the sleeve was narrower
+     * than the arm below the elbow, so the bare arm came *through* the cloth
+     * and the boundary between them was a staggered, dotted ring running down
+     * both forearms. It read as a torn sleeve, which is exactly the defect the
+     * sleeve was made a separate shell to avoid.
+     */
+    const length = body.forearm - radius * 0.35
+
+    parts.push(
+      limb('sleeve', [0, -length / 2, 0], [radius * 1.08, length, radius * 1.08], ColorRole.Primary, {
+        finish: Finish.Cloth,
+        segments: 26,
+      }),
+      limb(
+        'cuff',
+        [0, -length + radius * 0.16, 0],
+        [radius * 1.17, radius * 0.42, radius * 1.17],
+        ColorRole.Shirt,
+        { finish: Finish.Cloth, segments: 26 },
+      ),
+    )
+  }
+
+  return parts
 }
 
 /**
  * The hand, in the wrist's frame.
  *
- * Two fingers rather than five, extended, because the blackjack hand signals
- * are a double finger-tap and a flat wave and those are the only shapes a hand
- * on this character ever has to make. Sized off the forearm it hangs from
- * rather than typed in, so it grows with the build like everything else.
+ * Two fingers rather than five, because the blackjack hand signals are a double
+ * finger-tap and a flat wave and those are the only shapes a hand on this
+ * character ever has to make. Sized off the forearm it hangs from rather than
+ * typed in, so it grows with the build like everything else.
+ *
+ * Closed and curled, not splayed. Two fat fingers held apart and a thumb stuck
+ * out sideways reads as a three-fingered paw at any distance; a hand at rest
+ * hangs with the fingers together and slightly hooked, and that is one rotation
+ * and a smaller gap.
  */
 export function handParts(side: 1 | -1, body: BodyProportions): readonly Part[] {
-  const radius = forearmRadius(body)
+  const radius = handRadius(body)
 
   return [
     blob(
       'palm',
-      [0, -radius * 0.78, radius * 0.05],
-      [radius * 0.74, radius * 0.84, radius * 0.44],
+      [0, -radius * 0.86, radius * 0.06],
+      [radius * 0.92, radius * 1.0, radius * 0.58],
       ColorRole.Skin,
+      { segments: 20 },
     ),
-    ...[-radius * 0.26, radius * 0.26].map((offset, index) =>
-      blob(
-        `finger-${index}`,
-        [offset, -radius * 1.42, radius * 0.1],
-        [radius * 0.2, radius * 0.44, radius * 0.22],
-        ColorRole.Skin,
-      ),
+    ...[-radius * 0.27, radius * 0.27].map((offset, index) =>
+      /*
+       * Capsules, curled forward. A hanging cylinder is a rectangle in
+       * silhouette, and a finger is the smallest thing on the figure that has
+       * to read as rounded.
+       */
+      ({
+        name: `finger-${index}`,
+        shape: PartShape.Capsule,
+        at: [offset, -radius * 1.62, radius * 0.22] as Vec3,
+        size: [radius * 0.3, radius * 0.5, radius * 0.3] as Vec3,
+        rotation: [0.42, 0, 0] as Vec3,
+        role: ColorRole.Skin,
+        finish: Finish.Matte,
+        segments: 12,
+      }),
     ),
-    blob(
-      'thumb',
-      [side * -radius * 0.6, -radius * 1.05, radius * 0.24],
-      [radius * 0.24, radius * 0.4, radius * 0.26],
-      ColorRole.Skin,
-      { rotation: [0, 0, side * 0.5] },
-    ),
+    {
+      name: 'thumb',
+      shape: PartShape.Capsule,
+      at: [side * -radius * 0.78, -radius * 1.12, radius * 0.3] as Vec3,
+      size: [radius * 0.34, radius * 0.34, radius * 0.34] as Vec3,
+      rotation: [0.3, 0, side * 0.55] as Vec3,
+      role: ColorRole.Skin,
+      finish: Finish.Matte,
+      segments: 12,
+    },
   ]
+}
+
+/**
+ * Where a ring sits, in the hand's own frame.
+ *
+ * Exported because two places need it and they disagreed. `anchorFor` put the
+ * finger slot on the arm's centre line and `CasinoCharacter` nudged it with a
+ * hand-typed triple, both of them written against a hand a third smaller than
+ * the one the restyle produced — so the signet ring rendered as a white disc in
+ * the middle of the palm and read as a coin being held. It is a fraction of the
+ * hand now, like everything else the hand carries.
+ */
+export function ringSeat(body: BodyProportions): Vec3 {
+  const radius = handRadius(body)
+
+  // On the outer of the two fingers, a little above its tip.
+  return [radius * 0.27, -radius * 1.5, radius * 0.36]
+}
+
+/**
+ * Where a held item's grip sits, in the hand's own frame.
+ *
+ * Inside the curl of the fingers rather than beside them. The cane's knob used
+ * to sit next to an open hand, which reads as a stick balanced against someone
+ * rather than carried by them.
+ */
+export function gripSeat(body: BodyProportions): Vec3 {
+  const radius = handRadius(body)
+
+  return [0, -radius * 1.1, radius * 0.42]
+}
+
+/**
+ * The hand's own scale: a little narrower than the wrist it hangs off.
+ *
+ * It was the wrist times the *ankle's* taper, which is a number about legs and
+ * was three quarters — so the palm came out a third narrower than the arm above
+ * it and the whole hand read as a claw on the end of a sleeve. A hand is about
+ * as wide as the wrist it is attached to.
+ */
+export function handRadius(body: BodyProportions): number {
+  return forearmRadius(body) * 0.88
 }
 
 /* --------------------------------------------------------- the whole thing */

@@ -121,9 +121,18 @@ function Geometry({ part }: { part: Part }) {
      * only one, and an ellipsoid is what most of this character is made of —
      * a skull, a shoulder, a bun, a toe cap. The scale is applied on the mesh
      * below, where a part's own `scale` is applied too.
+     *
+     * The height rings used to be six tenths of the width segments, which is
+     * the usual saving and is wrong for exactly one surface on this figure. The
+     * hairline is where the hair shell breaks the surface of the skull, the two
+     * meet at a very shallow angle, and it runs *horizontally* across the
+     * forehead — so it is the height rings it is cut against, and at six tenths
+     * of forty-eight that is a ring every six degrees. It came out as a visible
+     * sawtooth on every style. Spheres are the cheapest geometry here; this is
+     * not where to save triangles.
      */
     case PartShape.Sphere:
-      return <sphereGeometry args={[1, segments, Math.max(6, Math.round(segments * 0.6))]} />
+      return <sphereGeometry args={[1, segments, Math.max(6, Math.round(segments * 0.9))]} />
 
     case PartShape.Cylinder:
       return <cylinderGeometry args={[a, c, b, segments, 1, part.open ?? false]} />

@@ -3,6 +3,7 @@ import { anchorFor } from '../character/anchors'
 import { Garment, PLAYER_GARMENTS } from '../character/appearance'
 import { DEFAULT_BODY_OPTIONS, thighParts, torsoParts } from '../character/bodyParts'
 import { CATALOG, ItemShape, Slot } from '../character/catalog'
+import { EYE_Y } from '../character/face'
 import { itemParts } from '../character/itemParts'
 import {
   fightingSurfaces,
@@ -14,6 +15,9 @@ import {
 import { metricsFor, PROPORTIONS, Silhouette } from '../character/proportions'
 
 const SILHOUETTES = Object.values(Silhouette)
+
+/** How far above the eye a brim has to stop, as a fraction of head height. */
+const BROW_CLEARANCE = 0.06
 
 describe('itemParts', () => {
   /*
@@ -120,19 +124,34 @@ describe('itemParts', () => {
   })
 
   /*
-   * A hat sits above the crown, not around the ears.
+   * A hat sits above the eyes, not over them.
    *
-   * The head anchor is the top of the skull, so anything reaching well below
-   * the origin is a hat pulled down over a face.
+   * The head anchor is the top of the skull, so anything reaching down past the
+   * brow is a hat pulled over a face.
+   *
+   * Measured against the brow rather than against a flat -0.03, which is what
+   * it was and which was a number written for a flat brim. A fedora's brim
+   * genuinely dips at the front — that is what separates it from a pork pie —
+   * and a threshold three centimetres under the crown of a thirty-centimetre
+   * head condemns the shape for being the right shape. The eye line is the
+   * thing anyone actually cares about, and it is derivable.
    */
-  it('sits headwear on top of the head', () => {
-    const body = PROPORTIONS[Silhouette.Androgynous]
+  it('sits headwear above the eyes', () => {
+    for (const silhouette of SILHOUETTES) {
+      const body = PROPORTIONS[silhouette]
+      // `EYE_Y` is measured from the head's centre; the hat's frame is the crown.
+      const browBelowCrown = -body.headHeight * (0.5 + EYE_Y + BROW_CLEARANCE)
 
-    for (const item of CATALOG.filter((entry) => entry.shape === ItemShape.Fedora)) {
-      const bounds = listBounds(itemParts(item, body))
-      if (!bounds) continue
+      for (const item of CATALOG.filter((entry) => entry.shape === ItemShape.Fedora)) {
+        const bounds = listBounds(itemParts(item, body))
+        if (!bounds) continue
 
-      expect(bounds.minY, `${item.name} is pulled down over the face`).toBeGreaterThan(-0.03)
+        expect(
+          bounds.minY,
+          `${item.name} on ${silhouette} is pulled down over the face`,
+        ).toBeGreaterThan(browBelowCrown)
+        expect(bounds.minY, `${item.name} on ${silhouette} floats above the head`).toBeLessThan(0)
+      }
     }
   })
 
