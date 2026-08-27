@@ -27,7 +27,7 @@ import {
   TABLE_TOP_Y,
 } from '../tableLayout'
 import { ownSeat } from '../../world/seating'
-import { DRAW_INTERVAL_MS, FLIP_DURATION_MS } from '../revealTimeline'
+import { FLIP_DURATION_MS, openingDealAt } from '../revealTimeline'
 import { getFeltTexture } from '../tableTexture'
 import { ChipStack } from './ChipStack'
 import { ChipStash } from './ChipStash'
@@ -45,8 +45,6 @@ import { PlayingCard } from './PlayingCard'
 const NO_BETS: Readonly<Record<string, number>> = {}
 const NO_SEATS: Readonly<Record<number, string>> = {}
 
-/** Every opening card a full beat after the last — the reveal's own pace. */
-const DEAL_STAGGER = DRAW_INTERVAL_MS / 1000
 const HIT_DELAY = 0.06
 
 /** Cards turn as they are dealt; only the hole card gets the slow treatment. */
@@ -65,9 +63,16 @@ function createTableShape(): Shape {
   return shape
 }
 
-function dealDelay(index: number, isDealer: boolean): number {
-  if (index >= 2) return HIT_DELAY
-  return index * DEAL_STAGGER * 2 + (isDealer ? DEAL_STAGGER : 0)
+/**
+ * Seconds a card holds at the shoe before dealing.
+ *
+ * The opening two circuits come from `openingDealAt`, so a shared table deals
+ * one card to the whole table at a time; anything later is a hit the player
+ * just asked for, which follows the gesture rather than a schedule.
+ */
+function dealDelay(cardIndex: number, seatIndex: number, seatCount: number, isDealer: boolean): number {
+  if (cardIndex >= 2) return HIT_DELAY
+  return openingDealAt(cardIndex, seatIndex, seatCount, isDealer) / 1000
 }
 
 /** The dealer's chip rack, with chips standing on edge in their troughs. */
@@ -269,7 +274,7 @@ export function BlackjackTable() {
             // Turned slowly and deliberately; the rest of the deal stays brisk.
             flipDurationMs={index === 1 ? HOLE_FLIP_MS : DEAL_FLIP_MS}
             position={isClearing ? DISCARD_POSITION : [at.x, at.y, at.z]}
-            delay={dealDelay(index, true)}
+            delay={dealDelay(index, 0, seatCount, true)}
             seatIndex={index}
           />
         )
@@ -349,7 +354,7 @@ export function BlackjackTable() {
                   faceUp
                   flipDurationMs={DEAL_FLIP_MS}
                   position={isClearing ? DISCARD_POSITION : [spot.x, spot.y, spot.z]}
-                  delay={dealDelay(index, false)}
+                  delay={dealDelay(index, seatIndex, seatCount, false)}
                   seatIndex={index + 1}
                 />
               )

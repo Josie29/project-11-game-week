@@ -1,5 +1,61 @@
 import { describe, expect, it } from 'vitest'
-import { DRAW_INTERVAL_MS, FLIP_DURATION_MS, revealTimeline } from '../scenes/revealTimeline'
+import {
+  DRAW_INTERVAL_MS,
+  FLIP_DURATION_MS,
+  openingDealAt,
+  revealTimeline,
+} from '../scenes/revealTimeline'
+
+describe('openingDealAt', () => {
+  /*
+   * At a two-player table, both players' first cards landed in unison: the
+   * delay was computed from the card index alone, so every seat's card 0
+   * shared the same moment. A table deals one card at a time — first base
+   * round to the dealer, then the second circuit the same way.
+   */
+  it('deals a shared table one card at a time, first base round to the dealer', () => {
+    const order = [
+      openingDealAt(0, 0, 2, false),
+      openingDealAt(0, 1, 2, false),
+      openingDealAt(0, 0, 2, true),
+      openingDealAt(1, 0, 2, false),
+      openingDealAt(1, 1, 2, false),
+      openingDealAt(1, 0, 2, true),
+    ]
+
+    expect(order).toEqual([0, 1, 2, 3, 4, 5].map((slot) => slot * DRAW_INTERVAL_MS))
+  })
+
+  // The solo cadence the captures were tuned to: player, dealer, player,
+  // dealer, one interval apart — the last card leaves the shoe at 3s, which is
+  // what the 4500ms settle in `blackjack-dealt` and the walkthrough's deal
+  // wait were sized against.
+  it('keeps the solo deal on the same clock as before', () => {
+    expect(openingDealAt(0, 0, 1, false)).toBe(0)
+    expect(openingDealAt(0, 0, 1, true)).toBe(DRAW_INTERVAL_MS)
+    expect(openingDealAt(1, 0, 1, false)).toBe(2 * DRAW_INTERVAL_MS)
+    expect(openingDealAt(1, 0, 1, true)).toBe(3 * DRAW_INTERVAL_MS)
+  })
+
+  // No two opening cards may ever share a moment, at any table size — one
+  // shared slot and two cards fly from the shoe in unison again.
+  it('gives every opening card its own moment, at every table size', () => {
+    for (let seatCount = 1; seatCount <= 5; seatCount++) {
+      const moments: number[] = []
+      for (const cardIndex of [0, 1]) {
+        for (let seat = 0; seat < seatCount; seat++) {
+          moments.push(openingDealAt(cardIndex, seat, seatCount, false))
+        }
+        moments.push(openingDealAt(cardIndex, 0, seatCount, true))
+      }
+
+      expect(new Set(moments).size, `${seatCount} seats`).toBe(moments.length)
+      // And in the order pushed above — seat-major, dealer last — time only
+      // ever moves forward, one interval per card.
+      moments.forEach((moment, index) => expect(moment).toBe(index * DRAW_INTERVAL_MS))
+    }
+  })
+})
 
 describe('revealTimeline', () => {
   // The whole point of the sequence. If a drawn card could land before the hole
