@@ -27,6 +27,22 @@ export const SIDEWALK_HEIGHT = 0.16
 
 export const BUILDING_WIDTH = 7.2
 export const BUILDING_DEPTH = 7
+
+/**
+ * The marquee band across a signed tower's facade.
+ *
+ * These were literals inside `Building.tsx`, which was fine while the marquee
+ * was the only thing on that stretch of wall. The Golden Ace's porte-cochere
+ * has to fit *under* it, so the two now have to agree — and a canopy sized
+ * against a height copied into a second file is the disagreement this project
+ * keeps paying for. `casinoFrontLayout.ts` derives its clearance from
+ * `MARQUEE_BOTTOM_Y`.
+ */
+export const MARQUEE_CENTER_Y = 4.4
+export const MARQUEE_WIDTH = BUILDING_DEPTH * 0.98
+export const MARQUEE_HEIGHT = BUILDING_DEPTH * 0.245
+export const MARQUEE_BOTTOM_Y = MARQUEE_CENTER_Y - MARQUEE_HEIGHT / 2
+export const MARQUEE_TOP_Y = MARQUEE_CENTER_Y + MARQUEE_HEIGHT / 2
 export const BUILDING_CENTER_X = FACADE_X + BUILDING_WIDTH / 2
 
 /**

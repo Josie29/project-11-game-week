@@ -35,7 +35,7 @@ import { Building } from './components/Building'
 import { Celestial } from './components/Celestial'
 import { ClinicFront } from './components/ClinicFront'
 import { ShopFront } from './components/ShopFront'
-import { VenueDoor } from './components/VenueDoor'
+import { CasinoFront } from './components/CasinoFront'
 import { Player } from './components/Player'
 import { PalmTree, StreetLamp } from './components/StreetProps'
 import { StreetEnd } from './components/StreetEnd'
@@ -392,7 +392,7 @@ export function Strip() {
         if (venue.kind === VenueKind.Clinic) {
           return <ClinicFront key={venue.id} venue={venue} neonLevel={neonLevel} />
         }
-        return <VenueDoor key={venue.id} casino={venue} neonLevel={neonLevel} />
+        return <CasinoFront key={venue.id} casino={venue} neonLevel={neonLevel} />
       })}
 
       <Player />
