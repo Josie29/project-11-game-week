@@ -92,6 +92,7 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
    * them here. Alone, `shared` is false and this reduces to exactly what it was.
    */
   const table = useSharedBlackjack()
+  const mySeatIndex = useBlackjackStore((state) => state.mySeatIndex)
   const placeWager = table.wager
   const takeAction = table.act
   const nextRound = useBlackjackStore((state) => state.nextRound)
@@ -139,16 +140,32 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
    * single seat. That seat is the first one while play is solo; a second player
    * would bring their own index rather than a second panel.
    */
-  const hands = handsOf(game)
-  const activeHandIndex = seatAt(game, 0)?.activeHandIndex ?? 0
+  /*
+   * This player's own hands — and nobody else's.
+   *
+   * `handsOf` defaults to seat 0, which is right alone and wrong the moment
+   * somebody sits down beside you: a spectator was shown the first player's
+   * cards under the label "You", complete with their total. A player watching a
+   * round they did not bet into has no hands, and the readout should say so.
+   */
+  const hands = table.spectating ? [] : handsOf(game, Math.max(0, mySeatIndex))
+  /*
+   * Everything below reads *this player's* seat rather than the first one.
+   *
+   * Every one of these defaulted to seat 0, which is this player alone and
+   * somebody else entirely once a second person sits down — their stake, their
+   * winnings, and whether *they* may split shown as yours.
+   */
+  const mySeat = Math.max(0, mySeatIndex)
+  const activeHandIndex = seatAt(game, mySeat)?.activeHandIndex ?? 0
 
-  const staked = totalStaked(game)
+  const staked = table.spectating ? 0 : totalStaked(game, mySeat)
   /** What the round did to the bankroll, stake excluded. See `netLabel`. */
-  const net = totalPaid(game) - staked
+  const net = (table.spectating ? 0 : totalPaid(game, mySeat)) - staked
 
   const current = activeHand(game)
-  const canDoubleNow = isPlayerTurn && canDouble(game) && bankroll >= (current?.bet ?? 0)
-  const canSplitNow = isPlayerTurn && canSplit(game) && bankroll >= (current?.bet ?? 0)
+  const canDoubleNow = isPlayerTurn && canDouble(game, mySeat) && bankroll >= (current?.bet ?? 0)
+  const canSplitNow = isPlayerTurn && canSplit(game, mySeat) && bankroll >= (current?.bet ?? 0)
   const isBroke = bankroll <= 0 && isBetting
 
   function handleLeave(): void {
