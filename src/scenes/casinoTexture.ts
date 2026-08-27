@@ -282,6 +282,23 @@ function drawWaterSheet(): Texture {
   const random = seeded(0x9a05)
 
   /*
+   * Anything that does not run the full height of the canvas is drawn twice,
+   * the second time translated up by one tile, so whatever crosses the bottom
+   * edge arrives back at the top rather than being cut off. *Translated*, not
+   * merely offset: a canvas gradient lives in user space, so a second
+   * `fillRect` at shifted coordinates samples the gradient outside its range
+   * and paints nothing — which is exactly the bug the first version had, and
+   * why the cascade wore a hard horizontal seam per tile.
+   */
+  const wrappedVertically = (draw: () => void) => {
+    draw()
+    ctx.save()
+    ctx.translate(0, -WATER_H)
+    draw()
+    ctx.restore()
+  }
+
+  /*
    * A body first, then the streaks on it.
    *
    * At a tenth of an alpha the first version read as rain in front of a wall
@@ -289,8 +306,56 @@ function drawWaterSheet(): Texture {
    * straight through it. Falling water is mostly opaque and only the *surface*
    * of it is streaky.
    */
-  ctx.fillStyle = 'rgba(158, 206, 228, 0.34)'
+  ctx.fillStyle = 'rgba(158, 206, 228, 0.3)'
   ctx.fillRect(0, 0, WATER_W, WATER_H)
+
+  /*
+   * Broad density columns, full height so they tile vertically by
+   * construction. A real cascade is not uniformly thick across its width — it
+   * gathers into heavier and lighter falls — and this unevenness is most of
+   * what stops the sheet reading as wallpaper. Soft-edged via a horizontal
+   * gradient; a column crossing the right edge gets a wrapped copy on the left.
+   */
+  for (let column = 0; column < 10; column++) {
+    const x = random() * WATER_W
+    const width = 8 + random() * 20
+    const alpha = 0.06 + random() * 0.14
+
+    const soft = ctx.createLinearGradient(x, 0, x + width, 0)
+    soft.addColorStop(0, 'rgba(190, 226, 244, 0)')
+    soft.addColorStop(0.5, `rgba(190, 226, 244, ${alpha.toFixed(3)})`)
+    soft.addColorStop(1, 'rgba(190, 226, 244, 0)')
+
+    ctx.fillStyle = soft
+    ctx.fillRect(x, 0, width, WATER_H)
+    ctx.save()
+    ctx.translate(-WATER_W, 0)
+    ctx.fillRect(x, 0, width, WATER_H)
+    ctx.restore()
+  }
+
+  /*
+   * Ropes: a dozen bright full-height cords inside the heavier falls. These
+   * are the individual strands of water the eye actually tracks moving; the
+   * fine streaks below them are only shimmer on the surface.
+   */
+  for (let rope = 0; rope < 12; rope++) {
+    const x = random() * WATER_W
+    const width = 2.5 + random() * 5
+    const alpha = 0.16 + random() * 0.26
+
+    const cord = ctx.createLinearGradient(x, 0, x + width, 0)
+    cord.addColorStop(0, 'rgba(226, 246, 255, 0)')
+    cord.addColorStop(0.5, `rgba(226, 246, 255, ${alpha.toFixed(3)})`)
+    cord.addColorStop(1, 'rgba(226, 246, 255, 0)')
+
+    ctx.fillStyle = cord
+    ctx.fillRect(x, 0, width, WATER_H)
+    ctx.save()
+    ctx.translate(-WATER_W, 0)
+    ctx.fillRect(x, 0, width, WATER_H)
+    ctx.restore()
+  }
 
   for (let streak = 0; streak < 190; streak++) {
     const x = random() * WATER_W
@@ -305,10 +370,70 @@ function drawWaterSheet(): Texture {
     fade.addColorStop(1, 'rgba(255, 255, 255, 0)')
 
     ctx.fillStyle = fade
-    // Drawn twice, once wrapped past the top edge, so a streak crossing the
-    // seam arrives back where it left rather than being cut off.
-    ctx.fillRect(x, top, width, length)
-    ctx.fillRect(x, top - WATER_H, width, length)
+    wrappedVertically(() => ctx.fillRect(x, top, width, length))
+  }
+
+  /*
+   * A few dozen glints: very thin, very bright, and short. These are the
+   * catchlights — the one part of the sheet that should sparkle rather than
+   * pour, so they are the only strands allowed near full white.
+   */
+  for (let glint = 0; glint < 45; glint++) {
+    const x = random() * WATER_W
+    const width = 0.5 + random() * 1.1
+    const top = random() * WATER_H
+    const length = 24 + random() * 90
+    const alpha = 0.4 + random() * 0.4
+
+    const flash = ctx.createLinearGradient(0, top, 0, top + length)
+    flash.addColorStop(0, 'rgba(255, 255, 255, 0)')
+    flash.addColorStop(0.4, `rgba(244, 252, 255, ${alpha.toFixed(3)})`)
+    flash.addColorStop(1, 'rgba(255, 255, 255, 0)')
+
+    ctx.fillStyle = flash
+    wrappedVertically(() => ctx.fillRect(x, top, width, length))
+  }
+
+  return finish(ctx)
+}
+
+/* ------------------------------------------------------------------- foam */
+
+const FOAM_W = 256
+const FOAM_H = 64
+
+/**
+ * The churn where the cascade meets the pool, as a band of soft overlapping
+ * puffs on transparent black.
+ *
+ * Tiles horizontally so one drawing covers the whole waterline; the puffs sit
+ * clear of the top and bottom edges, so the band needs no vertical wrap and
+ * fades out on its own. Drawn near-white for the same reason as the sheet —
+ * the teal is the light's job, not the texture's.
+ */
+function drawFoamBand(): Texture {
+  const ctx = context(FOAM_W, FOAM_H)
+  const random = seeded(0x50f4)
+
+  for (let blob = 0; blob < 70; blob++) {
+    const x = random() * FOAM_W
+    const y = FOAM_H * (0.3 + random() * 0.4)
+    const radius = 4 + random() * 10
+    const alpha = 0.14 + random() * 0.3
+
+    const puff = ctx.createRadialGradient(x, y, 0, x, y, radius)
+    puff.addColorStop(0, `rgba(234, 250, 255, ${alpha.toFixed(3)})`)
+    puff.addColorStop(1, 'rgba(234, 250, 255, 0)')
+
+    ctx.fillStyle = puff
+    ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2)
+
+    // The wrapped copy, for blobs crossing either vertical edge. Translated
+    // rather than redrawn at an offset — see the note in `drawWaterSheet`.
+    ctx.save()
+    ctx.translate(x < FOAM_W / 2 ? FOAM_W : -FOAM_W, 0)
+    ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2)
+    ctx.restore()
   }
 
   return finish(ctx)
@@ -812,6 +937,7 @@ let acanthus: Texture | null = null
 let upperBays: Texture | null = null
 let mist: Texture | null = null
 let waterSheet: Texture | null = null
+let foamBand: Texture | null = null
 
 /**
  * One rug, drawn at its own size, cached per size.
@@ -951,4 +1077,16 @@ export function getWaterSheetTexture(columns: number, rows: number): Texture {
   waterSheet ??= drawWaterSheet()
   waterSheet.repeat.set(columns, rows)
   return waterSheet
+}
+
+/**
+ * The churn at the waterline. Shared, and drifted by the caller through
+ * `offset.x`.
+ *
+ * @param columns Repeats along the waterline.
+ */
+export function getFoamBandTexture(columns: number): Texture {
+  foamBand ??= drawFoamBand()
+  foamBand.repeat.set(columns, 1)
+  return foamBand
 }

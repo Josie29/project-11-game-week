@@ -30,6 +30,37 @@ export const DRAW_INTERVAL_MS = 1000
 /** Cards dealt face down at the start of a round: the dealer's hole card. */
 const OPENING_CARDS = 2
 
+/**
+ * When one of the opening cards leaves the shoe, in ms after the deal.
+ *
+ * A real table deals one card to the whole table at a time: first base round
+ * to third base, then the dealer, then the same circuit again for the second
+ * card. Engine seat order *is* play order — the room broadcasts wagers first
+ * base first — so seat 0 here is the rightmost stool from the player's camera
+ * and the deal visibly walks right to left.
+ *
+ * This is what stops a shared table dealing every seat's first card in
+ * unison, which is what "delay by card index alone" did the moment there was
+ * more than one player to deal to.
+ *
+ * @param cardIndex Which of the hand's opening two cards, 0 or 1.
+ * @param seatIndex The engine seat being dealt; ignored for the dealer.
+ * @param seatCount How many seats are in the round, dealer excluded.
+ * @param isDealer Whether this card is the dealer's, who is dealt last each
+ *   circuit.
+ */
+export function openingDealAt(
+  cardIndex: number,
+  seatIndex: number,
+  seatCount: number,
+  isDealer: boolean,
+): number {
+  // One circuit is every seat plus the dealer; the dealer holds the last slot.
+  const circuit = seatCount + 1
+  const slot = cardIndex * circuit + (isDealer ? seatCount : seatIndex)
+  return slot * DRAW_INTERVAL_MS
+}
+
 export interface RevealTimeline {
   /** When the hole card begins to turn, in ms after settlement. */
   readonly holeFlipAt: number
