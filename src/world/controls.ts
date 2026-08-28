@@ -36,11 +36,27 @@ export const INTERACT_KEY = 'f'
 export const INTERACT_LABEL = 'F'
 
 /**
+ * Opens and closes the emote picker, in multiplayer.
+ *
+ * `T` for "talk", and because the ledger below leaves little else: `WASD` and
+ * the arrows, `Q`/`E` for the orbit, `R` for the camera, `F` for interact,
+ * `M` for the menu, `H S D P`, space and the digits at the tables.
+ *
+ * An edge like `INTERACT_KEY`, not a `KEYBOARD_MAP` entry — and owned by the
+ * HUD, on the same rule as `SETTINGS_KEY`: the picker is unmounted while
+ * closed, so only something always mounted can hear the key that opens it.
+ */
+export const EMOTE_KEY = 't'
+
+/** How the emote key is drawn on the button. Here so the two cannot drift. */
+export const EMOTE_LABEL = 'T'
+
+/**
  * Opens and closes the settings panel.
  *
  * `M` because everything else is taken: `WASD` and the arrows here, `Q`/`E` for
- * the orbit, `R` for the camera, `F` for interact, `H S D P`, space and `1 2 3`
- * at the tables.
+ * the orbit, `R` for the camera, `F` for interact, `T` for the emote picker,
+ * `H S D P`, space and `1 2 3` at the tables.
  *
  * Deliberately **not** Escape. Escape is bound in three places and means the
  * same thing in all of them — leave the table, stand up out of the chair, drop

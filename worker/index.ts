@@ -18,6 +18,7 @@
 // is pinned, the dice-holder rule and the deal grace for the same reason.
 import { dealGraceMs } from './dealGrace'
 import { resolveDiceHolder } from './dice'
+import { admitEmote } from './emoteLimit'
 import { byPlayOrder } from './playOrder'
 
 /** How the client identifies itself and what it looks like. */
@@ -130,6 +131,18 @@ interface ActionMessage {
   readonly action?: unknown
 }
 
+/**
+ * "Say this over my head." Relayed meaning, never interpreted.
+ *
+ * Not table-scoped, unlike `action`: people wave on the street. The one
+ * novelty is the rate limit — nothing else a client sends is spammable by
+ * holding a key, and only the room sits between every sender and the crowd.
+ */
+interface EmoteMessage {
+  readonly t: 'emote'
+  readonly emote?: unknown
+}
+
 type Incoming =
   | JoinMessage
   | MoveMessage
@@ -140,6 +153,7 @@ type Incoming =
   | BetMessage
   | ActionMessage
   | ReadyMessage
+  | EmoteMessage
 
 /**
  * What the server remembers about one connection.
@@ -209,6 +223,15 @@ interface Attachment {
    * loose again after the first lull.
    */
   holdsDice: boolean
+  /**
+   * When this player's recent emotes were admitted, for the rate limit.
+   *
+   * On the attachment for the reason everything here is: a hibernating object
+   * keeps its sockets and loses its memory, and a flood window held in a `Map`
+   * would reopen after the first lull. Absent on attachments serialized before
+   * this field existed — `admitEmote` treats missing as empty.
+   */
+  emoteSentAt?: readonly number[]
 }
 
 export interface Env {
@@ -374,6 +397,7 @@ export class Room implements DurableObject {
       // to nobody rather than to whoever happens to be standing closest.
       canShoot: false,
       holdsDice: false,
+      emoteSentAt: [],
     }
     server.serializeAttachment(attachment)
 
@@ -467,6 +491,11 @@ export class Room implements DurableObject {
           attachment.tookTableAt = null
         } else if (previousTable !== attachment.identity.table) {
           attachment.tookTableAt = Date.now()
+        }
+        // The flood window follows the player, not the table: a reconnect
+        // must not hand back a fresh burst of emotes.
+        if (carried !== null) {
+          attachment.emoteSentAt = carried.emoteSentAt ?? []
         }
         /*
          * Rejoining the table they never meant to leave. The fresh socket has
@@ -664,6 +693,26 @@ export class Room implements DurableObject {
          */
         this.sendAll({ t: 'action', table, id: attachment.id, action: message.action })
         void this.armTurnClock(table, 'turn')
+        return
+      }
+
+      case 'emote': {
+        // A length cap rather than a catalogue: the room relays without
+        // knowing what an emote means, so the real gate is the receiving
+        // client's sanitizer. The cap only stops the relay being a megaphone
+        // for arbitrary payloads.
+        if (typeof message.emote !== 'string' || message.emote.length > 32) return
+
+        // Denied is dropped, not answered: there is no error channel here, and
+        // a client that spaces its own sends never hits the limit anyway.
+        const verdict = admitEmote(attachment.emoteSentAt, Date.now())
+        attachment.emoteSentAt = verdict.sent
+        ws.serializeAttachment(attachment)
+        if (!verdict.ok) return
+
+        // `broadcast`, not `sendAll`: the sender knows what they said, and the
+        // done criterion is each seeing the *other's* bubble.
+        this.broadcast(ws, { t: 'emote', id: attachment.id, emote: message.emote })
         return
       }
 

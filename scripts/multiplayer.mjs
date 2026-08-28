@@ -69,6 +69,11 @@ async function peers(page) {
       ids: Object.keys(state.peers),
       names: Object.values(state.peers).map((p) => p.name),
       poses: Object.keys(state.peers).map((id) => window.peerPose?.(id) ?? null),
+      // What each peer last said, as `{ [id]: emoteId }` — the stamp is local
+      // time and meaningless across pages, so only the word crosses.
+      emotes: Object.fromEntries(
+        Object.entries(state.emotes).map(([id, entry]) => [id, entry.emote]),
+      ),
     }
   })
 }
@@ -187,6 +192,42 @@ async function main() {
   const moved =
     before && after && Math.hypot(after.x - before.x, after.z - before.z) > 0.5
   check('bob saw alice move', moved, `${JSON.stringify(before)} -> ${JSON.stringify(after)}`)
+
+  /*
+   * Alice says something (issue #16). The whole feature is this hop: her
+   * `sendEmote` goes to the room, the room relays it to everyone else, and
+   * bob's store records it against her id. The sender deliberately hears
+   * nothing back, so only bob can prove it happened.
+   */
+  const aliceId = bobSees.ids?.[0]
+  await alice.page.evaluate(() => {
+    window.presenceStore?.getState().sendEmote('wave')
+  })
+  await bob.page.waitForTimeout(1_500)
+  const heard = await peers(bob.page)
+  check('bob saw alice wave', heard.emotes?.[aliceId] === 'wave', JSON.stringify(heard.emotes))
+
+  /*
+   * And she cannot flood (the issue's third done criterion). The room admits
+   * three emotes per ten-second window and the wave above was the first, so
+   * of the three below the first two land and the last is dropped. Spaced
+   * just past the client's own 1s politeness gap, so it is the *worker's*
+   * limit being proven — the room's is the only one another client is
+   * actually protected by.
+   */
+  for (const word of ['hello', 'good-luck', 'nice-one']) {
+    await alice.page.evaluate((emote) => {
+      window.presenceStore?.getState().sendEmote(emote)
+    }, word)
+    await alice.page.waitForTimeout(1_100)
+  }
+  await bob.page.waitForTimeout(1_000)
+  const flooded = await peers(bob.page)
+  check(
+    'the room dropped the fourth emote in the window',
+    flooded.emotes?.[aliceId] === 'good-luck',
+    `expected good-luck to be the last heard, got ${JSON.stringify(flooded.emotes)}`,
+  )
 
   await alice.page.screenshot({ path: `${OUT}/alice.png` })
   await bob.page.screenshot({ path: `${OUT}/bob.png` })

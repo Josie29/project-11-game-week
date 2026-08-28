@@ -13,6 +13,7 @@ import { type CrapsState, CrapsPhase, RollOutcome } from '../games/craps/types'
 import { useSharedCraps } from '../net/useSharedCraps'
 import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
+import { useSessionStore } from '../store/useSessionStore'
 import { MARKER_AMOUNT } from '../world/money'
 import {
   CrapsBet,
@@ -191,6 +192,10 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
       if (event.metaKey || event.ctrlKey || event.altKey) return
+      // The emote picker owns the digits while it is open, so a "3" aimed at
+      // "Dice are on" cannot pick up a chip — and Escape closes the picker,
+      // not the rail.
+      if (useSessionStore.getState().emotePickerOpen) return
 
       if (event.key === ' ') {
         event.preventDefault()

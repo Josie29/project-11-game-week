@@ -33,6 +33,14 @@ interface SessionStore {
    * already started playing.
    */
   settingsOpen: boolean
+  /**
+   * Whether the emote picker is up.
+   *
+   * Excluded from `partialize` on the same rule as `settingsOpen` — and read
+   * by the table hotkeys, which yield their digits while it is open, so the
+   * picker's numbers never double as a blackjack stake.
+   */
+  emotePickerOpen: boolean
 
   /** Records the choice and puts the player into the game. */
   completeWelcome: (mode: PlayMode) => void
@@ -40,6 +48,8 @@ interface SessionStore {
   openSettings: () => void
   closeSettings: () => void
   toggleSettings: () => void
+  toggleEmotePicker: () => void
+  closeEmotePicker: () => void
   /** Reopens the welcome screen. Dev and "start over" only. */
   reset: () => void
 }
@@ -67,6 +77,7 @@ export const useSessionStore = create<SessionStore>()(
        */
       mode: PlayMode.Single,
       settingsOpen: false,
+      emotePickerOpen: false,
 
       completeWelcome: (mode) => set({ hasWelcomed: true, mode }),
       setMode: (mode) => set({ mode }),
@@ -74,6 +85,8 @@ export const useSessionStore = create<SessionStore>()(
       openSettings: () => set({ settingsOpen: true }),
       closeSettings: () => set({ settingsOpen: false }),
       toggleSettings: () => set({ settingsOpen: !get().settingsOpen }),
+      toggleEmotePicker: () => set({ emotePickerOpen: !get().emotePickerOpen }),
+      closeEmotePicker: () => set({ emotePickerOpen: false }),
 
       /*
        * Closes the panel on the way out.
@@ -83,7 +96,13 @@ export const useSessionStore = create<SessionStore>()(
        * stack the menu on top of it, and dismissing that would drop the player
        * into a game they had just asked to restart.
        */
-      reset: () => set({ hasWelcomed: false, mode: PlayMode.Single, settingsOpen: false }),
+      reset: () =>
+        set({
+          hasWelcomed: false,
+          mode: PlayMode.Single,
+          settingsOpen: false,
+          emotePickerOpen: false,
+        }),
     }),
     {
       // Its own key, on the same rule as the wardrobe: adding this must not

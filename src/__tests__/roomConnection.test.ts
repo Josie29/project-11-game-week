@@ -97,6 +97,7 @@ let joinRoom: (
     onLeave: () => void
     onConnectedChange: (connected: boolean) => void
     onRoster?: (people: readonly { id: string }[]) => void
+    onEmote?: (id: string, emote: string) => void
   },
 ) => RoomConnection | null
 
@@ -269,6 +270,63 @@ describe('the welcome roster', () => {
     // The snapshot went through `onRoster` alone — a second copy through
     // `onIdentity` would put the ghost straight back into a merged map.
     expect(identified).toEqual([])
+  })
+})
+
+describe('emotes on the wire', () => {
+  /** Joins with an `onEmote`, recording what reaches it. */
+  function joinHearing(): { connection: RoomConnection; heard: [string, string][] } {
+    const heard: [string, string][] = []
+    const connection = joinRoom('strip', BOUNDS, IDENTITY, {
+      onIdentity: () => {},
+      onPose: () => {},
+      onLeave: () => {},
+      onConnectedChange: () => {},
+      onEmote: (id: string, emote: string) => heard.push([id, emote]),
+    })
+    if (connection === null) throw new Error('multiplayer should be configured in this test')
+    return { connection, heard }
+  }
+
+  // The whole feature is this frame: without it, a peer's callout is a bubble
+  // that never appears on anybody else's screen.
+  it('delivers a relayed emote to the handler', () => {
+    const { heard } = joinHearing()
+    FakeSocket.instances[0]?.fireOpen()
+    FakeSocket.instances[0]?.fireMessage({ t: 'emote', id: 'peer-1', emote: 'wave' })
+
+    expect(heard).toEqual([['peer-1', 'wave']])
+  })
+
+  /*
+   * The frame comes from a peer via a room that relays without reading. A
+   * malformed one must neither crash the socket handler — an unhandled throw
+   * there takes the client down — nor reach the handler for the store to
+   * then have an opinion about.
+   */
+  it('drops a hostile emote frame without crashing', () => {
+    const { heard } = joinHearing()
+    FakeSocket.instances[0]?.fireOpen()
+
+    FakeSocket.instances[0]?.fireMessage({ t: 'emote', id: 'peer-1', emote: 7 })
+    FakeSocket.instances[0]?.fireMessage({ t: 'emote', emote: 'wave' })
+    FakeSocket.instances[0]?.fireMessage({ t: 'emote', id: 42, emote: 'wave' })
+
+    expect(heard).toEqual([])
+  })
+
+  // The worker matches on `{t: 'emote', emote}` exactly; a frame shaped any
+  // other way is a message the room silently drops.
+  it('sends the exact frame the worker expects', () => {
+    const { connection } = joinHearing()
+    FakeSocket.instances[0]?.fireOpen()
+
+    connection.sendEmote('wave')
+
+    const frames = FakeSocket.instances[0]?.sent
+      .map((raw) => JSON.parse(raw) as Record<string, unknown>)
+      .filter((frame) => frame.t === 'emote')
+    expect(frames).toEqual([{ t: 'emote', emote: 'wave' }])
   })
 })
 

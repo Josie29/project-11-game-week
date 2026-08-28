@@ -21,6 +21,7 @@ import {
   STALE_AFTER_MS,
 } from '../world/presence'
 import type { WalkBounds } from '../scenes/components/WalkingPlayer'
+import { type EmoteId, sanitizeEmote } from '../world/emotes'
 import { PlayMode, useSessionStore } from './useSessionStore'
 
 /*
@@ -121,7 +122,27 @@ interface PresenceStore {
   /** Sends a blackjack action for the room to order and echo back. */
   sendAction: (action: string) => void
   setSeated: (seated: boolean, table: TableId | null, seat: number | null) => void
+  /**
+   * What each peer last said, stamped with when it arrived.
+   *
+   * In the store rather than a buffer because an emote is rare and *should*
+   * re-render — a bubble has to mount. Only the stamp is stored; whether the
+   * bubble is still up is derived per frame against `EMOTE_TTL_MS`, the same
+   * timestamp-in, deadline-out rule as `betClocks`.
+   */
+  emotes: Readonly<Record<string, { readonly emote: EmoteId; readonly at: number }>>
+  /** Says something over this player's head. The room relays and rate-limits. */
+  sendEmote: (emote: EmoteId) => void
 }
+
+/**
+ * The least a client waits between its own emotes.
+ *
+ * Politeness, not enforcement — the room's window is the limit that holds.
+ * This only keeps an ordinary player from ever meeting it: spaced like this, a
+ * held key stays inside the room's burst and nothing is silently dropped.
+ */
+const EMOTE_MIN_GAP_MS = 1_000
 
 /**
  * True while a `?boot=` link is driving the game and has not opted back in.
@@ -150,6 +171,7 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
   let sender: ReturnType<typeof setInterval> | null = null
   let lastSent: Pose | null = null
   let currentRoom: string | null = null
+  let lastEmoteAt = 0
 
   function stop(): void {
     if (sender !== null) clearInterval(sender)
@@ -159,7 +181,7 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     lastSent = null
     currentRoom = null
     buffers.clear()
-    set({ peers: {}, connected: false })
+    set({ peers: {}, connected: false, emotes: {} })
   }
 
   return {
@@ -174,6 +196,7 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     betClocks: {},
     turnClocks: {},
     selfId: null,
+    emotes: {},
 
     requestRoll: () => connection?.requestRoll(),
     passDice: () => connection?.passDice(),
@@ -181,6 +204,14 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     sendBet: (amount) => connection?.sendBet(amount),
     sendReady: (ready) => connection?.sendReady(ready),
     sendAction: (action) => connection?.sendAction(action),
+
+    sendEmote: (emote) => {
+      const now = performance.now()
+      if (now - lastEmoteAt < EMOTE_MIN_GAP_MS) return
+      if (!connection) return
+      lastEmoteAt = now
+      connection.sendEmote(emote)
+    },
 
     enterRoom: (roomId, bounds, identity) => {
       /*
@@ -235,11 +266,29 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
           set((state) => {
             const peers = { ...state.peers }
             delete peers[id]
-            return { peers }
+            // Their last words go with them; a bubble must not outlive the
+            // figure it hangs over.
+            const emotes = { ...state.emotes }
+            delete emotes[id]
+            return { peers, emotes }
           })
         },
 
         onConnectedChange: (connected) => set({ connected }),
+
+        /*
+         * Somebody said something. Coerced against the catalogue here, at the
+         * seam where wire strings become state — the room relays without
+         * reading, so this is the only gate between a hostile peer and a
+         * canvas texture.
+         */
+        onEmote: (id, emote) => {
+          const clean = sanitizeEmote(emote)
+          if (clean === null) return
+          set((state) => ({
+            emotes: { ...state.emotes, [id]: { emote: clean, at: performance.now() } },
+          }))
+        },
 
         /*
          * The room threw. Every client at the table settles the same numbers

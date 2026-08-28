@@ -8,6 +8,7 @@ import type { SeatMap } from '../../world/seating'
 import { SeatedLegs } from '../../character/proportions'
 import { TableId } from '../casinoFloorLayout'
 import { CasinoCharacter } from './CasinoCharacter'
+import { EmoteBubble } from './EmoteBubble'
 import { Nameplate } from './Nameplate'
 
 /*
@@ -40,6 +41,9 @@ function RemotePlayer({
 }) {
   const groupRef = useRef<Group>(null)
   const speedRef = useRef(0)
+  // Per-figure rather than in `RemotePlayers`: an emote is rare, and this way
+  // it re-renders exactly one figure — the one it hangs over.
+  const emote = usePresenceStore((state) => state.emotes[player.id])
 
   useFrame(() => {
     const group = groupRef.current
@@ -107,6 +111,8 @@ function RemotePlayer({
         {...(player.chair !== null ? { legs: SeatedLegs.Extended } : {})}
       />
       <Nameplate name={player.name} />
+      {/* Inside the group, so placement and pose-visibility are inherited. */}
+      {emote && <EmoteBubble emote={emote.emote} at={emote.at} />}
     </group>
   )
 }
