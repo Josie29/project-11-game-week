@@ -7,6 +7,7 @@ import {
   type Pose,
   pruneBuffer,
   sanitizePlayerName,
+  sanitizeCrapsStakes,
   sanitizePose,
   sanitizeRemoteIdentity,
   sanitizeTable,
@@ -341,5 +342,40 @@ describe('sanitizeRemoteIdentity chair', () => {
     expect(sanitizeRemoteIdentity({ id: 'a', chair: -1 }, 'a').chair).toBeNull()
     expect(sanitizeRemoteIdentity({ id: 'a', chair: 1.5 }, 'a').chair).toBeNull()
     expect(sanitizeRemoteIdentity({ id: 'a', chair: '2' }, 'a').chair).toBeNull()
+  })
+})
+
+describe('sanitizeCrapsStakes', () => {
+  // A peer's felt record is drawn on everyone's table. Valid records — full,
+  // partial, or empty — must come through whole, with absent bets read as
+  // zero rather than undefined holes the renderer would have to skip.
+  it('accepts a valid record and fills the gaps with zero', () => {
+    const stakes = sanitizeCrapsStakes({ 'pass-line': 50, 'place-6': 12 })
+    expect(stakes?.['pass-line']).toBe(50)
+    expect(stakes?.['place-6']).toBe(12)
+    expect(stakes?.['field']).toBe(0)
+    expect(sanitizeCrapsStakes({})).not.toBeNull()
+  })
+
+  // The record was written by another client and relayed unread. One junk
+  // entry rejects the whole record — a half-trusted record is how a renderer
+  // ends up defending itself bet by bet.
+  it('rejects any record carrying junk', () => {
+    for (const junk of [
+      null,
+      7,
+      'pass-line',
+      ['pass-line'],
+      { 'pass-line': -5 },
+      { 'pass-line': 12.5 },
+      { 'pass-line': Number.NaN },
+      { 'pass-line': Number.POSITIVE_INFINITY },
+      { 'pass-line': '50' },
+      { 'pass-line': 2_000_000 },
+      { 'come-bet': 25 },
+      { 'pass-line': { nested: true } },
+    ]) {
+      expect(sanitizeCrapsStakes(junk), JSON.stringify(junk)).toBeNull()
+    }
   })
 })

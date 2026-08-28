@@ -1,8 +1,10 @@
 import { type Appearance, sanitizeAppearance } from '../character/appearance'
 import { type EquippedItems, sanitizeEquipped, sanitizeOwned } from '../character/catalog'
+import type { CrapsBets } from '../games/craps/types'
 import { TableId } from '../scenes/casinoFloorLayout'
 import { CHAIR_COUNT } from '../scenes/clinicLayout'
 import type { WalkBounds } from '../scenes/components/WalkingPlayer'
+import { CrapsBet } from '../scenes/crapsFeltLayout'
 
 /*
  * Everything about other players that is arithmetic rather than networking.
@@ -58,6 +60,44 @@ export interface Snapshot extends Pose {
  */
 export function sanitizeTable(value: unknown): TableId | null {
   return value === TableId.Craps || value === TableId.Blackjack ? value : null
+}
+
+/**
+ * Largest stake one peer's record may claim on one bet, in dollars.
+ *
+ * Display-only money, so the cap is about the renderer, not fairness: a
+ * hostile billion-dollar record would be a chip tower through the ceiling.
+ */
+const MAX_STAKE_SHOWN = 1_000_000
+
+/**
+ * Coerces a peer's craps stakes record into a drawable one, or null.
+ *
+ * Total and fail-closed, like every sanitizer here — the record was written
+ * by another client and relayed by a room that never read it. Any unknown
+ * key or non-money value rejects the whole record rather than salvaging the
+ * rest: display-only or not, a half-trusted record is how a renderer ends up
+ * defending itself bet by bet. Missing bets read as zero.
+ *
+ * Fail-closed also decides the version-skew story: an older client shown a
+ * record with a bet region it has never heard of shows *nothing* from that
+ * player, which for money on a felt is the right failure.
+ */
+export function sanitizeCrapsStakes(raw: unknown): CrapsBets | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+
+  const known = new Set<string>(Object.values(CrapsBet))
+  const stakes = {} as Record<CrapsBet, number>
+  for (const bet of Object.values(CrapsBet)) stakes[bet] = 0
+
+  for (const [key, value] of Object.entries(raw)) {
+    if (!known.has(key)) return null
+    if (typeof value !== 'number' || !Number.isInteger(value)) return null
+    if (value < 0 || value > MAX_STAKE_SHOWN) return null
+    stakes[key as CrapsBet] = value
+  }
+
+  return stakes
 }
 
 /** Who a remote player is: the parts that change rarely. */

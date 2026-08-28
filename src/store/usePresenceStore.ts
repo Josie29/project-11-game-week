@@ -12,10 +12,12 @@ import {
   type LocalIdentity,
   type RoomConnection,
 } from '../net/room'
+import type { CrapsBets } from '../games/craps/types'
 import {
   type Pose,
   pruneBuffer,
   type RemoteIdentity,
+  sanitizeCrapsStakes,
   type Snapshot,
   shouldSend,
   STALE_AFTER_MS,
@@ -193,6 +195,18 @@ interface PresenceStore {
   sendEmote: (emote: EmoteId) => void
   /** Says something typed. Sanitized before it is echoed or sent anywhere. */
   sendSay: (text: string) => void
+  /**
+   * What each peer has on the craps felt, keyed by player id. Display-only.
+   *
+   * The one thing this map must never become is money: the engine's own
+   * `game.bets` is the record that holds this player's stakes, and nothing
+   * read off the wire may spend a dollar. These records exist so the felt
+   * can *draw* the other players' chips — sanitized on receipt, pruned when
+   * their owner leaves, and consulted by nothing else.
+   */
+  crapsStakes: Readonly<Record<string, CrapsBets>>
+  /** Publishes this player's own felt record for the others to draw. */
+  sendStakes: (value: unknown) => void
 }
 
 /**
@@ -241,7 +255,17 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     lastSent = null
     currentRoom = null
     buffers.clear()
-    set({ peers: {}, connected: false, emotes: {}, selfEmote: null, invite: null, rollClocks: {}, rollSkips: {}, autoRollClocks: {} })
+    set({
+      peers: {},
+      connected: false,
+      emotes: {},
+      selfEmote: null,
+      invite: null,
+      rollClocks: {},
+      rollSkips: {},
+      autoRollClocks: {},
+      crapsStakes: {},
+    })
   }
 
   return {
@@ -262,8 +286,11 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     emotes: {},
     selfEmote: null,
     invite: null,
+    crapsStakes: {},
 
     clearInvite: () => set({ invite: null }),
+
+    sendStakes: (value) => connection?.sendStakes(value),
 
     requestRoll: () => connection?.requestRoll(),
     skipRollWait: () => connection?.skipRollWait(),
@@ -340,12 +367,20 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
          * this client was between sockets — nothing else ever removes one.
          */
         onRoster: (people) => {
-          set((state) => ({
-            peers: Object.fromEntries(
-              people.filter((person) => person.id !== state.selfId)
-                .map((person) => [person.id, person]),
-            ),
-          }))
+          set((state) => {
+            const present = new Set(people.map((person) => person.id))
+            return {
+              peers: Object.fromEntries(
+                people.filter((person) => person.id !== state.selfId)
+                  .map((person) => [person.id, person]),
+              ),
+              // Whoever the welcome does not name is not here — and neither
+              // are their chips. The same rule, for the same ghost.
+              crapsStakes: Object.fromEntries(
+                Object.entries(state.crapsStakes).filter(([id]) => present.has(id)),
+              ),
+            }
+          })
         },
 
         onPose: (id, snapshot) => {
@@ -365,9 +400,14 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
             // there is nobody left to accept.
             const emotes = { ...state.emotes }
             delete emotes[id]
+            // An absent player's staked bets are abandoned (plan doc,
+            // assumption 1) — and their chips leave the felt with them.
+            const crapsStakes = { ...state.crapsStakes }
+            delete crapsStakes[id]
             return {
               peers,
               emotes,
+              crapsStakes,
               invite: state.invite?.from === id ? null : state.invite,
             }
           })
@@ -393,6 +433,21 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
               ? { invite: { from: id, table, at: performance.now() } }
               : {}),
           }))
+        },
+
+        /*
+         * A peer's felt record, coerced at the seam where wire values become
+         * state. Display-only by construction: it lands in `crapsStakes`,
+         * which nothing but the renderer reads — the rule that a packet must
+         * never be able to spend a dollar holds because no money path looks
+         * here. Fail-closed sanitizing drops the whole record on any junk.
+         */
+        onStakes: (table, id, value) => {
+          if (table !== TableId.Craps) return
+          if (id === usePresenceStore.getState().selfId) return
+          const stakes = sanitizeCrapsStakes(value)
+          if (stakes === null) return
+          set((state) => ({ crapsStakes: { ...state.crapsStakes, [id]: stakes } }))
         },
 
         /*

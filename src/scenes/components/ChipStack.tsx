@@ -6,6 +6,7 @@ import {
   CHIP_RADIUS,
   CHIP_THICKNESS,
   chipBreakdown,
+  RING_LIP,
 } from '../chipLayout'
 
 /** Higher is snappier. Frame-rate independent. */
@@ -27,10 +28,34 @@ interface ChipStackProps {
   origin?: readonly [number, number, number] | undefined
   /** Lifts the stack so it can rest on top of another pile. */
   baseHeight?: number | undefined
+  /**
+   * Uniform scale on the chips themselves, not the travel.
+   *
+   * The craps felt draws at `CRAPS_CHIP_SCALE` so eight players' stacks fit a
+   * bet region; blackjack leaves it at 1. Applied to an inner group so the
+   * per-chip y-offsets scale with the discs and a stack stays a stack.
+   */
+  scale?: number | undefined
+  /**
+   * A flat ring drawn on the felt under the stack, tinted per player.
+   *
+   * The second half of "whose stack is whose" on a shared craps table —
+   * position by rail spot is the first. Kept inside the travelling group so
+   * the ring pushes and settles with its chips.
+   */
+  ring?: string | undefined
 }
 
 /** A stack of chips on the felt, easing between wherever it is and where it belongs. */
-export function ChipStack({ amount, chips, position, origin, baseHeight = 0 }: ChipStackProps) {
+export function ChipStack({
+  amount,
+  chips,
+  position,
+  origin,
+  baseHeight = 0,
+  scale = 1,
+  ring,
+}: ChipStackProps) {
   const groupRef = useRef<Group>(null)
   const hasMounted = useRef(false)
 
@@ -56,28 +81,39 @@ export function ChipStack({ amount, chips, position, origin, baseHeight = 0 }: C
 
   return (
     <group ref={groupRef} position={[start[0], start[1] + baseHeight, start[2]]}>
-      {resolved.map((chip, index) => (
-        <group
-          key={index}
-          position={[0, index * CHIP_THICKNESS, 0]}
-          // Slight alternating spin so the stack does not look extruded.
-          rotation={[0, index * 0.4, 0]}
-        >
-          <mesh castShadow receiveShadow>
-            <cylinderGeometry args={[CHIP_RADIUS, CHIP_RADIUS, CHIP_THICKNESS, 24]} />
-            <meshStandardMaterial color={chip.color} roughness={0.55} />
-          </mesh>
-          {/*
-            Inlay disc on the top face rather than a band around the rim: a
-            vertical rim only ever catches grazing light from the overhead
-            lamp, so it read as a dark ring instead of a highlight.
-          */}
-          <mesh position={[0, CHIP_THICKNESS / 2 + 0.001, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[CHIP_RADIUS * 0.58, CHIP_RADIUS * 0.74, 24]} />
-            <meshStandardMaterial color={chip.edge} roughness={0.6} />
-          </mesh>
-        </group>
-      ))}
+      {ring && (
+        // On the felt under the bottom chip, raised a hair against z-fighting.
+        <mesh position={[0, 0.002, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry
+            args={[CHIP_RADIUS * scale + RING_LIP * 0.45, CHIP_RADIUS * scale + RING_LIP, 32]}
+          />
+          <meshStandardMaterial color={ring} roughness={0.5} />
+        </mesh>
+      )}
+      <group scale={scale}>
+        {resolved.map((chip, index) => (
+          <group
+            key={index}
+            position={[0, index * CHIP_THICKNESS, 0]}
+            // Slight alternating spin so the stack does not look extruded.
+            rotation={[0, index * 0.4, 0]}
+          >
+            <mesh castShadow receiveShadow>
+              <cylinderGeometry args={[CHIP_RADIUS, CHIP_RADIUS, CHIP_THICKNESS, 24]} />
+              <meshStandardMaterial color={chip.color} roughness={0.55} />
+            </mesh>
+            {/*
+              Inlay disc on the top face rather than a band around the rim: a
+              vertical rim only ever catches grazing light from the overhead
+              lamp, so it read as a dark ring instead of a highlight.
+            */}
+            <mesh position={[0, CHIP_THICKNESS / 2 + 0.001, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[CHIP_RADIUS * 0.58, CHIP_RADIUS * 0.74, 24]} />
+              <meshStandardMaterial color={chip.edge} roughness={0.6} />
+            </mesh>
+          </group>
+        ))}
+      </group>
     </group>
   )
 }

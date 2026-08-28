@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  betChipSpot,
+  betChipSlot,
+  CRAPS_BET_SLOTS,
   CrapsBet,
   hitTestCrapsFelt,
   PLACE_BETS,
@@ -8,7 +9,7 @@ import {
   POINT_NUMBERS,
   pointPuckSpot,
 } from '../scenes/crapsFeltLayout'
-import { CHIP_RADIUS } from '../scenes/chipLayout'
+import { CHIP_RADIUS, CRAPS_CHIP_SCALE } from '../scenes/chipLayout'
 import { CRAPS_ORIGIN, TABLE_FOOTPRINTS, TableId } from '../scenes/casinoFloorLayout'
 import {
   CHIP_CHANNEL_OFFSET,
@@ -227,17 +228,20 @@ describe('the dice', () => {
 })
 
 describe('the printed layout on the felt', () => {
-  it('keeps every bet and its chips on the felt', () => {
+  it("keeps every bet and all eight players' chips on the felt", () => {
     // `feltToWorld` scales by the pit, so a resized pit moves the print and the
     // chips together — but only if every stack was inside the felt to start
     // with. A chip stack overhanging the bumper is the craps table's version of
-    // the payout that fell off the blackjack table's edge, and the line bets
-    // are stacked off-centre now, which is exactly the nudge that puts one over
-    // an edge without moving the printed band it belongs to.
+    // the payout that fell off the blackjack table's edge, and every bet now
+    // seats eight players' stacks, so the slot at the very end of a band is
+    // exactly the nudge that puts one over an edge without moving the print.
+    const chipRadius = CHIP_RADIUS * CRAPS_CHIP_SCALE
     for (const bet of Object.values(CrapsBet)) {
-      const { u, v } = betChipSpot(bet)
-      const [x, , z] = feltToWorld(u, v)
-      expect(isInCrapsPit(x, z, 0.12)).toBe(true)
+      for (let slot = 0; slot < CRAPS_BET_SLOTS; slot++) {
+        const { u, v } = betChipSlot(bet, slot)
+        const [x, , z] = feltToWorld(u, v)
+        expect(isInCrapsPit(x, z, chipRadius), `${bet} slot ${slot}`).toBe(true)
+      }
     }
   })
 
@@ -254,23 +258,33 @@ describe('the printed layout on the felt', () => {
    * stack of chips want the same box. Overlapping, the puck buries the chips
    * and the felt stops saying how much is on the number it is sitting on.
    */
-  it('keeps the puck clear of the chips inside the same box', () => {
+  it('keeps the puck clear of every slot of chips inside the same box', () => {
+    const chipRadius = CHIP_RADIUS * CRAPS_CHIP_SCALE
     for (const point of POINT_NUMBERS) {
       const puck = pointPuckSpot(point)
-      const chips = betChipSpot(PLACE_BETS[point])
-
       const [puckX, , puckZ] = feltToWorld(puck.u, puck.v)
-      const [chipX, , chipZ] = feltToWorld(chips.u, chips.v)
-
-      expect(Math.hypot(puckX - chipX, puckZ - chipZ)).toBeGreaterThan(PUCK_RADIUS + CHIP_RADIUS)
-
-      // And both still inside the box they belong to.
       const rect = POINT_BOX_RECTS[point]
-      for (const spot of [puck, chips]) {
-        expect(spot.u).toBeGreaterThan(rect.u0)
-        expect(spot.u).toBeLessThan(rect.u1)
-        expect(spot.v).toBeGreaterThan(rect.v0)
-        expect(spot.v).toBeLessThan(rect.v1)
+
+      // The puck itself stays inside its box.
+      expect(puck.u).toBeGreaterThan(rect.u0)
+      expect(puck.u).toBeLessThan(rect.u1)
+      expect(puck.v).toBeGreaterThan(rect.v0)
+      expect(puck.v).toBeLessThan(rect.v1)
+
+      for (let slot = 0; slot < CRAPS_BET_SLOTS; slot++) {
+        const chips = betChipSlot(PLACE_BETS[point], slot)
+        const [chipX, , chipZ] = feltToWorld(chips.u, chips.v)
+
+        expect(
+          Math.hypot(puckX - chipX, puckZ - chipZ),
+          `${point} slot ${slot}`,
+        ).toBeGreaterThan(PUCK_RADIUS + chipRadius)
+
+        // And every slot still inside the box it belongs to.
+        expect(chips.u, `${point} slot ${slot} u`).toBeGreaterThan(rect.u0)
+        expect(chips.u, `${point} slot ${slot} u`).toBeLessThan(rect.u1)
+        expect(chips.v, `${point} slot ${slot} v`).toBeGreaterThan(rect.v0)
+        expect(chips.v, `${point} slot ${slot} v`).toBeLessThan(rect.v1)
       }
     }
   })
@@ -337,18 +351,20 @@ describe('reading a click off the felt', () => {
    * different bet, which looks like a mis-drawn table rather than a mis-read
    * click. This is the only thing that catches it.
    */
-  it('brings a click on a bet back as that bet', () => {
+  it('brings a click on any slot of a bet back as that bet', () => {
     for (const bet of Object.values(CrapsBet)) {
-      const spot = betChipSpot(bet)
-      const [x, , z] = feltToWorld(spot.u, spot.v)
+      for (let slot = 0; slot < CRAPS_BET_SLOTS; slot++) {
+        const spot = betChipSlot(bet, slot)
+        const [x, , z] = feltToWorld(spot.u, spot.v)
 
-      // Exactly what a raycast onto the felt reports.
-      const raw = feltShapeUv(x, z)
-      const layout = feltUvToLayout(raw.u, raw.v)
+        // Exactly what a raycast onto the felt reports.
+        const raw = feltShapeUv(x, z)
+        const layout = feltUvToLayout(raw.u, raw.v)
 
-      expect(layout.u, `${bet} u`).toBeCloseTo(spot.u)
-      expect(layout.v, `${bet} v`).toBeCloseTo(spot.v)
-      expect(hitTestCrapsFelt(layout.u, layout.v), bet).toBe(bet)
+        expect(layout.u, `${bet} slot ${slot} u`).toBeCloseTo(spot.u)
+        expect(layout.v, `${bet} slot ${slot} v`).toBeCloseTo(spot.v)
+        expect(hitTestCrapsFelt(layout.u, layout.v), `${bet} slot ${slot}`).toBe(bet)
+      }
     }
   })
 

@@ -356,34 +356,49 @@ export function crapsRailHasRoom(playerId: string, lineup: readonly string[]): b
 }
 
 /**
- * Which rail spot a player stands at.
+ * Which rail place a player holds, as an index into `CRAPS_RAIL_SPOTS`.
  *
- * The shooter takes the shooter's end whoever they are, because that is where
- * the dice leave the hand — the throw has to read as theirs. Everybody else
- * fills the remaining places in the order they arrived, which is also the order
- * the dice will reach them.
+ * The shooter takes index 0 — the shooter's end — whoever they are, because
+ * that is where the dice leave the hand. Everybody else fills the remaining
+ * places in the order they arrived, which is also the order the dice will
+ * reach them.
  *
- * Pure, and tested: who is standing where is the sort of thing that looks
- * plausible in any single screenshot and is only wrong when you count.
+ * The felt keys chip slots off this same index (`betChipSlot`), so a player's
+ * figure at the rail and their stacks on the layout cannot disagree about
+ * whose place is whose — one function answers for both.
  *
  * @param playerId The player being placed.
  * @param shooterId Who currently holds the dice, or null if nobody does.
  * @param lineup Everyone at the table, in arrival order.
  */
-export function crapsRailSpot(
+export function crapsRailIndex(
   playerId: string,
   shooterId: string | null,
   lineup: readonly string[],
-): readonly [number, number, number] {
-  if (playerId === shooterId) return CRAPS_RAIL_SPOTS[0]!
+): number {
+  if (playerId === shooterId) return 0
 
   const others = lineup.filter((id) => id !== shooterId)
   const place = others.indexOf(playerId)
 
   // Somebody the lineup has not caught up with yet stands at the far end rather
   // than on top of the shooter.
-  const index = place === -1 ? CRAPS_RAIL_SPOTS.length - 1 : Math.min(place + 1, CRAPS_RAIL_SPOTS.length - 1)
-  return CRAPS_RAIL_SPOTS[index]!
+  if (place === -1) return CRAPS_RAIL_SPOTS.length - 1
+  return Math.min(place + 1, CRAPS_RAIL_SPOTS.length - 1)
+}
+
+/**
+ * Which rail spot a player stands at: `CRAPS_RAIL_SPOTS[crapsRailIndex(...)]`.
+ *
+ * Pure, and tested: who is standing where is the sort of thing that looks
+ * plausible in any single screenshot and is only wrong when you count.
+ */
+export function crapsRailSpot(
+  playerId: string,
+  shooterId: string | null,
+  lineup: readonly string[],
+): readonly [number, number, number] {
+  return CRAPS_RAIL_SPOTS[crapsRailIndex(playerId, shooterId, lineup)]!
 }
 
 /** Which tables the player stands at rather than sits down at. */

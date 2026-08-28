@@ -3,6 +3,7 @@ import {
   CRAPS_RAIL_SPOTS,
   crapsRailFacing,
   crapsRailHasRoom,
+  crapsRailIndex,
   crapsRailSpot,
   SEATED_TARGET,
   SEATED_VIEW,
@@ -180,5 +181,36 @@ describe('crapsRailHasRoom', () => {
   it('always has room for a player already in the lineup', () => {
     const eight = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
     expect(crapsRailHasRoom('e', eight)).toBe(true)
+  })
+})
+
+describe('crapsRailIndex', () => {
+  // The felt keys chip slots off this index (`betChipSlot`), so the figure at
+  // the rail and the stacks on the layout must agree through one function.
+  it('is the index crapsRailSpot stands the player at', () => {
+    const lineup = ['a', 'b', 'c', 'd']
+    for (const id of [...lineup, 'stranger']) {
+      expect(crapsRailSpot(id, 'b', lineup)).toEqual(
+        CRAPS_RAIL_SPOTS[crapsRailIndex(id, 'b', lineup)],
+      )
+    }
+  })
+
+  // Slot 0 is the shooter's, whoever they are — it is also the solo slot, so
+  // handing it to anyone else would stack a stranger's chips on the spot the
+  // lone bettor's have always sat.
+  it('gives the shooter index 0 and everyone else a distinct index', () => {
+    const lineup = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+    const indices = lineup.map((id) => crapsRailIndex(id, 'c', lineup))
+    expect(indices[2]).toBe(0)
+    // A duplicate index is two players' chips on one slot: the exact
+    // ambiguity per-player slots exist to remove.
+    expect(new Set(indices).size).toBe(lineup.length)
+  })
+
+  // A player the lineup has not caught up with is parked at the far end, not
+  // on the shooter's slot — transient, and drawn safe rather than wrong.
+  it('parks an unknown player at the last index', () => {
+    expect(crapsRailIndex('stranger', 'a', ['a', 'b'])).toBe(CRAPS_RAIL_SPOTS.length - 1)
   })
 })

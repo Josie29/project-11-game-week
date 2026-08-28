@@ -1,3 +1,6 @@
+import type { Appearance } from '../character/appearance'
+import { GARMENT_COLORS, swatchOr } from '../character/palette'
+
 export interface ChipDenomination {
   readonly value: number
   readonly color: string
@@ -144,3 +147,41 @@ export function stackHeight(count: number): number {
 /** Thickness of a single chip, shared by the renderer and the stacking maths. */
 export const CHIP_THICKNESS = 0.045
 export const CHIP_RADIUS = 0.15
+
+/**
+ * How much smaller a craps chip draws than a blackjack chip.
+ *
+ * The craps felt now seats eight players' stacks per bet region (issue #18),
+ * and eight full-size stacks cannot share a 0.60 x 0.45m place box — nor
+ * could one full-size chip ever really sit inside the 0.126m-deep odds band
+ * it overhung. Blackjack keeps `CHIP_RADIUS` unscaled: its felt gives every
+ * seat its own patch.
+ */
+export const CRAPS_CHIP_SCALE = 0.35
+
+/**
+ * How far the ownership ring under a stack reaches past its chips, in metres
+ * of felt (unscaled, so the lip stays readable on small chips).
+ *
+ * Bounded by the tightest slot pitch on the felt: two rings that touch read
+ * as one player's chips, so `crapsFelt.test.ts` holds every pair of slots at
+ * least two ring radii apart — the place grid's pitches in `betChipSlot`
+ * were widened to make this lip affordable.
+ */
+export const RING_LIP = 0.018
+
+/**
+ * The tint of the ring drawn under a player's stacks, from their outfit.
+ *
+ * Read from the garment *swatch* rather than the resolved palette: garments
+ * like the shirt-and-skirt remap `colors.primary` to shirt white and move the
+ * player's chosen colour to secondary, so the resolved primary is not
+ * reliably the colour the player picked. The swatch is.
+ *
+ * Identity on the felt is carried by position first — players who never open
+ * the wardrobe share the default midnight swatch, and two matching rings must
+ * still read as two players by standing on different stretches of the band.
+ */
+export function playerChipRing(appearance: Appearance): string {
+  return swatchOr(GARMENT_COLORS, appearance.garmentColor).hex
+}
