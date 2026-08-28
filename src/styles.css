@@ -136,18 +136,22 @@ canvas {
 }
 
 /*
- * The emote picker: four things worth saying here, numbered.
+ * The emote picker: the things worth saying here, numbered, plus the typed
+ * line.
  *
- * Sits where the offer prompt sits, a step higher, so it reads as part of the
- * same conversation with the bottom of the screen — and because that is the
- * strip the thumb already lives in. `.hud` is click-through, so the buttons
- * opt back into pointer events themselves.
+ * Sits above whatever already owns the bottom of the screen. Walking, that is
+ * one line of offer prompt, and the fallback below — today's fixed placement
+ * — clears it. At a table, `.table-ui` is a stacked column whose height
+ * changes with the game, so the panel *measures itself* and publishes
+ * `--say-floor` (see `useSayFloor`), and the picker sits a step above the
+ * measurement instead of inside the bet grid (issue #19). `.hud` is
+ * click-through, so the buttons opt back into pointer events themselves.
  */
 .emote-picker {
   position: absolute;
   left: 50%;
-  /* A step above the offer prompt's var(--space-8), so the two never stack. */
-  bottom: calc(var(--space-8) + 4rem);
+  /* Fallback: a step above the offer prompt's var(--space-8). */
+  bottom: calc(var(--say-floor, 5.5rem) + var(--space-2));
   transform: translateX(-50%);
   display: flex;
   flex-wrap: wrap;
@@ -207,7 +211,8 @@ canvas {
 .invite-prompt {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--space-8) + 4rem);
+  /* The picker's clearance rule, for the picker's reasons — see above. */
+  bottom: calc(var(--say-floor, 5.5rem) + var(--space-2));
   transform: translateX(-50%);
   display: flex;
   flex-wrap: wrap;
@@ -1431,13 +1436,20 @@ kbd {
     transform: none;
   }
 
-  /* The picker clears the stick for the same reason the prompt does, and
-     the invite card sits in the picker's spot on the picker's reasoning. */
+  /*
+   * The picker and the invite card, full width like the prompt.
+   *
+   * The bottom rule is the desktop one — measured `--say-floor` first — with
+   * the *fallback* swapped: walking on a phone, the bottom is the stick, not
+   * a one-line prompt, so the unmeasured floor is the stick's strip. Seated,
+   * the craps sheet is 45% of the screen and the measurement is the only
+   * number that clears it (issue #19).
+   */
   .emote-picker,
   .invite-prompt {
     left: var(--space-4);
     right: var(--space-4);
-    bottom: calc(17rem + env(safe-area-inset-bottom));
+    bottom: calc(var(--say-floor, calc(16.5rem + env(safe-area-inset-bottom))) + var(--space-2));
     transform: none;
   }
 

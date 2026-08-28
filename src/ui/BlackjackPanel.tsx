@@ -19,6 +19,7 @@ import { secondsUntilDeal } from '../world/dealClock'
 import { secondsUntilStand, TURN_WINDOW_MS } from '../world/turnClock'
 import { MARKER_AMOUNT } from '../world/money'
 import { getVenue, type VenueId } from '../world/venues'
+import { useSayFloor } from './useSayFloor'
 import { useTableHotkeys } from './useTableHotkeys'
 
 /*
@@ -91,6 +92,7 @@ interface BlackjackPanelProps {
  * input; the buttons exist so a first-time player can find them.
  */
 export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
+  const sayFloor = useSayFloor()
   const game = useBlackjackStore((state) => state.game)
   /*
    * Shared tables hand the wager and the action to the room instead of applying
@@ -288,7 +290,9 @@ export function BlackjackPanel({ venueId }: BlackjackPanelProps) {
   })
 
   return (
-    <div className="table-ui">
+    // Publishes its occupied height as --say-floor, so the emote picker can
+    // clear a bar whose height changes with the game (issue #19).
+    <div className="table-ui" ref={sayFloor}>
       <div className="table-ui__scores">
         <span className="score">
           <span className="score__label">Dealer</span>
