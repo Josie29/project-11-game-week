@@ -17,5 +17,5 @@ export function SelfEmoteBubble() {
   const selfEmote = usePresenceStore((state) => state.selfEmote)
 
   if (!selfEmote) return null
-  return <EmoteBubble emote={selfEmote.emote} at={selfEmote.at} />
+  return <EmoteBubble label={selfEmote.text} at={selfEmote.at} />
 }

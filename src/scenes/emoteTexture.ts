@@ -1,8 +1,7 @@
 import { CanvasTexture, SRGBColorSpace, type Texture } from 'three'
-import { EMOTE_LABELS, type EmoteId } from '../world/emotes'
 
 /*
- * Emote bubbles drawn to canvas, the same trick as the nameplates — no font
+ * Speech bubbles drawn to canvas, the same trick as the nameplates — no font
  * loader, no image assets, crisp at any distance.
  *
  * Its own module rather than a parameter on `nameplateTexture.ts`, on the
@@ -10,8 +9,10 @@ import { EMOTE_LABELS, type EmoteId } from '../world/emotes'
  * The tint is deliberately not the nameplate's: a callout floating over a
  * head must read as speech, not as a second name.
  *
- * Cached by id, and the id set is the catalogue — so unlike the name cache,
- * this one is bounded by construction.
+ * Keyed by the drawn label rather than the emote id, because typed text goes
+ * through the same pill. That makes the cache unbounded the way the name
+ * cache is — and bounded the same way in practice, by the rate limit and the
+ * length of a session.
  */
 
 const WIDTH = 512
@@ -24,7 +25,7 @@ const BACKGROUND = 'rgba(242, 239, 250, 0.92)'
 const BORDER = 'rgba(64, 224, 208, 0.85)'
 const TEXT = '#1b1130'
 
-const cache = new Map<EmoteId, Texture>()
+const cache = new Map<string, Texture>()
 
 function createContext(width: number, height: number): CanvasRenderingContext2D {
   const canvas = document.createElement('canvas')
@@ -33,26 +34,29 @@ function createContext(width: number, height: number): CanvasRenderingContext2D 
 
   const ctx = canvas.getContext('2d')
   if (!ctx) {
-    throw new Error('Could not acquire a 2D canvas context for an emote bubble')
+    throw new Error('Could not acquire a 2D canvas context for a speech bubble')
   }
   return ctx
 }
 
 /**
- * Draws an emote's label into a rounded speech bubble.
+ * Draws a line of speech into a rounded bubble.
  *
- * The text comes from `EMOTE_LABELS`, never from the wire — the id was
- * sanitized against the catalogue before it reached the store, so this can
- * only ever draw a string this build ships.
+ * Only ever fed safe strings: a catalogue label of ours, or typed text that
+ * has already been through `sanitizeSayText` — nothing arrives here straight
+ * off the wire.
  *
- * @param emote A catalogued emote id.
+ * Shrunk to fit, then truncated with an ellipsis at the floor: a preset label
+ * always fits, but a typed line at `SAY_MAX_CHARS` can outrun any legible
+ * font size, and text through the border reads as a rendering bug.
+ *
+ * @param label What the bubble says. Already sanitized.
  */
-export function getEmoteTexture(emote: EmoteId): Texture {
-  const cached = cache.get(emote)
+export function getBubbleTexture(label: string): Texture {
+  const cached = cache.get(label)
   if (cached) return cached
 
   const ctx = createContext(WIDTH, HEIGHT)
-  const label = EMOTE_LABELS[emote]
 
   ctx.fillStyle = BACKGROUND
   ctx.strokeStyle = BORDER
@@ -66,22 +70,27 @@ export function getEmoteTexture(emote: EmoteId): Texture {
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
 
-  // Shrunk to fit rather than clipped, exactly as the nameplate does: the
-  // labels are ours, but "The hard way!" in wide glyphs still has to land
-  // inside the pill rather than through its border.
   let size = 60
   const maxTextWidth = WIDTH - 72
   do {
     ctx.font = `700 ${size}px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif`
     if (ctx.measureText(label).width <= maxTextWidth) break
     size -= 4
-  } while (size > 24)
+  } while (size > 22)
 
-  ctx.fillText(label, WIDTH / 2, HEIGHT / 2 + 2)
+  let drawn = label
+  if (ctx.measureText(label).width > maxTextWidth) {
+    while (drawn.length > 1 && ctx.measureText(`${drawn}…`).width > maxTextWidth) {
+      drawn = drawn.slice(0, -1)
+    }
+    drawn = `${drawn}…` // Unicode ellipsis, one glyph.
+  }
+
+  ctx.fillText(drawn, WIDTH / 2, HEIGHT / 2 + 2)
 
   const texture = new CanvasTexture(ctx.canvas)
   texture.colorSpace = SRGBColorSpace
   texture.anisotropy = 8
-  cache.set(emote, texture)
+  cache.set(label, texture)
   return texture
 }

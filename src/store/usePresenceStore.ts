@@ -21,7 +21,15 @@ import {
   STALE_AFTER_MS,
 } from '../world/presence'
 import type { WalkBounds } from '../scenes/components/WalkingPlayer'
-import { type EmoteId, sanitizeEmote } from '../world/emotes'
+import {
+  EMOTE_LABELS,
+  type EmoteId,
+  inviteTable,
+  type Said,
+  sanitizeSaid,
+  sanitizeSayText,
+  SAY_PREFIX,
+} from '../world/emotes'
 import { PlayMode, useSessionStore } from './useSessionStore'
 
 /*
@@ -130,7 +138,7 @@ interface PresenceStore {
    * bubble is still up is derived per frame against `EMOTE_TTL_MS`, the same
    * timestamp-in, deadline-out rule as `betClocks`.
    */
-  emotes: Readonly<Record<string, { readonly emote: EmoteId; readonly at: number }>>
+  emotes: Readonly<Record<string, Said & { readonly at: number }>>
   /**
    * What this player last said, for the bubble over their own head.
    *
@@ -140,9 +148,20 @@ interface PresenceStore {
    * is the send itself. Without it, pressing an emote is a button that
    * visibly does nothing on the sender's own screen.
    */
-  selfEmote: { readonly emote: EmoteId; readonly at: number } | null
+  selfEmote: (Said & { readonly at: number }) | null
+  /**
+   * An invitation waiting for an answer, or null.
+   *
+   * One at a time, latest wins: the response card is modal enough that a
+   * queue of them would be a queue of interruptions. Cleared by answering,
+   * dismissing, the asker leaving, or `INVITE_WINDOW_MS` running out.
+   */
+  invite: { readonly from: string; readonly table: TableId; readonly at: number } | null
+  clearInvite: () => void
   /** Says something over this player's head. The room relays and rate-limits. */
   sendEmote: (emote: EmoteId) => void
+  /** Says something typed. Sanitized before it is echoed or sent anywhere. */
+  sendSay: (text: string) => void
 }
 
 /**
@@ -191,7 +210,7 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     lastSent = null
     currentRoom = null
     buffers.clear()
-    set({ peers: {}, connected: false, emotes: {}, selfEmote: null })
+    set({ peers: {}, connected: false, emotes: {}, selfEmote: null, invite: null })
   }
 
   return {
@@ -208,6 +227,9 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     selfId: null,
     emotes: {},
     selfEmote: null,
+    invite: null,
+
+    clearInvite: () => set({ invite: null }),
 
     requestRoll: () => connection?.requestRoll(),
     passDice: () => connection?.passDice(),
@@ -229,7 +251,25 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
        * the feedback honest against the gap above; the room's own limit can
        * still drop it for everyone else, which the sender cannot know.
        */
-      set({ selfEmote: { emote, at: now } })
+      set({ selfEmote: { emote, text: EMOTE_LABELS[emote], at: now } })
+    },
+
+    sendSay: (raw) => {
+      /*
+       * Sanitized before it goes anywhere — including the local echo, so the
+       * sender's own bubble shows exactly what everyone else will see rather
+       * than the raw keystrokes. The receivers re-sanitize on the usual rule;
+       * this is courtesy plus a refusal to put junk on the wire at all.
+       */
+      const text = sanitizeSayText(raw)
+      if (text === null) return
+
+      const now = performance.now()
+      if (now - lastEmoteAt < EMOTE_MIN_GAP_MS) return
+      if (!connection) return
+      lastEmoteAt = now
+      connection.sendEmote(`${SAY_PREFIX}${text}`)
+      set({ selfEmote: { emote: null, text, at: now } })
     },
 
     enterRoom: (roomId, bounds, identity) => {
@@ -286,26 +326,37 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
             const peers = { ...state.peers }
             delete peers[id]
             // Their last words go with them; a bubble must not outlive the
-            // figure it hangs over.
+            // figure it hangs over — and neither must their invitation, which
+            // there is nobody left to accept.
             const emotes = { ...state.emotes }
             delete emotes[id]
-            return { peers, emotes }
+            return {
+              peers,
+              emotes,
+              invite: state.invite?.from === id ? null : state.invite,
+            }
           })
         },
 
         onConnectedChange: (connected) => set({ connected }),
 
         /*
-         * Somebody said something. Coerced against the catalogue here, at the
-         * seam where wire strings become state — the room relays without
-         * reading, so this is the only gate between a hostile peer and a
-         * canvas texture.
+         * Somebody said something. Coerced here, at the seam where wire
+         * strings become state — the room relays without reading, so this is
+         * the only gate between a hostile peer and a canvas texture. Both
+         * kinds of speech come through it: a catalogue id resolves to its
+         * label, `say:`-prefixed text is sanitized as prose.
          */
         onEmote: (id, emote) => {
-          const clean = sanitizeEmote(emote)
-          if (clean === null) return
+          const said = sanitizeSaid(emote)
+          if (said === null) return
+          const table = said.emote !== null ? inviteTable(said.emote) : null
           set((state) => ({
-            emotes: { ...state.emotes, [id]: { emote: clean, at: performance.now() } },
+            emotes: { ...state.emotes, [id]: { ...said, at: performance.now() } },
+            // An invite raises the response card; latest asker wins.
+            ...(table !== null
+              ? { invite: { from: id, table, at: performance.now() } }
+              : {}),
           }))
         },
 
