@@ -47,7 +47,9 @@ console.log('other button:  ', await O.getByRole('button', { name: /Roll the dic
  * what its felt draws. Cross-checked against the owner's own engine record,
  * because the claim is not "a record arrived" but "the right one did".
  */
-await S.evaluate(() => window.crapsStore.getState().wager('place-6', 12))
+// Field, not a place bet: the table boots on the come-out, where place bets
+// are refused — the point of the beat is the wire, not the rulebook.
+await S.evaluate(() => window.crapsStore.getState().wager('field', 15))
 await O.evaluate(() => window.crapsStore.getState().wager('field', 10))
 await a.waitForTimeout(2000)
 
