@@ -74,6 +74,9 @@ async function peers(page) {
       emotes: Object.fromEntries(
         Object.entries(state.emotes).map(([id, entry]) => [id, entry.emote]),
       ),
+      // This player's own last emote — the local echo the sender's bubble
+      // draws, since the room never echoes an emote back to its sender.
+      self: state.selfEmote?.emote ?? null,
     }
   })
 }
@@ -196,8 +199,9 @@ async function main() {
   /*
    * Alice says something (issue #16). The whole feature is this hop: her
    * `sendEmote` goes to the room, the room relays it to everyone else, and
-   * bob's store records it against her id. The sender deliberately hears
-   * nothing back, so only bob can prove it happened.
+   * bob's store records it against her id. The room deliberately sends
+   * nothing back to her, so only bob can prove the relay happened — her own
+   * bubble comes from the local echo, checked separately below.
    */
   const aliceId = bobSees.ids?.[0]
   await alice.page.evaluate(() => {
@@ -206,6 +210,11 @@ async function main() {
   await bob.page.waitForTimeout(1_500)
   const heard = await peers(bob.page)
   check('bob saw alice wave', heard.emotes?.[aliceId] === 'wave', JSON.stringify(heard.emotes))
+
+  // The sender's own screen must show it too. Without the echo, pressing an
+  // emote is a button that visibly does nothing — a bug report in waiting.
+  const aliceOwn = await peers(alice.page)
+  check('alice saw her own wave', aliceOwn.self === 'wave', JSON.stringify(aliceOwn.self))
 
   /*
    * And she cannot flood (the issue's third done criterion). The room admits

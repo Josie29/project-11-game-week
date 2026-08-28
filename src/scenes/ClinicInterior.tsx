@@ -72,6 +72,7 @@ import {
   getWallTexture,
 } from './clinicTexture'
 import { CasinoCharacter } from './components/CasinoCharacter'
+import { SelfEmoteBubble } from './components/SelfEmoteBubble'
 import { ClinicStaff } from './components/ClinicStaff'
 import { ExitDoor } from './components/ExitDoor'
 import { WalkingPlayer, type ProximityTarget } from './components/WalkingPlayer'
@@ -1225,6 +1226,8 @@ export function ClinicInterior() {
               seated
               legs={SeatedLegs.Extended}
             />
+            {/* The local echo of this player's own emote — see SelfEmoteBubble. */}
+            <SelfEmoteBubble />
           </group>
         </>
       )}

@@ -10,6 +10,7 @@ import { setLocalTransform } from '../../net/localTransform'
 import { moveVector } from '../../world/touchInput'
 import { getTouchMove } from '../../world/touchMove'
 import { CasinoCharacter } from './CasinoCharacter'
+import { SelfEmoteBubble } from './SelfEmoteBubble'
 import { CAMERA_LOOK_HEIGHT } from '../../world/camera'
 
 /*
@@ -442,7 +443,11 @@ export function WalkingPlayer({
         where the player is.
       */}
       {!hidden && (
-        <CasinoCharacter appearance={appearance} equipped={equipped} speedRef={speedRef} />
+        <>
+          <CasinoCharacter appearance={appearance} equipped={equipped} speedRef={speedRef} />
+          {/* The local echo of this player's own emote — see SelfEmoteBubble. */}
+          <SelfEmoteBubble />
+        </>
       )}
     </group>
   )

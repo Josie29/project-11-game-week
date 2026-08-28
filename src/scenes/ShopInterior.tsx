@@ -13,6 +13,7 @@ import { getVenue, type VenueId } from '../world/venues'
 import { PROPORTIONS, Silhouette } from '../character/proportions'
 import { Accessory } from './components/character/Accessory'
 import { CasinoCharacter } from './components/CasinoCharacter'
+import { SelfEmoteBubble } from './components/SelfEmoteBubble'
 import { ExitDoor } from './components/ExitDoor'
 import { ShopClerk, CLERK_GLANCE_RADIUS } from './components/ShopClerk'
 import { WalkingPlayer, type ProximityTarget } from './components/WalkingPlayer'
@@ -1419,6 +1420,8 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
           <MirrorCamera />
           <group position={[FITTING[0], FITTING_HEIGHT, FITTING[1]]} rotation={[0, Math.PI, 0]}>
             <CasinoCharacter appearance={appearance} equipped={worn} />
+            {/* The local echo of this player's own emote — see SelfEmoteBubble. */}
+            <SelfEmoteBubble />
           </group>
         </>
       )}
@@ -1428,6 +1431,8 @@ export function ShopInterior({ venueId }: ShopInteriorProps) {
           <DeskCamera />
           <group position={[DESK_STAND[0], 0, DESK_STAND[2]]} rotation={[0, DESK_FACING, 0]}>
             <CasinoCharacter appearance={appearance} equipped={worn} />
+            {/* The local echo of this player's own emote — see SelfEmoteBubble. */}
+            <SelfEmoteBubble />
           </group>
         </>
       )}
