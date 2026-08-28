@@ -37,6 +37,8 @@ const BACKOFF_MS = [500, 1_000, 2_000, 5_000, 10_000]
 export interface RoomHandlers {
   /** The room threw the dice. Everyone at that table gets the same numbers. */
   readonly onRolled?: (table: string, roll: { first: number; second: number }) => void
+  /** A player finished betting in the current roll window. */
+  readonly onSkipped?: (table: string, id: string) => void
   /** Who holds the dice now, or null when nobody is at the table. */
   readonly onShooter?: (table: string, id: string | null, lineup: readonly string[]) => void
   /**
@@ -141,6 +143,8 @@ export interface RoomConnection {
   sendEmote: (emote: string) => void
   /** Publishes everything this player has on the felt, opaque to the room. */
   sendStakes: (value: unknown) => void
+  /** Tells the room this player is done betting in the roll window. */
+  skipRollWait: () => void
   /** Asks the room to throw. It refuses unless it is this player's turn. */
   requestRoll: () => void
   /** Gives up the dice. The room decides who gets them next. */
@@ -279,6 +283,13 @@ export function joinRoom(
           first >= 1 && first <= 6 && second >= 1 && second <= 6
         if (sane && typeof message.table === 'string') {
           handlers.onRolled?.(message.table, { first, second })
+        }
+        return
+      }
+
+      case 'skipped': {
+        if (typeof message.table === 'string' && typeof message.id === 'string') {
+          handlers.onSkipped?.(message.table, message.id)
         }
         return
       }
@@ -501,6 +512,10 @@ export function joinRoom(
       if (socket?.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ t: 'stakes', value }))
       }
+    },
+
+    skipRollWait: () => {
+      if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ t: 'skip' }))
     },
 
     requestRoll: () => {

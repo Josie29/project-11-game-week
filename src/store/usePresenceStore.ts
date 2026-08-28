@@ -127,6 +127,27 @@ interface PresenceStore {
    * is the deadline without the deadline ever crossing the wire (issue #17).
    */
   rollClocks: Readonly<Record<string, number>>
+  /**
+   * Who has said "done betting" in the current roll window, per table.
+   *
+   * The count every rail watches fill: when it covers the lineup the room has
+   * already ended the window, and the clients see the same skips it counted.
+   * Reset by the next roll, which opens a fresh window and a fresh question.
+   */
+  rollSkips: Readonly<Record<string, readonly string[]>>
+  /**
+   * When the room's forced-roll clock was last armed, per table, on
+   * `performance.now()`.
+   *
+   * A separate face from `rollClocks` because the two are armed by different
+   * traffic: the betting window restarts only on a roll, but the room re-arms
+   * the forced roll on every shooter announcement too — seats changing hands,
+   * eligibility toggling, the dice passing — and a window face stamped on
+   * those would show betting seconds nobody actually got.
+   */
+  autoRollClocks: Readonly<Record<string, number>>
+  /** Tells the room this player is done betting in the roll window. */
+  skipRollWait: () => void
   /** This player's own id in the room, so the HUD can say "your roll". */
   selfId: string | null
   /** Asks the room to throw. It refuses unless it is this player's turn. */
@@ -241,6 +262,8 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
       selfEmote: null,
       invite: null,
       rollClocks: {},
+      rollSkips: {},
+      autoRollClocks: {},
       crapsStakes: {},
     })
   }
@@ -257,6 +280,8 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     betClocks: {},
     turnClocks: {},
     rollClocks: {},
+    rollSkips: {},
+    autoRollClocks: {},
     selfId: null,
     emotes: {},
     selfEmote: null,
@@ -268,6 +293,7 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     sendStakes: (value) => connection?.sendStakes(value),
 
     requestRoll: () => connection?.requestRoll(),
+    skipRollWait: () => connection?.skipRollWait(),
     passDice: () => connection?.passDice(),
     publishTable: (value) => connection?.publishTable(value),
     sendBet: (amount) => connection?.sendBet(amount),
@@ -440,8 +466,26 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
            * the other's betting.
            */
           if (table === TableId.Craps) {
-            set((state) => ({ rollClocks: { ...state.rollClocks, [table]: performance.now() } }))
+            set((state) => {
+              // A fresh window is a fresh question — the skips empty with it.
+              const rollSkips = { ...state.rollSkips }
+              delete rollSkips[table]
+              return {
+                rollClocks: { ...state.rollClocks, [table]: performance.now() },
+                autoRollClocks: { ...state.autoRollClocks, [table]: performance.now() },
+                rollSkips,
+              }
+            })
           }
+        },
+
+        onSkipped: (table, id) => {
+          if (table !== TableId.Craps) return
+          set((state) => {
+            const skipped = state.rollSkips[table] ?? []
+            if (skipped.includes(id)) return state
+            return { rollSkips: { ...state.rollSkips, [table]: [...skipped, id] } }
+          })
         },
 
         onSelf: (id) => set({ selfId: id }),
@@ -540,6 +584,10 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
             lineup,
             lineups: { ...state.lineups, [table]: lineup },
             shooters: { ...state.shooters, [table]: id },
+            // The room re-arms its forced-roll clock with every one of these
+            // announcements — restart the face to match, or the countdown
+            // reads seconds the room has already given back.
+            autoRollClocks: { ...state.autoRollClocks, [table]: performance.now() },
           })),
 
         /*

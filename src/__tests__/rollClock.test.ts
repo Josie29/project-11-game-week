@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { ROLL_SETTLE_MS, ROLL_WINDOW_MS as WORKER_ROLL_WINDOW_MS, rollWindowMs } from '../../worker/rollWindow'
+import { ROLL_SETTLE_MS, ROLL_TIMEOUT_MS, ROLL_WINDOW_MS as WORKER_ROLL_WINDOW_MS, rollWindowMs } from '../../worker/rollWindow'
 import { DICE_SETTLE_MS as STORE_SETTLE_MS } from '../store/useCrapsStore'
-import { DICE_SETTLE_MS, ROLL_WINDOW_MS, secondsUntilRoll } from '../world/rollClock'
+import { DEAL_WINDOW_MS } from '../world/dealClock'
+import {
+  AUTO_ROLL_MS,
+  DICE_SETTLE_MS,
+  ROLL_WINDOW_MS,
+  secondsUntilForcedRoll,
+  secondsUntilRoll,
+} from '../world/rollClock'
 
 describe('the roll clock', () => {
   /*
@@ -68,5 +75,43 @@ describe('the roll clock', () => {
   it('clamps at zero past the deadline', () => {
     expect(secondsUntilRoll(0, DICE_SETTLE_MS + ROLL_WINDOW_MS + 1)).toBe(0)
     expect(secondsUntilRoll(0, DICE_SETTLE_MS + ROLL_WINDOW_MS + 5_000)).toBe(0)
+  })
+})
+
+describe('the auto-roll clock', () => {
+  /*
+   * Pins the client's mirror to the worker's forced-roll timeout — and the
+   * deal clock's too, which borrowed the same number and until now could only
+   * pin a literal. A drift here is dice that "throw themselves" seconds
+   * before or after the countdown everyone was watching.
+   */
+  it('mirrors the room’s thirty-second timeout, and so does the deal clock', () => {
+    expect(AUTO_ROLL_MS).toBe(30_000)
+    expect(ROLL_TIMEOUT_MS).toBe(AUTO_ROLL_MS)
+    expect(DEAL_WINDOW_MS).toBe(ROLL_TIMEOUT_MS)
+  })
+
+  // The thirty start where the betting window ends, not at the broadcast —
+  // an auto-roll clock that ran through the window would fire mid-betting.
+  it('starts the count where the betting window ends', () => {
+    const windowEnd = DICE_SETTLE_MS + ROLL_WINDOW_MS
+    expect(secondsUntilForcedRoll(0, windowEnd)).toBe(30)
+  })
+
+  // Hidden band: while the tumble and betting window run, the value reads
+  // above thirty and the panel shows the betting count instead.
+  it('reads above the timeout while the window is still open', () => {
+    expect(secondsUntilForcedRoll(0, 0)).toBeGreaterThan(AUTO_ROLL_MS / 1000)
+    expect(secondsUntilForcedRoll(0, DICE_SETTLE_MS)).toBeGreaterThan(AUTO_ROLL_MS / 1000)
+  })
+
+  // Same ceiling-and-clamp contract as every clock here: 1 through the final
+  // second, 0 only at the deadline, never negative while the roll is in
+  // flight.
+  it('shows one through the final second and clamps at zero', () => {
+    const deadline = DICE_SETTLE_MS + ROLL_WINDOW_MS + AUTO_ROLL_MS
+    expect(secondsUntilForcedRoll(0, deadline - 1)).toBe(1)
+    expect(secondsUntilForcedRoll(0, deadline)).toBe(0)
+    expect(secondsUntilForcedRoll(0, deadline + 5_000)).toBe(0)
   })
 })

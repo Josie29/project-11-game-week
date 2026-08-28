@@ -12,7 +12,7 @@
 /**
  * The room's window before it deals to whoever has staked.
  *
- * A mirror of `ROLL_TIMEOUT_MS` in `worker/index.ts` — change one, change
+ * A mirror of `ROLL_TIMEOUT_MS` in `worker/rollWindow.ts` — change one, change
  * both. The worker cannot be imported from here (or covered by the test
  * suite at all), so `dealClock.test.ts` pins this value as the pair's only
  * guard. `scripts/seatClaims.mjs` mirrors the same number for the same

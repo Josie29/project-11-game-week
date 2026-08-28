@@ -15,7 +15,7 @@ import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
 import { useSessionStore } from '../store/useSessionStore'
 import { MARKER_AMOUNT } from '../world/money'
-import { ROLL_WINDOW_MS, secondsUntilRoll } from '../world/rollClock'
+import { AUTO_ROLL_MS, ROLL_WINDOW_MS, secondsUntilForcedRoll, secondsUntilRoll } from '../world/rollClock'
 import {
   CrapsBet,
   PLACE_BETS,
@@ -200,8 +200,46 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
    * the opening deal. Zero is the room's business: the button re-arms and the
    * worker would refuse a straggling click anyway.
    */
+  /*
+   * The room's forced roll, made visible: thirty seconds after the betting
+   * window ends, the dice fly whether or not the shooter clicks, and a table
+   * that cannot see that clock sees dice throw themselves. Same face
+   * mechanics as the window above; hidden while it reads over the thirty,
+   * which is the tumble and the betting window still running.
+   */
+  const [autoRollCountdown, setAutoRollCountdown] = useState<number | null>(null)
+  const autoRollClockStartedAt = table.autoRollClockStartedAt
+  useEffect(() => {
+    if (autoRollClockStartedAt === null) {
+      setAutoRollCountdown(null)
+      return
+    }
+
+    const update = () =>
+      setAutoRollCountdown(secondsUntilForcedRoll(autoRollClockStartedAt, performance.now()))
+    update()
+    const ticker = setInterval(update, 250)
+    return () => clearInterval(ticker)
+  }, [autoRollClockStartedAt])
+
+  const autoRollShown =
+    autoRollCountdown !== null &&
+    autoRollCountdown > 0 &&
+    autoRollCountdown <= AUTO_ROLL_MS / 1000 &&
+    !isRolling
+
+  /*
+   * The whole rail saying "done" ends the window where it stands: the room
+   * deleted its stamp when the last skip landed, and the same skips it relayed
+   * are what let this side agree without a second broadcast.
+   */
+  const everyoneReady = table.tableSize > 1 && table.readyCount >= table.tableSize
+
   const bettingWindowOpen =
-    rollCountdown !== null && rollCountdown > 0 && rollCountdown <= ROLL_WINDOW_MS / 1000
+    !everyoneReady &&
+    rollCountdown !== null &&
+    rollCountdown > 0 &&
+    rollCountdown <= ROLL_WINDOW_MS / 1000
 
   const canRoll = !isRolling && staked > 0 && table.isShooter && !bettingWindowOpen
 
@@ -409,6 +447,23 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
       </div>
 
       <div className="table-ui__actions">
+        {/*
+          Done betting? The window ends early once the whole rail says so —
+          the count fills in front of everyone, and the last click frees the
+          dice without waiting out the clock.
+        */}
+        {bettingWindowOpen && (
+          <button
+            type="button"
+            className="button"
+            disabled={table.hasReadied}
+            onClick={table.readyUp}
+          >
+            {table.hasReadied
+              ? `Ready ${table.readyCount}/${table.tableSize}`
+              : `Ready up ${table.readyCount}/${table.tableSize}`}
+          </button>
+        )}
         <button
           type="button"
           className="button button--primary"
@@ -419,11 +474,17 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
             ? 'Rolling…'
             : table.shared && !table.isShooter
               ? `Waiting for ${table.shooterName ?? 'the shooter'}${
-                  bettingWindowOpen ? ` — bets open ${rollCountdown}s` : ''
+                  bettingWindowOpen
+                    ? ` — bets open ${rollCountdown}s`
+                    : autoRollShown
+                      ? ` — rolls in ${autoRollCountdown}s`
+                      : ''
                 }`
               : bettingWindowOpen
                 ? `Roll in ${rollCountdown}s`
-                : 'Roll the dice'}{' '}
+                : autoRollShown
+                  ? `Roll the dice — auto in ${autoRollCountdown}s`
+                  : 'Roll the dice'}{' '}
           <kbd>Space</kbd>
         </button>
 

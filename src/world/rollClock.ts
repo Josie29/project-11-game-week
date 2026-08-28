@@ -50,3 +50,35 @@ export function secondsUntilRoll(rolledAt: number, now: number): number {
 
   return Math.max(0, Math.ceil(remaining / 1000))
 }
+
+/**
+ * How long an absent shooter holds the dice before the room rolls for them.
+ *
+ * A mirror of `ROLL_TIMEOUT_MS` in `worker/rollWindow.ts`, pinned by
+ * `rollClock.test.ts` — an actually held pair, unlike `dealClock.ts`'s literal
+ * copy of the same number, because the worker keeps it in the importable
+ * sibling now.
+ */
+export const AUTO_ROLL_MS = 30_000
+
+/**
+ * Whole seconds until the room rolls for the shooter, for display.
+ *
+ * The room arms this clock with the betting window as grace and re-arms it on
+ * every shooter announcement — and both of those events reach every client, so
+ * "the latest of them plus the lot" is the deadline, the same wire-less rule
+ * as every clock here.
+ *
+ * Reads above `AUTO_ROLL_MS / 1000` while the tumble and the betting window
+ * are still running; the panel hides those values, so the auto-roll count
+ * appears only once the dice are genuinely free and going unthrown.
+ *
+ * @param armedAt When the latest arming event — a roll or a shooter
+ *   announcement — reached this client, in the same clock as `now`.
+ * @param now The current time on that clock.
+ */
+export function secondsUntilForcedRoll(armedAt: number, now: number): number {
+  const remaining = armedAt + DICE_SETTLE_MS + ROLL_WINDOW_MS + AUTO_ROLL_MS - now
+
+  return Math.max(0, Math.ceil(remaining / 1000))
+}

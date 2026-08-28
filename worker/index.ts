@@ -17,7 +17,7 @@
 // `src/__tests__` can reach them: the play-order comparator so its direction
 // is pinned, the dice-holder rule and the deal grace for the same reason.
 import { dealGraceMs } from './dealGrace'
-import { rollWindowMs } from './rollWindow'
+import { ROLL_TIMEOUT_MS, rollWindowMs } from './rollWindow'
 import { resolveDiceHolder } from './dice'
 import { admitEmote } from './emoteLimit'
 import { byPlayOrder } from './playOrder'
@@ -133,6 +133,16 @@ interface ActionMessage {
 }
 
 /**
+ * "I am done betting this window." Counted, not merely relayed: the one thing
+ * only the room can decide is whether *everyone* at the table has said it,
+ * because only the room sees the whole table at one instant. When the last
+ * player says so, the betting window ends where it stands.
+ */
+interface SkipMessage {
+  readonly t: 'skip'
+}
+
+/**
  * "Say this over my head." Relayed meaning, never interpreted.
  *
  * Not table-scoped, unlike `action`: people wave on the street. The one
@@ -167,6 +177,7 @@ type Incoming =
   | BetMessage
   | ActionMessage
   | ReadyMessage
+  | SkipMessage
   | EmoteMessage
   | StakesMessage
 
@@ -239,6 +250,15 @@ interface Attachment {
    */
   holdsDice: boolean
   /**
+   * Whether this player has finished betting in the current roll window.
+   *
+   * Reset on every roll — a fresh window is a fresh question. Absent on
+   * attachments written before the field existed, and absent reads as "not
+   * done", which is the safe direction: nobody's window ends early because a
+   * stale attachment forgot to object.
+   */
+  doneBetting: boolean
+  /**
    * When this player's recent emotes were admitted, for the rate limit.
    *
    * On the attachment for the reason everything here is: a hibernating object
@@ -305,7 +325,6 @@ type ExpiryKind = 'roll' | 'turn' | 'deal'
  * knows only that somebody was handed the dice and has not thrown them, which
  * is enough to stop a closed tab freezing a table full of people.
  */
-const ROLL_TIMEOUT_MS = 30_000
 
 /**
  * How long a blackjack seat has to hit, stand, double or split.
@@ -421,6 +440,7 @@ export class Room implements DurableObject {
       // to nobody rather than to whoever happens to be standing closest.
       canShoot: false,
       holdsDice: false,
+      doneBetting: false,
       emoteSentAt: [],
     }
     server.serializeAttachment(attachment)
@@ -732,6 +752,34 @@ export class Room implements DurableObject {
         // put one down: possession is held state, so a line bet resolving —
         // which is all `ready: false` ever means — leaves the shooter alone.
         void this.announceShooter(table)
+        return
+      }
+
+      case 'skip': {
+        const table = attachment.identity?.table
+        if (typeof table !== 'string') return
+
+        attachment.doneBetting = true
+        ws.serializeAttachment(attachment)
+        // Relayed so every rail can watch the count fill: the clients know the
+        // lineup, so "skipped ids cover the lineup" is derivable on both ends
+        // and the room stays the only authority on the refusal itself.
+        this.sendAll({ t: 'skipped', table, id: attachment.id })
+
+        const waiting = this.queueFor(table).some((place) => {
+          const held = place.socket.deserializeAttachment() as Attachment | null
+          return held?.doneBetting !== true
+        })
+        if (!waiting) {
+          // Everyone is done: the window ends where it stands. Deleting the
+          // stamp is the whole mechanism — `throwFor` refuses on the stamp,
+          // and the clients see the same skips this broadcast carried.
+          try {
+            await this.state.storage.delete(`rollWindow:${table}`)
+          } catch {
+            // The timer path still ends the window a few seconds late.
+          }
+        }
         return
       }
 
@@ -1079,8 +1127,13 @@ export class Room implements DurableObject {
      * window runs, the dice do not leave the shooter's hand. Refused as
      * silently as a wrong shooter is — every client disables its button for
      * the same seconds, so a message here is a race, not a player.
+     *
+     * Only with company: the window exists so *other* players can bet, and a
+     * lone shooter waiting ten seconds for nobody is the table wasting their
+     * time. Checked at the throw rather than at the stamp, so the last other
+     * player leaving mid-window frees the dice by the same rule.
      */
-    if (await this.rollWindowOpen(table)) return
+    if (this.queueFor(table).length > 1 && (await this.rollWindowOpen(table))) return
 
     /*
      * Broadcast first, persist second, and never the other way round.
@@ -1101,6 +1154,19 @@ export class Room implements DurableObject {
    * failed write costs one window, never the roll that was already sent.
    */
   private async stampRollWindow(table: string): Promise<void> {
+    // A fresh window is a fresh question: everyone's "done betting" from the
+    // last one is cleared in the same breath the new one opens.
+    for (const { socket } of this.queueFor(table)) {
+      const held = socket.deserializeAttachment() as Attachment | null
+      if (!held || held.doneBetting !== true) continue
+      held.doneBetting = false
+      try {
+        socket.serializeAttachment(held)
+      } catch {
+        // A socket too far gone to write to is on its way out of the queue.
+      }
+    }
+
     try {
       await this.state.storage.put(`rollWindow:${table}`, Date.now() + rollWindowMs())
     } catch {
