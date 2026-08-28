@@ -24,3 +24,14 @@ export const ROLL_WINDOW_MS = 10_000
 export function rollWindowMs(): number {
   return ROLL_SETTLE_MS + ROLL_WINDOW_MS
 }
+
+/**
+ * How long an absent shooter holds the dice before the room rolls for them.
+ *
+ * Armed with `rollWindowMs()` as grace, so the thirty seconds start where the
+ * betting window ends. Here rather than in `worker/index.ts` so the client's
+ * mirror in `src/world/rollClock.ts` can actually be pinned against it —
+ * `dealClock.ts` mirrors this same number for the blackjack gather and can
+ * only pin a literal.
+ */
+export const ROLL_TIMEOUT_MS = 30_000

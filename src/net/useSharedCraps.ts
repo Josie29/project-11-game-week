@@ -52,6 +52,12 @@ export interface SharedCraps {
   readonly hasReadied: boolean
   /** Says it — once per window; the room counts, the next roll resets. */
   readonly readyUp: () => void
+  /**
+   * When the room's forced-roll clock was last armed, or null solo. Unlike
+   * the betting window this applies to a lone shooter too — the room rolls
+   * for anybody who goes quiet holding the dice.
+   */
+  readonly autoRollClockStartedAt: number | null
   /** Throws — locally when alone, by asking the room when not. */
   readonly roll: () => void
 }
@@ -82,6 +88,7 @@ export function useSharedCraps(): SharedCraps {
   const passDice = usePresenceStore((state) => state.passDice)
   const rollClocks = usePresenceStore((state) => state.rollClocks)
   const rollSkips = usePresenceStore((state) => state.rollSkips)
+  const autoRollClocks = usePresenceStore((state) => state.autoRollClocks)
   const skipRollWait = usePresenceStore((state) => state.skipRollWait)
   const publishTable = usePresenceStore((state) => state.publishTable)
 
@@ -207,6 +214,7 @@ export function useSharedCraps(): SharedCraps {
     readyUp: () => {
       if (shared && connected) skipRollWait()
     },
+    autoRollClockStartedAt: shared ? (autoRollClocks[TableId.Craps] ?? null) : null,
     roll: () => {
       if (isRolling) return
       // Nothing to ask, and nothing to throw locally: a shared table that has

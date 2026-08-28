@@ -17,7 +17,7 @@
 // `src/__tests__` can reach them: the play-order comparator so its direction
 // is pinned, the dice-holder rule and the deal grace for the same reason.
 import { dealGraceMs } from './dealGrace'
-import { rollWindowMs } from './rollWindow'
+import { ROLL_TIMEOUT_MS, rollWindowMs } from './rollWindow'
 import { resolveDiceHolder } from './dice'
 import { admitEmote } from './emoteLimit'
 import { byPlayOrder } from './playOrder'
@@ -302,7 +302,6 @@ type ExpiryKind = 'roll' | 'turn' | 'deal'
  * knows only that somebody was handed the dice and has not thrown them, which
  * is enough to stop a closed tab freezing a table full of people.
  */
-const ROLL_TIMEOUT_MS = 30_000
 
 /**
  * How long a blackjack seat has to hit, stand, double or split.

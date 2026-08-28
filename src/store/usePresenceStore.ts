@@ -133,6 +133,17 @@ interface PresenceStore {
    * Reset by the next roll, which opens a fresh window and a fresh question.
    */
   rollSkips: Readonly<Record<string, readonly string[]>>
+  /**
+   * When the room's forced-roll clock was last armed, per table, on
+   * `performance.now()`.
+   *
+   * A separate face from `rollClocks` because the two are armed by different
+   * traffic: the betting window restarts only on a roll, but the room re-arms
+   * the forced roll on every shooter announcement too — seats changing hands,
+   * eligibility toggling, the dice passing — and a window face stamped on
+   * those would show betting seconds nobody actually got.
+   */
+  autoRollClocks: Readonly<Record<string, number>>
   /** Tells the room this player is done betting in the roll window. */
   skipRollWait: () => void
   /** This player's own id in the room, so the HUD can say "your roll". */
@@ -230,7 +241,7 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     lastSent = null
     currentRoom = null
     buffers.clear()
-    set({ peers: {}, connected: false, emotes: {}, selfEmote: null, invite: null, rollClocks: {}, rollSkips: {} })
+    set({ peers: {}, connected: false, emotes: {}, selfEmote: null, invite: null, rollClocks: {}, rollSkips: {}, autoRollClocks: {} })
   }
 
   return {
@@ -246,6 +257,7 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     turnClocks: {},
     rollClocks: {},
     rollSkips: {},
+    autoRollClocks: {},
     selfId: null,
     emotes: {},
     selfEmote: null,
@@ -405,6 +417,7 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
               delete rollSkips[table]
               return {
                 rollClocks: { ...state.rollClocks, [table]: performance.now() },
+                autoRollClocks: { ...state.autoRollClocks, [table]: performance.now() },
                 rollSkips,
               }
             })
@@ -516,6 +529,10 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
             lineup,
             lineups: { ...state.lineups, [table]: lineup },
             shooters: { ...state.shooters, [table]: id },
+            // The room re-arms its forced-roll clock with every one of these
+            // announcements — restart the face to match, or the countdown
+            // reads seconds the room has already given back.
+            autoRollClocks: { ...state.autoRollClocks, [table]: performance.now() },
           })),
 
         /*
