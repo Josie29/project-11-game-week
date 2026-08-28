@@ -548,15 +548,34 @@ export class Room implements DurableObject {
          * stands, not from a fresh come-out. Sent after the welcome so the
          * roster is already in place, and only when they arrived at a table at
          * all — most joins are somebody stepping onto the street.
+         *
+         * Only while somebody is still playing that hand, though. Stored state
+         * served to a player who is alone at the table is a lie from a session
+         * that already ended — a point of 5 that closes the pass line, at a
+         * table whose dice nobody can earn without one, which is a deadlock —
+         * so an arrival who finds the table otherwise empty gets a fresh
+         * come-out and the stale state is deleted where it stands. This is the
+         * arrival-side rule that holds even if some departure path forgets to
+         * clean up, and it is what heals a table already poisoned in storage.
          */
         const joinedTable = attachment.identity.table
         if (typeof joinedTable === 'string') {
+          const occupied = this.queueFor(joinedTable).some((place) => place.id !== attachment.id)
+
           let stored: unknown = null
-          try {
-            stored = await this.state.storage.get(`state:${joinedTable}`)
-          } catch {
-            // A newcomer starting from a fresh come-out is a worse table than
-            // one that starts mid-hand, and a far better one than no table.
+          if (occupied) {
+            try {
+              stored = await this.state.storage.get(`state:${joinedTable}`)
+            } catch {
+              // A newcomer starting from a fresh come-out is a worse table than
+              // one that starts mid-hand, and a far better one than no table.
+            }
+          } else {
+            try {
+              await this.state.storage.delete(`state:${joinedTable}`)
+            } catch {
+              // Best-effort: the arrival is getting null either way.
+            }
           }
           ws.send(JSON.stringify({ t: 'state', table: joinedTable, value: stored ?? null }))
           await this.announceShooter(joinedTable)
@@ -577,6 +596,14 @@ export class Room implements DurableObject {
           // If they were the shooter there, the pair they dropped has to land
           // in somebody else's hand before that table notices it is waiting.
           await this.announceShooter(previousTable)
+          /*
+           * Standing up is the other way to leave a table, and it forgot to say
+           * so: `tableEmptied` only ran from the close path, so the last player
+           * pressing "Leave table" before walking out left the round's state
+           * stored forever. This is the path the reproduced deadlock actually
+           * shipped through.
+           */
+          await this.tableEmptied(previousTable)
         }
         return
       }
@@ -745,10 +772,20 @@ export class Room implements DurableObject {
    * string the clients sent, which is what keeps it a relay rather than a
    * referee.
    */
-  private queueFor(table: string): { id: string; socket: WebSocket }[] {
+  private queueFor(table: string, leaving?: WebSocket): { id: string; socket: WebSocket }[] {
     const line: { id: string; socket: WebSocket; at: number }[] = []
 
     for (const socket of this.state.getWebSockets()) {
+      /*
+       * Same exclusion `announceSeats` carries, for the same reason: whether a
+       * closing socket is still in `getWebSockets` when `webSocketClose` runs
+       * depends on the runtime — miniflare shows it, production has been seen
+       * both ways — so a caller on the departure path names the leaver instead
+       * of trusting the list. Without this, `tableEmptied` counted the very
+       * player who was leaving and kept their dead round's state for the next
+       * arrival.
+       */
+      if (socket === leaving) continue
       const held = socket.deserializeAttachment() as Attachment | null
       if (!held?.identity || held.identity.table !== table) continue
       line.push({ id: held.id, socket, at: held.tookTableAt ?? 0 })
@@ -1279,7 +1316,7 @@ export class Room implements DurableObject {
       }
       // Their stool is free, and saying so is what lets the next player take it.
       this.announceSeats(table, ws)
-      void this.tableEmptied(table)
+      void this.tableEmptied(table, ws)
     }
   }
 
@@ -1296,8 +1333,8 @@ export class Room implements DurableObject {
    * Deliberately not cleared on a handover. One player leaving mid-point while
    * another is still there must leave the point exactly where it is.
    */
-  private async tableEmptied(table: string): Promise<void> {
-    if (this.queueFor(table).length > 0) {
+  private async tableEmptied(table: string, leaving?: WebSocket): Promise<void> {
+    if (this.queueFor(table, leaving).length > 0) {
       await this.announceShooter(table)
       return
     }
