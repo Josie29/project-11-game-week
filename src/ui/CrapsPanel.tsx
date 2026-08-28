@@ -22,6 +22,7 @@ import {
   POINT_NUMBERS,
 } from '../scenes/crapsFeltLayout'
 import { getVenue, type VenueId } from '../world/venues'
+import { useSayFloor } from './useSayFloor'
 
 /**
  * The rack, smallest first, so the number keys read left to right.
@@ -143,6 +144,7 @@ interface CrapsPanelProps {
  * look at, so this stays a slim strip of stakes, bets and the roll control.
  */
 export function CrapsPanel({ venueId }: CrapsPanelProps) {
+  const sayFloor = useSayFloor()
   const game = useCrapsStore((state) => state.game)
   const isRolling = useCrapsStore((state) => state.isRolling)
   const wager = useCrapsStore((state) => state.wager)
@@ -222,7 +224,9 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
   })
 
   return (
-    <div className="table-ui">
+    // Publishes its occupied height as --say-floor, so the emote picker can
+    // clear a bar whose height changes with the game (issue #19).
+    <div className="table-ui" ref={sayFloor}>
       <div className="table-ui__scores">
         <span className="score">
           <span className="score__label">Point</span>
