@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  betChipSlot,
+  betChipSpot,
+  CRAPS_BET_SLOTS,
   CrapsBet,
   isPlaceBet,
   PLACE_BETS,
@@ -10,6 +13,9 @@ import {
   hitTestCrapsFelt,
   rectCenter,
 } from '../scenes/crapsFeltLayout'
+import { CRAPS_RAIL_SPOTS } from '../scenes/casinoFloorLayout'
+import { feltToWorld } from '../scenes/crapsTableLayout'
+import { CHIP_RADIUS, CRAPS_CHIP_SCALE, RING_LIP } from '../scenes/chipLayout'
 
 /** Every bet the felt draws, so a new region cannot skip these checks. */
 const ALL_BETS = Object.values(CrapsBet)
@@ -150,5 +156,66 @@ describe('craps point boxes', () => {
       PointNumber.Nine,
       PointNumber.Ten,
     ])
+  })
+})
+
+describe('per-player chip slots', () => {
+  // The felt and the rail must agree on how many people can bet: a ninth rail
+  // spot with no slot would draw that player's chips on top of somebody
+  // else's, which is exactly the ambiguity the slots exist to remove.
+  it('offers one slot per rail spot', () => {
+    expect(CRAPS_BET_SLOTS).toBe(CRAPS_RAIL_SPOTS.length)
+  })
+
+  // Two players' stacks on one spot read as one player's money. Distinct is
+  // not enough — the ownership rings under neighbouring stacks must not
+  // touch, so the pitch is held at two ring radii, not two chip radii.
+  it('keeps every pair of slots at least two ownership rings apart', () => {
+    const ringOuter = CHIP_RADIUS * CRAPS_CHIP_SCALE + RING_LIP
+    for (const bet of ALL_BETS) {
+      for (let a = 0; a < CRAPS_BET_SLOTS; a++) {
+        for (let b = a + 1; b < CRAPS_BET_SLOTS; b++) {
+          const slotA = betChipSlot(bet, a)
+          const slotB = betChipSlot(bet, b)
+          const [ax, , az] = feltToWorld(slotA.u, slotA.v)
+          const [bx, , bz] = feltToWorld(slotB.u, slotB.v)
+          expect(Math.hypot(ax - bx, az - bz), `${bet} ${a}/${b}`).toBeGreaterThanOrEqual(
+            2 * ringOuter,
+          )
+        }
+      }
+    }
+  })
+
+  // A slot outside its own printed region is a stack that reads as a bet on
+  // something else — or on nothing, which for money is worse.
+  it('keeps every slot inside the rect of the bet it belongs to', () => {
+    for (const bet of ALL_BETS) {
+      const rect = getCrapsBetRect(bet)
+      for (let slot = 0; slot < CRAPS_BET_SLOTS; slot++) {
+        const { u, v } = betChipSlot(bet, slot)
+        expect(u, `${bet} slot ${slot} u`).toBeGreaterThan(rect.u0)
+        expect(u, `${bet} slot ${slot} u`).toBeLessThan(rect.u1)
+        expect(v, `${bet} slot ${slot} v`).toBeGreaterThan(rect.v0)
+        expect(v, `${bet} slot ${slot} v`).toBeLessThan(rect.v1)
+      }
+    }
+  })
+
+  // Slot 0 is the solo player's slot: the one bettor a private table has must
+  // keep their chips exactly where they have always been.
+  it('keeps slot 0 where the lone bettor has always stacked', () => {
+    for (const bet of ALL_BETS) {
+      expect(betChipSlot(bet, 0)).toEqual(betChipSpot(bet))
+    }
+  })
+
+  // An index off either end must clamp rather than throw or extrapolate off
+  // the felt — a transient lineup glitch is drawn safe, not drawn wrong.
+  it('clamps out-of-range slots onto the felt', () => {
+    for (const bet of ALL_BETS) {
+      expect(betChipSlot(bet, -3)).toEqual(betChipSlot(bet, 0))
+      expect(betChipSlot(bet, 99)).toEqual(betChipSlot(bet, CRAPS_BET_SLOTS - 1))
+    }
   })
 })

@@ -39,6 +39,45 @@ console.log('shooter:', shooterIsAlice ? 'alice' : 'bob')
 const S = shooterIsAlice ? a : b, O = shooterIsAlice ? b : a
 console.log('shooter button:', await S.getByRole('button', { name: /Roll the dice|Waiting/ }).innerText())
 console.log('other button:  ', await O.getByRole('button', { name: /Roll the dice|Waiting/ }).innerText())
+
+/*
+ * Every player's bets on the felt (issue #18). Both booted with a pass line
+ * down; each now places a distinct second bet, and each page's presence
+ * store must end up holding the *other's* full record — which is exactly
+ * what its felt draws. Cross-checked against the owner's own engine record,
+ * because the claim is not "a record arrived" but "the right one did".
+ */
+await S.evaluate(() => window.crapsStore.getState().wager('place-6', 12))
+await O.evaluate(() => window.crapsStore.getState().wager('field', 10))
+await a.waitForTimeout(2000)
+
+const stakesSeen = (p, id) => p.evaluate(
+  (peer) => window.presenceStore.getState().crapsStakes[peer] ?? null,
+  id,
+)
+const ownBets = (p) => p.evaluate(() => window.crapsStore.getState().game.bets)
+
+const sSeesO = await stakesSeen(S, shooterIsAlice ? bv.self : av.self)
+const oSeesS = await stakesSeen(O, shooterIsAlice ? av.self : bv.self)
+const sOwn = await ownBets(S), oOwn = await ownBets(O)
+const betsMatch =
+  JSON.stringify(sSeesO) === JSON.stringify(oOwn) &&
+  JSON.stringify(oSeesS) === JSON.stringify(sOwn)
+console.log('shooter sees other stakes:', JSON.stringify(sSeesO))
+console.log('other sees shooter stakes:', JSON.stringify(oSeesS))
+await S.screenshot({ path: '/tmp/craps2p-shooter-felt.png' })
+
+/*
+ * And a fresh arrival sees the felt as it stands: reload one page, whose only
+ * picture of the other's stakes is now the welcome's roster.
+ */
+await O.reload({ waitUntil: 'networkidle' })
+await O.waitForSelector('canvas', { timeout: 20000 })
+await a.waitForTimeout(4000)
+const afterReload = await stakesSeen(O, shooterIsAlice ? av.self : bv.self)
+const welcomeCarried = JSON.stringify(afterReload) === JSON.stringify(sOwn)
+console.log('after reload, other sees shooter stakes:', JSON.stringify(afterReload))
+
 await S.getByRole('button', { name: /Roll the dice/ }).click()
 await a.waitForTimeout(5000)
 const sa = await view(S), so = await view(O)
@@ -80,4 +119,6 @@ console.log(same ? '\nPASS: both settled the same roll' : '\nFAIL: rolls differ'
 console.log(windowShown ? 'PASS: shooter held to the betting window' : 'FAIL: no countdown on the shooter')
 console.log(windowShared ? 'PASS: the rail watches the same countdown' : 'FAIL: no countdown for the rail')
 console.log(reopened ? 'PASS: the dice fly again after the window' : 'FAIL: button never re-enabled')
-process.exit(same && windowShown && windowShared && reopened ? 0 : 1)
+console.log(betsMatch ? "PASS: each felt holds the other's exact bets" : "FAIL: stakes records diverge")
+console.log(welcomeCarried ? 'PASS: a fresh arrival sees the standing bets' : 'FAIL: welcome dropped the stakes')
+process.exit(same && windowShown && windowShared && reopened && betsMatch && welcomeCarried ? 0 : 1)

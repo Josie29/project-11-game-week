@@ -144,6 +144,19 @@ interface EmoteMessage {
   readonly emote?: unknown
 }
 
+/**
+ * "Here is everything I have on the felt." Stored and relayed, never read.
+ *
+ * The craps clients use it to draw each other's stakes (issue #18), but the
+ * room does not know that: the value is opaque, like `state`. Deliberately
+ * not the `bet` message — that one arms the blackjack deal window, and an
+ * alarm at an idle craps table is a rented server by another route.
+ */
+interface StakesMessage {
+  readonly t: 'stakes'
+  readonly value?: unknown
+}
+
 type Incoming =
   | JoinMessage
   | MoveMessage
@@ -155,6 +168,7 @@ type Incoming =
   | ActionMessage
   | ReadyMessage
   | EmoteMessage
+  | StakesMessage
 
 /**
  * What the server remembers about one connection.
@@ -233,6 +247,15 @@ interface Attachment {
    * this field existed — `admitEmote` treats missing as empty.
    */
   emoteSentAt?: readonly number[]
+  /**
+   * The player's last published stakes record, opaque, for the welcome.
+   *
+   * On the attachment for the reason everything here is: a hibernating
+   * object keeps its sockets and loses its memory, and stakes held in a
+   * `Map` would strip every felt bare after the first lull. Optional so
+   * attachments serialized before the field existed deserialize fine.
+   */
+  stakes?: unknown
 }
 
 export interface Env {
@@ -511,6 +534,9 @@ export class Room implements DurableObject {
           // shooter, not a walk-up who has to wait for the line to come round.
           attachment.canShoot = carried.canShoot
           attachment.holdsDice = carried.holdsDice
+          // And what they had on the felt, so a blip does not strip their
+          // stacks off everyone else's table until their client republishes.
+          attachment.stakes = carried.stakes
         }
         /*
          * Changing table is one of the three things allowed to move the dice:
@@ -522,6 +548,9 @@ export class Room implements DurableObject {
         if (previousTable !== attachment.identity.table) {
           attachment.holdsDice = false
           attachment.canShoot = false
+          // The stakes were about the table they left; a welcome must not
+          // seat their old chips on a felt they are no longer at.
+          attachment.stakes = undefined
         }
         /*
          * The claim is resolved before the welcome goes out, so the map the new
@@ -743,6 +772,31 @@ export class Room implements DurableObject {
         // `broadcast`, not `sendAll`: the sender knows what they said, and the
         // done criterion is each seeing the *other's* bubble.
         this.broadcast(ws, { t: 'emote', id: attachment.id, emote: message.emote })
+        return
+      }
+
+      case 'stakes': {
+        const table = attachment.identity?.table
+        if (typeof table !== 'string') return
+        /*
+         * A size gate rather than a schema: the room relays without knowing
+         * what a stake is, so the real gate is the receiving client's
+         * sanitizer. A full record is ~300 bytes; the cap is what keeps a
+         * welcome carrying 32 of these bounded.
+         */
+        if (JSON.stringify(message.value ?? null).length > 512) return
+
+        // Held for the welcome, so an arrival sees the felt as it stands.
+        attachment.stakes = message.value
+        ws.serializeAttachment(attachment)
+
+        /*
+         * `broadcast`, not `sendAll` — the sender draws its own stakes from
+         * its own engine, which is the record that actually holds its money.
+         * No clocks and no storage: unlike `bet`, publishing stakes must not
+         * arm anything, or an idle craps table becomes a rented server.
+         */
+        this.broadcast(ws, { t: 'stakes', table, id: attachment.id, value: message.value })
         return
       }
 
@@ -1414,7 +1468,14 @@ export class Room implements DurableObject {
       // would have a reconnecting player watching themselves sit at the table.
       if (attachment.id === selfId) continue
 
-      peers.push({ id: attachment.id, ...attachment.identity, pose: attachment.pose })
+      // `stakes` rides along opaque, like the pose: an arrival has to see the
+      // felt as it stands, and only the room was here to remember it.
+      peers.push({
+        id: attachment.id,
+        ...attachment.identity,
+        pose: attachment.pose,
+        stakes: attachment.stakes ?? null,
+      })
     }
 
     return peers

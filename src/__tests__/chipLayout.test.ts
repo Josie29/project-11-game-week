@@ -4,10 +4,15 @@ import {
   chipBreakdown,
   CHIP_RADIUS,
   chipsValue,
+  CRAPS_CHIP_SCALE,
   MAX_CHIPS_PER_COLUMN,
   packIntoColumns,
+  playerChipRing,
+  RING_LIP,
   stashBreakdown,
 } from '../scenes/chipLayout'
+import { DEFAULT_APPEARANCE } from '../character/appearance'
+import { GARMENT_COLORS } from '../character/palette'
 import { MAX_HANDS } from '../games/blackjack/engine'
 import {
   CARD_HEIGHT,
@@ -351,5 +356,27 @@ describe('dealer kit placement', () => {
     expect(
       Math.hypot(SHOE_MOUTH[0] - SHOE_POSITION[0], SHOE_MOUTH[2] - SHOE_POSITION[2]),
     ).toBeLessThan(0.45)
+  })
+})
+
+describe('craps chip scale and ownership ring', () => {
+  // The craps felt packs eight players' stacks per bet region; the scale is
+  // what makes that arithmetic work, and a scale outside (0, 1) either grows
+  // the chips or deletes them.
+  it('shrinks craps chips without inverting or erasing them', () => {
+    expect(CRAPS_CHIP_SCALE).toBeGreaterThan(0)
+    expect(CRAPS_CHIP_SCALE).toBeLessThan(1)
+    expect(RING_LIP).toBeGreaterThan(0)
+  })
+
+  // The ring colour is the second identity channel on the felt. It must be
+  // the swatch the player picked — not the garment's remapped palette — and
+  // junk must fall back to a real colour rather than an unparseable one,
+  // which meshStandardMaterial renders as glowing white.
+  it('reads the ring from the garment swatch and falls back on junk', () => {
+    const midnight = GARMENT_COLORS.find((swatch) => swatch.id === 'midnight')
+    expect(playerChipRing({ ...DEFAULT_APPEARANCE, garmentColor: 'midnight' })).toBe(midnight?.hex)
+    const fallback = playerChipRing({ ...DEFAULT_APPEARANCE, garmentColor: 'not-a-colour' })
+    expect(GARMENT_COLORS.some((swatch) => swatch.hex === fallback)).toBe(true)
   })
 })

@@ -2,14 +2,17 @@ import { CuboidCollider, Physics, RigidBody } from '@react-three/rapier'
 import { useCallback, useMemo, useRef } from 'react'
 import { DoubleSide, ExtrudeGeometry, Shape } from 'three'
 import { chipStake, totalCrapsStake } from '../../games/craps/engine'
+import { useAppearanceStore } from '../../store/useAppearanceStore'
 import { useCrapsStore } from '../../store/useCrapsStore'
 import { useGameStore } from '../../store/useGameStore'
-import { heldChipValue } from '../chipLayout'
+import { usePresenceStore } from '../../store/usePresenceStore'
+import { crapsRailIndex, TableId } from '../casinoFloorLayout'
+import { CRAPS_CHIP_SCALE, heldChipValue, playerChipRing } from '../chipLayout'
 import { buildBandGeometry, buildRingGeometry } from '../bandGeometry'
 import { ChipStack } from './ChipStack'
 import { CrapsDice } from './CrapsDice'
 import {
-  betChipSpot,
+  betChipSlot,
   CrapsBet,
   hitTestCrapsFelt,
   pointPuckSpot,
@@ -256,6 +259,9 @@ function TableRail() {
  */
 const CLICK_SLOP_PX = 5
 
+/** Stable empty lineup, so a selector does not hand back a new one each render. */
+const EMPTY_LINEUP: readonly string[] = []
+
 /** The craps table: felt, rails, chips on the bets, and the dice in the pit. */
 export function CrapsTable() {
   const game = useCrapsStore((state) => state.game)
@@ -264,6 +270,27 @@ export function CrapsTable() {
   const wager = useCrapsStore((state) => state.wager)
   const pickedChip = useCrapsStore((state) => state.heldChip)
   const bankroll = useGameStore((state) => state.bankroll)
+
+  /*
+   * Who else has money on this felt, read straight from the presence store —
+   * deliberately not through `useSharedCraps`, whose effects publish to the
+   * room and are already mounted twice. Everything read here is display-only:
+   * `crapsStakes` is other people's records, drawn and never spent.
+   */
+  const selfId = usePresenceStore((state) => state.selfId)
+  const shooterId = usePresenceStore((state) => state.shooters[TableId.Craps] ?? null)
+  const lineup = usePresenceStore((state) => state.lineups[TableId.Craps] ?? EMPTY_LINEUP)
+  const crapsStakes = usePresenceStore((state) => state.crapsStakes)
+  const peers = usePresenceStore((state) => state.peers)
+  const ownAppearance = useAppearanceStore((state) => state.appearance)
+
+  /*
+   * This player's slot along every bet region: their rail index. Solo — no
+   * self id, empty lineup — this is slot 0, which `betChipSlot` maps to
+   * exactly the spot a lone bettor's chips have always sat on.
+   */
+  const mySlot =
+    selfId !== null && lineup.includes(selfId) ? crapsRailIndex(selfId, shooterId, lineup) : 0
 
   /** Where the pointer went down, so a drag can be told from a click. */
   const pressedAt = useRef<{ x: number; y: number } | null>(null)
@@ -447,13 +474,51 @@ export function CrapsTable() {
         )
       })()}
 
-      {/* Chips on each bet the player has money on. */}
+      {/* This player's chips, on their own slot of each bet — the engine's
+          record, the one that actually holds their money. */}
       {Object.values(CrapsBet).map((bet) => {
         const amount = game.bets[bet]
         if (amount <= 0) return null
 
-        const spot = betChipSpot(bet)
-        return <ChipStack key={bet} amount={amount} position={feltToWorld(spot.u, spot.v)} />
+        const spot = betChipSlot(bet, mySlot)
+        return (
+          <ChipStack
+            key={bet}
+            amount={amount}
+            position={feltToWorld(spot.u, spot.v)}
+            scale={CRAPS_CHIP_SCALE}
+            ring={playerChipRing(ownAppearance)}
+          />
+        )
+      })}
+
+      {/*
+        Everyone else's chips, from the records they published (issue #18).
+        Display-only: these amounts are drawn and never spent — the engine
+        knows nothing of them, and the lineup gate means a player who walks
+        away takes their stacks with them even before the room says `left`.
+        Whose stack is whose reads two ways: the slot in front of the owner's
+        rail spot, and the ring under it in the owner's garment colour.
+      */}
+      {Object.entries(crapsStakes).map(([id, stakes]) => {
+        if (id === selfId || !lineup.includes(id)) return null
+        const slot = crapsRailIndex(id, shooterId, lineup)
+        const ring = peers[id] ? playerChipRing(peers[id].appearance) : undefined
+        return Object.values(CrapsBet).map((bet) => {
+          const amount = stakes[bet]
+          if (amount <= 0) return null
+
+          const spot = betChipSlot(bet, slot)
+          return (
+            <ChipStack
+              key={`${id}:${bet}`}
+              amount={amount}
+              position={feltToWorld(spot.u, spot.v)}
+              scale={CRAPS_CHIP_SCALE}
+              ring={ring}
+            />
+          )
+        })
       })}
 
       {/*

@@ -15,6 +15,19 @@ import { PlayMode, useSessionStore } from '../store/useSessionStore'
 /** Stable empty array, so the selector does not hand back a new one each render. */
 const EMPTY: readonly string[] = []
 
+/**
+ * The last stakes record put on the wire, as JSON, or null before any.
+ *
+ * Module-level and compared by content, because this hook mounts twice — the
+ * panel and the interior — and each mount's effect fires on every change. A
+ * per-hook ref would send everything twice; comparing the serialized record
+ * lets both mounts share one answer to "has the room already heard this".
+ * Null again whenever the socket drops, so a reconnect — a fresh attachment
+ * on the worker, blank where the stakes were — is re-told rather than
+ * assumed to remember.
+ */
+let lastStakesSent: string | null = null
+
 /** What the craps table needs to know about the people around it. */
 export interface SharedCraps {
   /** True when the room owns the dice, whether or not it is reachable now. */
@@ -74,6 +87,7 @@ export function useSharedCraps(): SharedCraps {
   const passDice = usePresenceStore((state) => state.passDice)
   const rollClocks = usePresenceStore((state) => state.rollClocks)
   const publishTable = usePresenceStore((state) => state.publishTable)
+  const sendStakes = usePresenceStore((state) => state.sendStakes)
 
   const activeTable = useGameStore((state) => state.activeTable)
   const throwDice = useCrapsStore((state) => state.throwDice)
@@ -134,6 +148,25 @@ export function useSharedCraps(): SharedCraps {
     if (!shared) return
     publishTable(useCrapsStore.getState().tableSnapshot())
   }, [shared, game.lastRoll, publishTable])
+
+  /*
+   * Publishes what this player has on the felt, so the others can draw it
+   * (issue #18). Everything that moves money moves `game.bets` — a wager, a
+   * take-down, a settle, walking away — so watching the record *is* watching
+   * the felt, and no call site needs to remember to publish. An all-zero
+   * record is a real message: it is how chips leave everyone else's table.
+   */
+  useEffect(() => {
+    if (!shared || !connected) {
+      // The room forgot us with the socket; say it all again on return.
+      if (!connected) lastStakesSent = null
+      return
+    }
+    const record = JSON.stringify(game.bets)
+    if (record === lastStakesSent) return
+    lastStakesSent = record
+    sendStakes(game.bets)
+  }, [shared, connected, game.bets, sendStakes])
 
   /*
    * Hands the dice on — when the player sees the seven, not when the engine

@@ -98,6 +98,7 @@ let joinRoom: (
     onConnectedChange: (connected: boolean) => void
     onRoster?: (people: readonly { id: string }[]) => void
     onEmote?: (id: string, emote: string) => void
+    onStakes?: (table: string, id: string, value: unknown) => void
   },
 ) => RoomConnection | null
 
@@ -349,5 +350,83 @@ describe('the bankroll on the wire', () => {
     connection.announce({ ...IDENTITY, bankroll: 750 })
 
     expect(FakeSocket.instances[0]?.lastJoin()?.bankroll).toBe(750)
+  })
+})
+
+describe('stakes on the wire', () => {
+  /** Joins with an `onStakes`, recording exactly what reaches it. */
+  function joinWatching(): {
+    connection: RoomConnection
+    seen: [string, string, unknown][]
+  } {
+    const seen: [string, string, unknown][] = []
+    const connection = joinRoom('venue:golden-ace', BOUNDS, IDENTITY, {
+      onIdentity: () => {},
+      onPose: () => {},
+      onLeave: () => {},
+      onConnectedChange: () => {},
+      onStakes: (table: string, id: string, value: unknown) => seen.push([table, id, value]),
+    })
+    if (connection === null) throw new Error('multiplayer should be configured in this test')
+    return { connection, seen }
+  }
+
+  // The whole feature is this frame: without it, a peer's stakes are chips
+  // that never appear on anybody else's felt.
+  it('delivers a relayed stakes record raw, for the store to sanitize', () => {
+    const { seen } = joinWatching()
+    FakeSocket.instances[0]?.fireOpen()
+    FakeSocket.instances[0]?.fireMessage({
+      t: 'stakes',
+      table: 'craps',
+      id: 'peer-1',
+      value: { 'pass-line': 50 },
+    })
+
+    expect(seen).toEqual([['craps', 'peer-1', { 'pass-line': 50 }]])
+  })
+
+  // A mid-game arrival's only picture of the felt is the welcome. Each peer's
+  // stakes ride their roster entry, keyed to the table their identity names.
+  it('hands each welcomed peer stakes over with their own table', () => {
+    const { seen } = joinWatching()
+    FakeSocket.instances[0]?.fireOpen()
+    FakeSocket.instances[0]?.fireMessage({
+      t: 'welcome',
+      id: 'me',
+      peers: [
+        { id: 'bettor', name: 'Josie', table: 'craps', stakes: { 'field': 10 } },
+        { id: 'walker', name: 'Nic', stakes: null },
+        { id: 'idler', name: 'Sam', table: 'craps' },
+      ],
+    })
+
+    expect(seen).toEqual([['craps', 'bettor', { field: 10 }]])
+  })
+
+  // Frames off a peer-facing server must never throw in the socket handler —
+  // an unhandled throw there takes the client down.
+  it('drops malformed stakes frames without crashing', () => {
+    const { seen } = joinWatching()
+    FakeSocket.instances[0]?.fireOpen()
+
+    FakeSocket.instances[0]?.fireMessage({ t: 'stakes', id: 'peer-1', value: {} })
+    FakeSocket.instances[0]?.fireMessage({ t: 'stakes', table: 'craps', value: {} })
+    FakeSocket.instances[0]?.fireMessage({ t: 'stakes', table: 7, id: 'x', value: {} })
+
+    expect(seen).toEqual([])
+  })
+
+  // The worker matches on `{t: 'stakes', value}` exactly.
+  it('sends the exact frame the worker expects', () => {
+    const { connection } = joinWatching()
+    FakeSocket.instances[0]?.fireOpen()
+
+    connection.sendStakes({ 'pass-line': 25 })
+
+    const frames = FakeSocket.instances[0]?.sent
+      .map((raw) => JSON.parse(raw) as Record<string, unknown>)
+      .filter((frame) => frame.t === 'stakes')
+    expect(frames).toEqual([{ t: 'stakes', value: { 'pass-line': 25 } }])
   })
 })

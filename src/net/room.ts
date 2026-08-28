@@ -80,6 +80,14 @@ export interface RoomHandlers {
    * the usual rule that every client re-sanitizes on receipt.
    */
   readonly onEmote?: (id: string, emote: string) => void
+  /**
+   * A peer published what they have on the felt, or the welcome carried it.
+   *
+   * The value arrives raw: it was written by another client and relayed by a
+   * room that never read it, so coercing it into a `CrapsBets` record is the
+   * store's job, on the usual rule that every client re-sanitizes on receipt.
+   */
+  readonly onStakes?: (table: string, id: string, value: unknown) => void
   /** A turn clock ran out. */
   readonly onExpired?: (table: string) => void
   /** This client's own id in the room, assigned by the server on join. */
@@ -131,6 +139,8 @@ export interface RoomConnection {
   sendAction: (action: string) => void
   /** Says something over this player's head, room-wide. The room rate-limits. */
   sendEmote: (emote: string) => void
+  /** Publishes everything this player has on the felt, opaque to the room. */
+  sendStakes: (value: unknown) => void
   /** Asks the room to throw. It refuses unless it is this player's turn. */
   requestRoll: () => void
   /** Gives up the dice. The room decides who gets them next. */
@@ -225,6 +235,13 @@ export function joinRoom(
           const person = people[index]
           const raw = (peer as Record<string, unknown> | null)?.pose
           if (person && raw) handlers.onPose(person.id, { ...sanitizePose(raw, bounds), at: now })
+
+          // The felt as it stands: whatever each peer had published rides the
+          // welcome, keyed to the table their own identity names.
+          const stakes = (peer as Record<string, unknown> | null)?.stakes
+          if (person && stakes != null && person.table !== null) {
+            handlers.onStakes?.(person.table, person.id, stakes)
+          }
         })
         return
       }
@@ -368,6 +385,13 @@ export function joinRoom(
         return
       }
 
+      case 'stakes': {
+        if (typeof message.table === 'string' && typeof message.id === 'string') {
+          handlers.onStakes?.(message.table, message.id, message.value)
+        }
+        return
+      }
+
       case 'expired': {
         if (typeof message.table === 'string') handlers.onExpired?.(message.table)
         return
@@ -470,6 +494,12 @@ export function joinRoom(
     sendEmote: (emote) => {
       if (socket?.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ t: 'emote', emote }))
+      }
+    },
+
+    sendStakes: (value) => {
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ t: 'stakes', value }))
       }
     },
 

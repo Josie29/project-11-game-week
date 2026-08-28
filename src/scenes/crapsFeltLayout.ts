@@ -222,22 +222,18 @@ export function rectCenter(rect: FeltRect): { u: number; v: number } {
 }
 
 /*
- * The puck and a stack of chips both want the middle of the same box the moment
- * the point is a number the player has money on — which is the common case,
- * since the point is what most people back. So the box is split between them.
- *
- * Split across, not down. The boxes on a table this shape are wide and shallow:
- * about 0.6 wide and 0.45 deep in world units, and a 0.2 puck above a 0.3 stack
- * needs 0.5 of depth to keep them apart. Across, there is room to spare — and
- * both then sit low in the box, under the printed number rather than over it.
+ * The puck and eight players' chips all want the same box the moment the point
+ * is a number people have money on — which is the common case, since the point
+ * is what most people back. So the box is split: the puck takes the upper
+ * left, sitting over the printed number the way a real ON puck does, and the
+ * lower half of the box belongs to the chips.
  */
 const PUCK_BOX_U = 0.26
-const CHIPS_BOX_U = 0.72
-/** How far down the box both of them sit, clear of the number printed above. */
-const BOX_LOWER_V = 0.72
+/** How far down the box the puck sits: over the number, above the chips. */
+const PUCK_BOX_V = 0.22
 
 /**
- * Where along a band the shooter's own chips sit.
+ * Where along a band the first player's chips sit.
  *
  * A line bet runs the whole width of the table because a whole rail of players
  * share it; each one's chips sit on the stretch in front of them, not in the
@@ -245,38 +241,87 @@ const BOX_LOWER_V = 0.72
  * pass line put two green chips through the middle of the word PASS LINE — and
  * they read as belonging to nobody.
  *
- * Matched to where the shooter stands, so the chips are in front of the one
- * player this table has.
+ * Matched to where the shooter stands, so slot 0 — the shooter's slot, and the
+ * only slot a solo table ever uses — puts the chips exactly where the one
+ * player this table used to have put them.
  */
 const SHOOTER_U = 0.16
 
-/**
- * Where a bet's chips are stacked.
- *
- * The shooter's end of the band for a line bet, and the right of the box for a
- * place bet, leaving the left of the box for the puck.
- */
-export function betChipSpot(bet: CrapsBet): { u: number; v: number } {
-  const rect = getCrapsBetRect(bet)
-  if (!isPlaceBet(bet)) return { u: SHOOTER_U, v: (rect.v0 + rect.v1) / 2 }
+/** How far apart neighbouring slots sit along a band, in u. 0.495m of felt. */
+const LINE_SLOT_PITCH_U = 0.11
 
+/**
+ * One chip slot per rail spot.
+ *
+ * `crapsFelt.test.ts` pins this to `CRAPS_RAIL_SPOTS.length` — the felt and
+ * the rail have to agree on how many people can bet, and this module stays
+ * dependency-free, so the agreement is a test rather than an import.
+ */
+export const CRAPS_BET_SLOTS = 8
+
+/**
+ * Where the four columns and two rows of a place box's chip grid sit, as
+ * fractions of the box. The grid fills the lower half; the number and the
+ * puck keep the upper. Pitches are 0.147m across and 0.144m down at the box's
+ * 0.60 x 0.45m — the tightest spacing anywhere on the felt, and what bounds
+ * the ownership ring under a stack: two rings that touch read as one player,
+ * so `crapsFelt.test.ts` holds every pitch at two ring radii (see the ring
+ * lip in `ChipStack`).
+ */
+const PLACE_SLOT_COLS = [0.13, 0.375, 0.62, 0.865] as const
+const PLACE_SLOT_ROWS = [0.56, 0.88] as const
+
+/**
+ * Where one player's chips are stacked on a bet.
+ *
+ * Every bet region owns `CRAPS_BET_SLOTS` slots, one per rail spot, so every
+ * player at the table has their own patch of every bet — "whose stack is
+ * whose" is answered by the felt the same way the rail answers it, by where
+ * you stand. Line bands spread the slots along their width; place boxes pack
+ * them as a four-by-two grid in the lower half, clear of the puck above.
+ *
+ * @param bet The bet region.
+ * @param slot The player's rail index, clamped into `[0, CRAPS_BET_SLOTS)`.
+ */
+export function betChipSlot(bet: CrapsBet, slot: number): { u: number; v: number } {
+  const clamped = Math.min(CRAPS_BET_SLOTS - 1, Math.max(0, Math.floor(slot)))
+  const rect = getCrapsBetRect(bet)
+
+  if (!isPlaceBet(bet)) {
+    return { u: SHOOTER_U + LINE_SLOT_PITCH_U * clamped, v: (rect.v0 + rect.v1) / 2 }
+  }
+
+  // Column advances every slot, row switches after four: `% 4` walks the
+  // columns, `>> 2` (integer division by four) picks the row.
+  const col = PLACE_SLOT_COLS[clamped % PLACE_SLOT_COLS.length] ?? 0.5
+  const row = PLACE_SLOT_ROWS[clamped >> 2] ?? 0.75
   return {
-    u: rect.u0 + (rect.u1 - rect.u0) * CHIPS_BOX_U,
-    v: rect.v0 + (rect.v1 - rect.v0) * BOX_LOWER_V,
+    u: rect.u0 + (rect.u1 - rect.u0) * col,
+    v: rect.v0 + (rect.v1 - rect.v0) * row,
   }
 }
 
 /**
- * Where the ON puck sits once a number is the point: the left of its own box.
+ * Where a bet's chips are stacked on a table with one bettor: slot 0.
+ */
+export function betChipSpot(bet: CrapsBet): { u: number; v: number } {
+  return betChipSlot(bet, 0)
+}
+
+/**
+ * Where the ON puck sits once a number is the point: the upper left of its own
+ * box, over the printed number.
  *
- * Paired with `betChipSpot` — move one without the other and the puck lands on
- * the chips, which reads as the point being unreadable exactly when it matters.
+ * Paired with `betChipSlot` — move one without the other and the puck lands on
+ * somebody's chips, which reads as the point being unreadable exactly when it
+ * matters. The pairing is held by test rather than trust: every slot in the
+ * box must clear the puck by a puck radius plus a chip radius.
  */
 export function pointPuckSpot(point: PointNumber): { u: number; v: number } {
   const rect = POINT_BOX_RECTS[point]
   return {
     u: rect.u0 + (rect.u1 - rect.u0) * PUCK_BOX_U,
-    v: rect.v0 + (rect.v1 - rect.v0) * BOX_LOWER_V,
+    v: rect.v0 + (rect.v1 - rect.v0) * PUCK_BOX_V,
   }
 }
 
