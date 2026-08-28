@@ -16,7 +16,7 @@
 // Every import is the worker's own, kept beside this file so a vitest in
 // `src/__tests__` can reach them: the play-order comparator so its direction
 // is pinned, the dice-holder rule and the deal grace for the same reason.
-import { dealGraceMs } from './dealGrace'
+import { dealGraceMs, DEAL_TIMEOUT_MS } from './dealGrace'
 import { ROLL_TIMEOUT_MS, rollWindowMs } from './rollWindow'
 import { resolveDiceHolder } from './dice'
 import { admitEmote } from './emoteLimit'
@@ -317,7 +317,10 @@ const TURN_TIMEOUT_MS = 15_000
 
 /** The window each kind of clock runs for. */
 function timeoutFor(kind: ExpiryKind): number {
-  return kind === 'turn' ? TURN_TIMEOUT_MS : ROLL_TIMEOUT_MS
+  if (kind === 'turn') return TURN_TIMEOUT_MS
+  // No longer one shared half-minute: the craps auto-roll runs a short ten
+  // on top of the betting window, while a blackjack gather keeps its thirty.
+  return kind === 'deal' ? DEAL_TIMEOUT_MS : ROLL_TIMEOUT_MS
 }
 
 /**

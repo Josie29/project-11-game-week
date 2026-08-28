@@ -55,11 +55,10 @@ export function secondsUntilRoll(rolledAt: number, now: number): number {
  * How long an absent shooter holds the dice before the room rolls for them.
  *
  * A mirror of `ROLL_TIMEOUT_MS` in `worker/rollWindow.ts`, pinned by
- * `rollClock.test.ts` — an actually held pair, unlike `dealClock.ts`'s literal
- * copy of the same number, because the worker keeps it in the importable
- * sibling now.
+ * `rollClock.test.ts`. Ten to bet, then ten to throw: a shooter who sits on
+ * free dice for ten whole seconds is a table waiting on purpose.
  */
-export const AUTO_ROLL_MS = 30_000
+export const AUTO_ROLL_MS = 10_000
 
 /**
  * Whole seconds until the room rolls for the shooter, for display.

@@ -28,10 +28,10 @@ export function rollWindowMs(): number {
 /**
  * How long an absent shooter holds the dice before the room rolls for them.
  *
- * Armed with `rollWindowMs()` as grace, so the thirty seconds start where the
- * betting window ends. Here rather than in `worker/index.ts` so the client's
- * mirror in `src/world/rollClock.ts` can actually be pinned against it —
- * `dealClock.ts` mirrors this same number for the blackjack gather and can
- * only pin a literal.
+ * Armed with `rollWindowMs()` as grace, so the ten seconds start where the
+ * betting window ends: ten to bet, then ten to throw. Here rather than in
+ * `worker/index.ts` so the client's mirror in `src/world/rollClock.ts` can
+ * actually be pinned against it. The blackjack gather no longer shares this
+ * number — see `DEAL_TIMEOUT_MS` in `worker/dealGrace.ts`.
  */
-export const ROLL_TIMEOUT_MS = 30_000
+export const ROLL_TIMEOUT_MS = 10_000

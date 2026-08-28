@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { DEAL_TIMEOUT_MS } from '../../worker/dealGrace'
 import { ROLL_SETTLE_MS, ROLL_TIMEOUT_MS, ROLL_WINDOW_MS as WORKER_ROLL_WINDOW_MS, rollWindowMs } from '../../worker/rollWindow'
 import { DICE_SETTLE_MS as STORE_SETTLE_MS } from '../store/useCrapsStore'
 import { DEAL_WINDOW_MS } from '../world/dealClock'
@@ -85,17 +86,20 @@ describe('the auto-roll clock', () => {
    * pin a literal. A drift here is dice that "throw themselves" seconds
    * before or after the countdown everyone was watching.
    */
-  it('mirrors the room’s thirty-second timeout, and so does the deal clock', () => {
-    expect(AUTO_ROLL_MS).toBe(30_000)
+  it('mirrors the room’s ten-second timeout, and the deal clock its own thirty', () => {
+    expect(AUTO_ROLL_MS).toBe(10_000)
     expect(ROLL_TIMEOUT_MS).toBe(AUTO_ROLL_MS)
-    expect(DEAL_WINDOW_MS).toBe(ROLL_TIMEOUT_MS)
+    // The gather used to borrow the roll's number; shrinking the roll must
+    // never quietly shrink the blackjack betting window with it.
+    expect(DEAL_WINDOW_MS).toBe(DEAL_TIMEOUT_MS)
+    expect(DEAL_TIMEOUT_MS).toBe(30_000)
   })
 
   // The thirty start where the betting window ends, not at the broadcast —
   // an auto-roll clock that ran through the window would fire mid-betting.
   it('starts the count where the betting window ends', () => {
     const windowEnd = DICE_SETTLE_MS + ROLL_WINDOW_MS
-    expect(secondsUntilForcedRoll(0, windowEnd)).toBe(30)
+    expect(secondsUntilForcedRoll(0, windowEnd)).toBe(10)
   })
 
   // Hidden band: while the tumble and betting window run, the value reads

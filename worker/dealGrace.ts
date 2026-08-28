@@ -26,3 +26,13 @@ export function dealGraceMs(seatCount: number): number {
   const holeCardAt = (2 * (seatCount + 1) - 1) * DRAW_INTERVAL_MS
   return holeCardAt + WEDGE_PAUSE_MS + FLIP_DURATION_MS + HOLE_TUCK_MS
 }
+
+/**
+ * How long the room gathers blackjack wagers before dealing whoever is in.
+ *
+ * Until the craps auto-roll shrank to ten seconds this was a borrowed
+ * `ROLL_TIMEOUT_MS`; a gather and a roll are different decisions and now run
+ * on different clocks. `DEAL_WINDOW_MS` in `src/world/dealClock.ts` mirrors
+ * this value, and `rollClock.test.ts` pins the pair.
+ */
+export const DEAL_TIMEOUT_MS = 30_000
