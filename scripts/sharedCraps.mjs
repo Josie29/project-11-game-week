@@ -61,8 +61,10 @@ const windowShared = /bets open \d+s/.test(otherMid)
 
 await O.screenshot({ path: process.argv[3] ?? '/tmp/craps2p.png' })
 
-// Ten seconds minus the five already spent, plus slack for the boundary.
-await a.waitForTimeout(9000)
+/*
+ * The ready-up path: both rails say they are done betting, and the window
+ * ends where it stands — well before the ten seconds would have.
+ */
 // A come-out natural settles and returns the line bet, and an empty rail may
 // not roll — re-stake so the only thing that could hold the button is the
 // window itself.
@@ -70,14 +72,21 @@ await S.evaluate(() => {
   const store = window.crapsStore.getState()
   if (Object.values(store.game.bets).every((amount) => !amount)) store.wager('pass-line', 10)
 })
+const readyButtons = /Ready up \d+\/\d+/
+await S.getByRole('button', { name: readyButtons }).click({ timeout: 5000 })
 await a.waitForTimeout(400)
+const halfReady = await O.getByRole('button', { name: /Ready up 1\/2/ }).isVisible().catch(() => false)
+console.log('other rail sees the count fill:', halfReady)
+await O.getByRole('button', { name: readyButtons }).click({ timeout: 5000 })
+await a.waitForTimeout(600)
 const reopened = await S.getByRole('button', { name: /Roll the dice/ }).isEnabled().catch(() => false)
-console.log('after the window, shooter button enabled:', reopened)
+console.log('after both ready up, shooter button enabled:', reopened)
 
 await browser.close()
 const same = sa.roll && so.roll && JSON.stringify(sa.roll) === JSON.stringify(so.roll)
 console.log(same ? '\nPASS: both settled the same roll' : '\nFAIL: rolls differ')
 console.log(windowShown ? 'PASS: shooter held to the betting window' : 'FAIL: no countdown on the shooter')
 console.log(windowShared ? 'PASS: the rail watches the same countdown' : 'FAIL: no countdown for the rail')
-console.log(reopened ? 'PASS: the dice fly again after the window' : 'FAIL: button never re-enabled')
-process.exit(same && windowShown && windowShared && reopened ? 0 : 1)
+console.log(halfReady ? 'PASS: the ready count fills on every rail' : 'FAIL: ready count not shared')
+console.log(reopened ? 'PASS: a full rail of readies frees the dice early' : 'FAIL: button never re-enabled')
+process.exit(same && windowShown && windowShared && halfReady && reopened ? 0 : 1)

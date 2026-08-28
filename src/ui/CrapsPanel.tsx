@@ -200,8 +200,18 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
    * the opening deal. Zero is the room's business: the button re-arms and the
    * worker would refuse a straggling click anyway.
    */
+  /*
+   * The whole rail saying "done" ends the window where it stands: the room
+   * deleted its stamp when the last skip landed, and the same skips it relayed
+   * are what let this side agree without a second broadcast.
+   */
+  const everyoneReady = table.tableSize > 1 && table.readyCount >= table.tableSize
+
   const bettingWindowOpen =
-    rollCountdown !== null && rollCountdown > 0 && rollCountdown <= ROLL_WINDOW_MS / 1000
+    !everyoneReady &&
+    rollCountdown !== null &&
+    rollCountdown > 0 &&
+    rollCountdown <= ROLL_WINDOW_MS / 1000
 
   const canRoll = !isRolling && staked > 0 && table.isShooter && !bettingWindowOpen
 
@@ -409,6 +419,23 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
       </div>
 
       <div className="table-ui__actions">
+        {/*
+          Done betting? The window ends early once the whole rail says so —
+          the count fills in front of everyone, and the last click frees the
+          dice without waiting out the clock.
+        */}
+        {bettingWindowOpen && (
+          <button
+            type="button"
+            className="button"
+            disabled={table.hasReadied}
+            onClick={table.readyUp}
+          >
+            {table.hasReadied
+              ? `Ready ${table.readyCount}/${table.tableSize}`
+              : `Ready up ${table.readyCount}/${table.tableSize}`}
+          </button>
+        )}
         <button
           type="button"
           className="button button--primary"

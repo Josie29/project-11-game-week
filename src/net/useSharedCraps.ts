@@ -44,6 +44,14 @@ export interface SharedCraps {
    * early throws regardless.
    */
   readonly rollClockStartedAt: number | null
+  /** Everyone at the rail, self included. One means alone — and no window. */
+  readonly tableSize: number
+  /** How many at the rail have said they are done betting this window. */
+  readonly readyCount: number
+  /** Whether this player already said so. */
+  readonly hasReadied: boolean
+  /** Says it — once per window; the room counts, the next roll resets. */
+  readonly readyUp: () => void
   /** Throws — locally when alone, by asking the room when not. */
   readonly roll: () => void
 }
@@ -73,6 +81,8 @@ export function useSharedCraps(): SharedCraps {
   const peers = usePresenceStore((state) => state.peers)
   const passDice = usePresenceStore((state) => state.passDice)
   const rollClocks = usePresenceStore((state) => state.rollClocks)
+  const rollSkips = usePresenceStore((state) => state.rollSkips)
+  const skipRollWait = usePresenceStore((state) => state.skipRollWait)
   const publishTable = usePresenceStore((state) => state.publishTable)
 
   const activeTable = useGameStore((state) => state.activeTable)
@@ -183,9 +193,20 @@ export function useSharedCraps(): SharedCraps {
     connected,
     isShooter,
     canRoll: !isRolling && isShooter && (!shared || connected),
-    // Null alone: solo dice answer to nobody's clock. The panel does the
-    // ticking; the worker does the refusing.
-    rollClockStartedAt: shared ? (rollClocks[TableId.Craps] ?? null) : null,
+    /*
+     * Null alone — solo dice answer to nobody's clock, and "alone" includes a
+     * shared table with nobody else at the rail: the window exists so other
+     * players can bet, and the worker skips its refusal on the same rule. The
+     * panel does the ticking; the worker does the refusing.
+     */
+    rollClockStartedAt:
+      shared && lineup.length > 1 ? (rollClocks[TableId.Craps] ?? null) : null,
+    tableSize: shared ? lineup.length : 1,
+    readyCount: (rollSkips[TableId.Craps] ?? EMPTY).length,
+    hasReadied: selfId !== null && (rollSkips[TableId.Craps] ?? EMPTY).includes(selfId),
+    readyUp: () => {
+      if (shared && connected) skipRollWait()
+    },
     roll: () => {
       if (isRolling) return
       // Nothing to ask, and nothing to throw locally: a shared table that has

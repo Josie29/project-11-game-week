@@ -125,6 +125,16 @@ interface PresenceStore {
    * is the deadline without the deadline ever crossing the wire (issue #17).
    */
   rollClocks: Readonly<Record<string, number>>
+  /**
+   * Who has said "done betting" in the current roll window, per table.
+   *
+   * The count every rail watches fill: when it covers the lineup the room has
+   * already ended the window, and the clients see the same skips it counted.
+   * Reset by the next roll, which opens a fresh window and a fresh question.
+   */
+  rollSkips: Readonly<Record<string, readonly string[]>>
+  /** Tells the room this player is done betting in the roll window. */
+  skipRollWait: () => void
   /** This player's own id in the room, so the HUD can say "your roll". */
   selfId: string | null
   /** Asks the room to throw. It refuses unless it is this player's turn. */
@@ -220,7 +230,7 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     lastSent = null
     currentRoom = null
     buffers.clear()
-    set({ peers: {}, connected: false, emotes: {}, selfEmote: null, invite: null, rollClocks: {} })
+    set({ peers: {}, connected: false, emotes: {}, selfEmote: null, invite: null, rollClocks: {}, rollSkips: {} })
   }
 
   return {
@@ -235,6 +245,7 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     betClocks: {},
     turnClocks: {},
     rollClocks: {},
+    rollSkips: {},
     selfId: null,
     emotes: {},
     selfEmote: null,
@@ -243,6 +254,7 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     clearInvite: () => set({ invite: null }),
 
     requestRoll: () => connection?.requestRoll(),
+    skipRollWait: () => connection?.skipRollWait(),
     passDice: () => connection?.passDice(),
     publishTable: (value) => connection?.publishTable(value),
     sendBet: (amount) => connection?.sendBet(amount),
@@ -387,8 +399,25 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
            * the other's betting.
            */
           if (table === TableId.Craps) {
-            set((state) => ({ rollClocks: { ...state.rollClocks, [table]: performance.now() } }))
+            set((state) => {
+              // A fresh window is a fresh question — the skips empty with it.
+              const rollSkips = { ...state.rollSkips }
+              delete rollSkips[table]
+              return {
+                rollClocks: { ...state.rollClocks, [table]: performance.now() },
+                rollSkips,
+              }
+            })
           }
+        },
+
+        onSkipped: (table, id) => {
+          if (table !== TableId.Craps) return
+          set((state) => {
+            const skipped = state.rollSkips[table] ?? []
+            if (skipped.includes(id)) return state
+            return { rollSkips: { ...state.rollSkips, [table]: [...skipped, id] } }
+          })
         },
 
         onSelf: (id) => set({ selfId: id }),
