@@ -69,14 +69,20 @@ async function peers(page) {
       ids: Object.keys(state.peers),
       names: Object.values(state.peers).map((p) => p.name),
       poses: Object.keys(state.peers).map((id) => window.peerPose?.(id) ?? null),
-      // What each peer last said, as `{ [id]: emoteId }` — the stamp is local
-      // time and meaningless across pages, so only the word crosses.
+      // What each peer last said, as `{ [id]: emoteId }` (null for typed
+      // text) and `{ [id]: label }` — the stamp is local time and
+      // meaningless across pages, so only the words cross.
       emotes: Object.fromEntries(
         Object.entries(state.emotes).map(([id, entry]) => [id, entry.emote]),
+      ),
+      texts: Object.fromEntries(
+        Object.entries(state.emotes).map(([id, entry]) => [id, entry.text]),
       ),
       // This player's own last emote — the local echo the sender's bubble
       // draws, since the room never echoes an emote back to its sender.
       self: state.selfEmote?.emote ?? null,
+      // The invitation awaiting an answer, if any: who asked, to what.
+      invite: state.invite ? { from: state.invite.from, table: state.invite.table } : null,
     }
   })
 }
@@ -196,6 +202,52 @@ async function main() {
     before && after && Math.hypot(after.x - before.x, after.z - before.z) > 0.5
   check('bob saw alice move', moved, `${JSON.stringify(before)} -> ${JSON.stringify(after)}`)
 
+  const aliceId = bobSees.ids?.[0]
+  const bobId = aliceSees.ids?.[0]
+
+  /*
+   * Bob asks alice to play, and she answers (the invite flow). The invite is
+   * an ordinary emote on the wire; what makes it an invite is the receiving
+   * store raising `invite`, and the answer is another ordinary emote back.
+   */
+  await bob.page.evaluate(() => {
+    window.presenceStore?.getState().sendEmote('blackjack-invite')
+  })
+  await alice.page.waitForTimeout(1_500)
+  const invited = await peers(alice.page)
+  check(
+    'the invite raised a response card for alice',
+    invited.invite?.from === bobId && invited.invite?.table === 'blackjack',
+    JSON.stringify(invited.invite),
+  )
+
+  await alice.page.evaluate(() => {
+    const store = window.presenceStore?.getState()
+    store?.sendEmote('im-in')
+    store?.clearInvite()
+  })
+  await bob.page.waitForTimeout(1_500)
+  const answered = await peers(bob.page)
+  check('bob saw alice accept', answered.emotes?.[aliceId] === 'im-in', JSON.stringify(answered.emotes))
+  const cardDown = await peers(alice.page)
+  check('answering took the card down', cardDown.invite === null, JSON.stringify(cardDown.invite))
+
+  /*
+   * Bob types something (the free-text path). `say:`-prefixed on the wire,
+   * sanitized on receipt, and stored with a null emote id — the label is the
+   * message itself.
+   */
+  await bob.page.evaluate(() => {
+    window.presenceStore?.getState().sendSay('  nice   hat\t')
+  })
+  await alice.page.waitForTimeout(1_500)
+  const told = await peers(alice.page)
+  check(
+    'alice saw what bob typed, sanitized',
+    told.emotes?.[bobId] === null && told.texts?.[bobId] === 'nice hat',
+    JSON.stringify({ emote: told.emotes?.[bobId], text: told.texts?.[bobId] }),
+  )
+
   /*
    * Alice says something (issue #16). The whole feature is this hop: her
    * `sendEmote` goes to the room, the room relays it to everyone else, and
@@ -203,7 +255,6 @@ async function main() {
    * nothing back to her, so only bob can prove the relay happened — her own
    * bubble comes from the local echo, checked separately below.
    */
-  const aliceId = bobSees.ids?.[0]
   await alice.page.evaluate(() => {
     window.presenceStore?.getState().sendEmote('wave')
   })
@@ -218,11 +269,11 @@ async function main() {
 
   /*
    * And she cannot flood (the issue's third done criterion). The room admits
-   * three emotes per ten-second window and the wave above was the first, so
-   * of the three below the first two land and the last is dropped. Spaced
-   * just past the client's own 1s politeness gap, so it is the *worker's*
-   * limit being proven — the room's is the only one another client is
-   * actually protected by.
+   * three emotes per ten-second window, and alice's window already holds the
+   * "im-in" and the wave — so of the three below only the first lands and
+   * the rest are dropped. Spaced just past the client's own 1s politeness
+   * gap, so it is the *worker's* limit being proven — the room's is the only
+   * one another client is actually protected by.
    */
   for (const word of ['hello', 'good-luck', 'nice-one']) {
     await alice.page.evaluate((emote) => {
@@ -233,9 +284,9 @@ async function main() {
   await bob.page.waitForTimeout(1_000)
   const flooded = await peers(bob.page)
   check(
-    'the room dropped the fourth emote in the window',
-    flooded.emotes?.[aliceId] === 'good-luck',
-    `expected good-luck to be the last heard, got ${JSON.stringify(flooded.emotes)}`,
+    'the room dropped the emotes past the window',
+    flooded.emotes?.[aliceId] === 'hello',
+    `expected hello to be the last heard, got ${JSON.stringify(flooded.emotes)}`,
   )
 
   await alice.page.screenshot({ path: `${OUT}/alice.png` })

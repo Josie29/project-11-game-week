@@ -1,8 +1,8 @@
 import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import type { Sprite } from 'three'
-import { getEmoteTexture } from '../emoteTexture'
-import { EMOTE_TTL_MS, type EmoteId } from '../../world/emotes'
+import { getBubbleTexture } from '../emoteTexture'
+import { EMOTE_TTL_MS } from '../../world/emotes'
 
 /*
  * What a player just said, floating over the nameplate.
@@ -28,15 +28,15 @@ const WIDTH = 1.25
 const ASPECT = 128 / 512
 
 interface EmoteBubbleProps {
-  /** An already-sanitized emote id. */
-  emote: EmoteId
+  /** What the bubble says: a catalogue label or already-sanitized typed text. */
+  label: string
   /** `performance.now()` when it arrived, from the presence store. */
   at: number
 }
 
-export function EmoteBubble({ emote, at }: EmoteBubbleProps) {
+export function EmoteBubble({ label, at }: EmoteBubbleProps) {
   const spriteRef = useRef<Sprite>(null)
-  const texture = useMemo(() => getEmoteTexture(emote), [emote])
+  const texture = useMemo(() => getBubbleTexture(label), [label])
 
   useFrame(() => {
     const sprite = spriteRef.current

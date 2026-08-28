@@ -727,8 +727,10 @@ export class Room implements DurableObject {
         // A length cap rather than a catalogue: the room relays without
         // knowing what an emote means, so the real gate is the receiving
         // client's sanitizer. The cap only stops the relay being a megaphone
-        // for arbitrary payloads.
-        if (typeof message.emote !== 'string' || message.emote.length > 32) return
+        // for arbitrary payloads. 64 fits the longest catalogue id and a
+        // `say:`-prefixed typed line (`SAY_PREFIX` + `SAY_MAX_CHARS` = 52)
+        // with margin; the clients' own cap is the one that shapes the text.
+        if (typeof message.emote !== 'string' || message.emote.length > 64) return
 
         // Denied is dropped, not answered: there is no error channel here, and
         // a client that spaces its own sends never hits the limit anyway.

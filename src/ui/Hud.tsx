@@ -7,6 +7,7 @@ import { PlayMode, useSessionStore } from '../store/useSessionStore'
 import { Location, useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
 import { EmotePicker } from './EmotePicker'
+import { InvitePrompt } from './InvitePrompt'
 import { SettingsPanel } from './SettingsPanel'
 import { EMOTE_KEY, EMOTE_LABEL, INTERACT_LABEL, SETTINGS_KEY, SETTINGS_LABEL } from '../world/controls'
 import { fireInteract } from '../world/interact'
@@ -387,6 +388,14 @@ export function Hud() {
 
       {/* Above the prompts, below the menu: what the player can say here. */}
       {emotesAvailable && emotePickerOpen && !settingsOpen && <EmotePicker />}
+
+      {/*
+        An invitation waiting for its answer. Never alongside the picker —
+        both own digits, and two claimants to one key is the overlap the
+        interaction rules exist to prevent. The invite outlives the picker's
+        moment on screen; it simply waits its turn.
+      */}
+      {emotesAvailable && !emotePickerOpen && !settingsOpen && <InvitePrompt />}
 
       {/* Last, so it layers over every prompt above rather than under them. */}
       {settingsOpen && <SettingsPanel />}

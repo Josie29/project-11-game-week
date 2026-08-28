@@ -112,7 +112,7 @@ function RemotePlayer({
       />
       <Nameplate name={player.name} />
       {/* Inside the group, so placement and pose-visibility are inherited. */}
-      {emote && <EmoteBubble emote={emote.emote} at={emote.at} />}
+      {emote && <EmoteBubble label={emote.text} at={emote.at} />}
     </group>
   )
 }
