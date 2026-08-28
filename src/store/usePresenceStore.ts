@@ -131,6 +131,16 @@ interface PresenceStore {
    * timestamp-in, deadline-out rule as `betClocks`.
    */
   emotes: Readonly<Record<string, { readonly emote: EmoteId; readonly at: number }>>
+  /**
+   * What this player last said, for the bubble over their own head.
+   *
+   * Its own field rather than an entry in `emotes`: that map is everyone
+   * *else*, keyed by ids the room assigned, and the room never echoes an
+   * emote back to its sender — so the only place a local echo can come from
+   * is the send itself. Without it, pressing an emote is a button that
+   * visibly does nothing on the sender's own screen.
+   */
+  selfEmote: { readonly emote: EmoteId; readonly at: number } | null
   /** Says something over this player's head. The room relays and rate-limits. */
   sendEmote: (emote: EmoteId) => void
 }
@@ -181,7 +191,7 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     lastSent = null
     currentRoom = null
     buffers.clear()
-    set({ peers: {}, connected: false, emotes: {} })
+    set({ peers: {}, connected: false, emotes: {}, selfEmote: null })
   }
 
   return {
@@ -197,6 +207,7 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     turnClocks: {},
     selfId: null,
     emotes: {},
+    selfEmote: null,
 
     requestRoll: () => connection?.requestRoll(),
     passDice: () => connection?.passDice(),
@@ -211,6 +222,14 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
       if (!connection) return
       lastEmoteAt = now
       connection.sendEmote(emote)
+      /*
+       * The local echo. The room broadcasts to everyone but the sender, so
+       * nothing ever comes back to say this landed — the send is the only
+       * event there is. Stamped only when one actually went out, which keeps
+       * the feedback honest against the gap above; the room's own limit can
+       * still drop it for everyone else, which the sender cannot know.
+       */
+      set({ selfEmote: { emote, at: now } })
     },
 
     enterRoom: (roomId, bounds, identity) => {

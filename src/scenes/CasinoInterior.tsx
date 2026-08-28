@@ -35,6 +35,7 @@ import {
 } from './casinoFloorLayout'
 import { BlackjackTable } from './components/BlackjackTable'
 import { CasinoCharacter } from './components/CasinoCharacter'
+import { SelfEmoteBubble } from './components/SelfEmoteBubble'
 import { CasinoRoom } from './components/CasinoRoom'
 import { CrapsTable } from './components/CrapsTable'
 import { useSharedBlackjack } from '../net/useSharedBlackjack'
@@ -388,6 +389,8 @@ export function CasinoInterior({ venueId }: CasinoInteriorProps) {
               seated={!STANDING_TABLES.has(activeTable)}
               gestureSource="player"
             />
+            {/* The local echo of this player's own emote — see SelfEmoteBubble. */}
+            <SelfEmoteBubble />
           </group>
         </>
       )}
