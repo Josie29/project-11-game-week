@@ -1,6 +1,3 @@
-import type { Appearance } from '../character/appearance'
-import { GARMENT_COLORS, swatchOr } from '../character/palette'
-
 export interface ChipDenomination {
   readonly value: number
   readonly color: string
@@ -171,17 +168,37 @@ export const CRAPS_CHIP_SCALE = 0.35
 export const RING_LIP = 0.018
 
 /**
- * The tint of the ring drawn under a player's stacks, from their outfit.
+ * One ring tint per rail place, brightest first.
  *
- * Read from the garment *swatch* rather than the resolved palette: garments
- * like the shirt-and-skirt remap `colors.primary` to shirt white and move the
- * player's chosen colour to secondary, so the resolved primary is not
- * reliably the colour the player picked. The swatch is.
+ * Keyed by rail index rather than by the player's outfit, because outfits do
+ * not separate people: everyone who never opens the wardrobe wears the same
+ * default midnight, so garment-coloured rings matched exactly when telling
+ * players apart mattered most. The rail index is already the felt's identity
+ * — `betChipSlot` places stacks by it — so the ring says the same thing the
+ * position says, twice.
  *
- * Identity on the felt is carried by position first — players who never open
- * the wardrobe share the default midnight swatch, and two matching rings must
- * still read as two players by standing on different stretches of the band.
+ * Index 0 is the shooter's slot, so the shooter's stacks always ride the
+ * gold ring, whoever is shooting. None of these may match a denomination
+ * colour (`CHIP_DENOMINATIONS`) — the ring must never read as one more chip.
  */
-export function playerChipRing(appearance: Appearance): string {
-  return swatchOr(GARMENT_COLORS, appearance.garmentColor).hex
+export const RAIL_RING_COLORS: readonly string[] = [
+  '#e8b54d', // gold — the shooter
+  '#40e0d0', // turquoise
+  '#ff2d95', // magenta
+  '#f2effa', // porcelain
+  '#f28a30', // amber
+  '#a8e34d', // lime
+  '#b39df2', // lavender
+  '#ff7d6b', // coral
+]
+
+/**
+ * The tint of the ring drawn under the stacks at one rail place.
+ *
+ * Clamped, not modular: an out-of-range index is a transient lineup glitch,
+ * and wrapping it would hand a ninth player the shooter's gold.
+ */
+export function railChipRing(railIndex: number): string {
+  const clamped = Math.min(RAIL_RING_COLORS.length - 1, Math.max(0, Math.floor(railIndex)))
+  return RAIL_RING_COLORS[clamped] ?? RAIL_RING_COLORS[0]!
 }
