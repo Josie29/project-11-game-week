@@ -135,6 +135,42 @@ canvas {
   backdrop-filter: blur(0.5rem);
 }
 
+/*
+ * The emote picker: four things worth saying here, numbered.
+ *
+ * Sits where the offer prompt sits, a step higher, so it reads as part of the
+ * same conversation with the bottom of the screen — and because that is the
+ * strip the thumb already lives in. `.hud` is click-through, so the buttons
+ * opt back into pointer events themselves.
+ */
+.emote-picker {
+  position: absolute;
+  left: 50%;
+  /* A step above the offer prompt's var(--space-8), so the two never stack. */
+  bottom: calc(var(--space-8) + 4rem);
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(0.5rem);
+}
+
+.emote-picker__option {
+  pointer-events: auto;
+  /* A thumb target on touch, where the digit badge is hidden. */
+  min-height: 3rem;
+}
+
+.emote-picker__option kbd {
+  opacity: 0.75;
+  margin-right: 0.25rem;
+}
+
 /* ---------- Table control bar ---------- */
 
 .table-ui {
@@ -1337,6 +1373,14 @@ kbd {
     left: var(--space-4);
     right: var(--space-4);
     bottom: calc(13rem + env(safe-area-inset-bottom));
+    transform: none;
+  }
+
+  /* The picker clears the stick for the same reason the prompt does. */
+  .emote-picker {
+    left: var(--space-4);
+    right: var(--space-4);
+    bottom: calc(17rem + env(safe-area-inset-bottom));
     transform: none;
   }
 

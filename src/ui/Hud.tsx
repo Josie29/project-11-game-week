@@ -3,11 +3,12 @@ import { findItem } from '../character/catalog'
 import { approvalTotal, isFitting, onApproval } from '../character/fitting'
 import { STANDING_TABLES, TABLE_LABELS } from '../scenes/casinoFloorLayout'
 import { useAppearanceStore } from '../store/useAppearanceStore'
-import { useSessionStore } from '../store/useSessionStore'
+import { PlayMode, useSessionStore } from '../store/useSessionStore'
 import { Location, useGameStore } from '../store/useGameStore'
 import { useTimeStore } from '../store/useTimeStore'
+import { EmotePicker } from './EmotePicker'
 import { SettingsPanel } from './SettingsPanel'
-import { INTERACT_LABEL, SETTINGS_KEY, SETTINGS_LABEL } from '../world/controls'
+import { EMOTE_KEY, EMOTE_LABEL, INTERACT_LABEL, SETTINGS_KEY, SETTINGS_LABEL } from '../world/controls'
 import { fireInteract } from '../world/interact'
 import { useLayout } from '../world/useLayout'
 import { getVenue, VenueKind } from '../world/venues'
@@ -113,6 +114,9 @@ export function Hud() {
   const { touch } = useLayout()
   const settingsOpen = useSessionStore((state) => state.settingsOpen)
   const toggleSettings = useSessionStore((state) => state.toggleSettings)
+  const mode = useSessionStore((state) => state.mode)
+  const emotePickerOpen = useSessionStore((state) => state.emotePickerOpen)
+  const toggleEmotePicker = useSessionStore((state) => state.toggleEmotePicker)
 
   /*
    * The settings key, owned here rather than inside the panel.
@@ -133,6 +137,27 @@ export function Hud() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [toggleSettings])
+
+  /*
+   * The emote key, owned here on the same rule as the settings key above: the
+   * picker is unmounted while closed, so only the always-mounted HUD can hear
+   * the key that opens it. Multiplayer only — alone, there is nobody to say
+   * anything to — and not while the menu is up, because two panels at once is
+   * exactly the overlap the interaction rules exist to prevent.
+   */
+  const emotesAvailable = mode === PlayMode.Multiplayer
+  useEffect(() => {
+    if (!emotesAvailable) return
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.repeat) return
+      if (useSessionStore.getState().settingsOpen) return
+      if (event.key.toLowerCase() === EMOTE_KEY) toggleEmotePicker()
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [emotesAvailable, toggleEmotePicker])
 
   const nearby = nearbyVenue ? getVenue(nearbyVenue) : null
   const venue = activeVenue !== null ? getVenue(activeVenue) : null
@@ -187,6 +212,17 @@ export function Hud() {
         <button type="button" className="hud__menu" onClick={toggleSettings}>
           Menu <kbd>{SETTINGS_LABEL}</kbd>
         </button>
+        {/*
+          The way into the emote picker, on the menu button's reasoning: a key
+          nobody is told about is a key nobody presses — and on a phone this
+          button is the only way in at all, since there is no T to press. Only
+          in multiplayer, because a button that does nothing is worse than none.
+        */}
+        {emotesAvailable && (
+          <button type="button" className="hud__menu" onClick={toggleEmotePicker}>
+            Say <kbd>{EMOTE_LABEL}</kbd>
+          </button>
+        )}
       </div>
 
       {/* Deliberately still shown indoors, where a real casino would have none. */}
@@ -348,6 +384,9 @@ export function Hud() {
           </span>
         </Prompt>
       )}
+
+      {/* Above the prompts, below the menu: what the player can say here. */}
+      {emotesAvailable && emotePickerOpen && !settingsOpen && <EmotePicker />}
 
       {/* Last, so it layers over every prompt above rather than under them. */}
       {settingsOpen && <SettingsPanel />}

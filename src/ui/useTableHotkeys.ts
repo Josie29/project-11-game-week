@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useSessionStore } from '../store/useSessionStore'
 
 export interface TableHotkeyHandlers {
   onHit: () => void
@@ -34,6 +35,10 @@ export function useTableHotkeys(handlers: TableHotkeyHandlers): void {
     function onKeyDown(event: KeyboardEvent): void {
       // Leave browser and OS shortcuts alone.
       if (event.metaKey || event.ctrlKey || event.altKey) return
+      // The emote picker owns the digits while it is open, so a "2" aimed at
+      // "Table win!" cannot land as a $25 stake — and Escape closes the
+      // picker, not the seat.
+      if (useSessionStore.getState().emotePickerOpen) return
 
       const current = handlersRef.current
 

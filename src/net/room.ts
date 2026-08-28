@@ -72,6 +72,14 @@ export interface RoomHandlers {
   ) => void
   /** Somebody acted. Order of arrival is the order every client applies. */
   readonly onAction?: (table: string, id: string, action: string) => void
+  /**
+   * Somebody said something, as an id from the emote catalogue.
+   *
+   * A string here, not an `EmoteId`: it was chosen by another client and
+   * relayed unread, so coercing it into the catalogue is the store's job on
+   * the usual rule that every client re-sanitizes on receipt.
+   */
+  readonly onEmote?: (id: string, emote: string) => void
   /** A turn clock ran out. */
   readonly onExpired?: (table: string) => void
   /** This client's own id in the room, assigned by the server on join. */
@@ -121,6 +129,8 @@ export interface RoomConnection {
   sendReady: (ready: boolean) => void
   /** Sends an action for the room to order and echo back. */
   sendAction: (action: string) => void
+  /** Says something over this player's head, room-wide. The room rate-limits. */
+  sendEmote: (emote: string) => void
   /** Asks the room to throw. It refuses unless it is this player's turn. */
   requestRoll: () => void
   /** Gives up the dice. The room decides who gets them next. */
@@ -351,6 +361,13 @@ export function joinRoom(
         return
       }
 
+      case 'emote': {
+        if (typeof message.id === 'string' && typeof message.emote === 'string') {
+          handlers.onEmote?.(message.id, message.emote)
+        }
+        return
+      }
+
       case 'expired': {
         if (typeof message.table === 'string') handlers.onExpired?.(message.table)
         return
@@ -447,6 +464,12 @@ export function joinRoom(
     sendAction: (action) => {
       if (socket?.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ t: 'action', action }))
+      }
+    },
+
+    sendEmote: (emote) => {
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ t: 'emote', emote }))
       }
     },
 
