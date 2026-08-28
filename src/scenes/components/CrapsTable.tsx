@@ -2,12 +2,11 @@ import { CuboidCollider, Physics, RigidBody } from '@react-three/rapier'
 import { useCallback, useMemo, useRef } from 'react'
 import { DoubleSide, ExtrudeGeometry, Shape } from 'three'
 import { chipStake, totalCrapsStake } from '../../games/craps/engine'
-import { useAppearanceStore } from '../../store/useAppearanceStore'
 import { useCrapsStore } from '../../store/useCrapsStore'
 import { useGameStore } from '../../store/useGameStore'
 import { usePresenceStore } from '../../store/usePresenceStore'
 import { crapsRailIndex, TableId } from '../casinoFloorLayout'
-import { CRAPS_CHIP_SCALE, heldChipValue, playerChipRing } from '../chipLayout'
+import { CRAPS_CHIP_SCALE, heldChipValue, railChipRing } from '../chipLayout'
 import { buildBandGeometry, buildRingGeometry } from '../bandGeometry'
 import { ChipStack } from './ChipStack'
 import { CrapsDice } from './CrapsDice'
@@ -281,8 +280,6 @@ export function CrapsTable() {
   const shooterId = usePresenceStore((state) => state.shooters[TableId.Craps] ?? null)
   const lineup = usePresenceStore((state) => state.lineups[TableId.Craps] ?? EMPTY_LINEUP)
   const crapsStakes = usePresenceStore((state) => state.crapsStakes)
-  const peers = usePresenceStore((state) => state.peers)
-  const ownAppearance = useAppearanceStore((state) => state.appearance)
 
   /*
    * This player's slot along every bet region: their rail index. Solo — no
@@ -487,7 +484,7 @@ export function CrapsTable() {
             amount={amount}
             position={feltToWorld(spot.u, spot.v)}
             scale={CRAPS_CHIP_SCALE}
-            ring={playerChipRing(ownAppearance)}
+            ring={railChipRing(mySlot)}
           />
         )
       })}
@@ -498,12 +495,13 @@ export function CrapsTable() {
         knows nothing of them, and the lineup gate means a player who walks
         away takes their stacks with them even before the room says `left`.
         Whose stack is whose reads two ways: the slot in front of the owner's
-        rail spot, and the ring under it in the owner's garment colour.
+        rail spot, and the ring under it in that rail place's own hue — the
+        shooter's stacks always ride the gold, whoever is shooting.
       */}
       {Object.entries(crapsStakes).map(([id, stakes]) => {
         if (id === selfId || !lineup.includes(id)) return null
         const slot = crapsRailIndex(id, shooterId, lineup)
-        const ring = peers[id] ? playerChipRing(peers[id].appearance) : undefined
+        const ring = railChipRing(slot)
         return Object.values(CrapsBet).map((bet) => {
           const amount = stakes[bet]
           if (amount <= 0) return null

@@ -7,12 +7,12 @@ import {
   CRAPS_CHIP_SCALE,
   MAX_CHIPS_PER_COLUMN,
   packIntoColumns,
-  playerChipRing,
+  RAIL_RING_COLORS,
+  railChipRing,
   RING_LIP,
   stashBreakdown,
 } from '../scenes/chipLayout'
-import { DEFAULT_APPEARANCE } from '../character/appearance'
-import { GARMENT_COLORS } from '../character/palette'
+import { CRAPS_BET_SLOTS } from '../scenes/crapsFeltLayout'
 import { MAX_HANDS } from '../games/blackjack/engine'
 import {
   CARD_HEIGHT,
@@ -369,14 +369,34 @@ describe('craps chip scale and ownership ring', () => {
     expect(RING_LIP).toBeGreaterThan(0)
   })
 
-  // The ring colour is the second identity channel on the felt. It must be
-  // the swatch the player picked — not the garment's remapped palette — and
-  // junk must fall back to a real colour rather than an unparseable one,
-  // which meshStandardMaterial renders as glowing white.
-  it('reads the ring from the garment swatch and falls back on junk', () => {
-    const midnight = GARMENT_COLORS.find((swatch) => swatch.id === 'midnight')
-    expect(playerChipRing({ ...DEFAULT_APPEARANCE, garmentColor: 'midnight' })).toBe(midnight?.hex)
-    const fallback = playerChipRing({ ...DEFAULT_APPEARANCE, garmentColor: 'not-a-colour' })
-    expect(GARMENT_COLORS.some((swatch) => swatch.hex === fallback)).toBe(true)
+  // The ring colour is the second identity channel on the felt, keyed by
+  // rail place. A missing hue would render an undefined colour, a duplicate
+  // would dress two players alike — the failure garment colours had, which
+  // is why the rings stopped reading outfits.
+  it('gives every rail place its own valid hue', () => {
+    expect(RAIL_RING_COLORS).toHaveLength(CRAPS_BET_SLOTS)
+    expect(new Set(RAIL_RING_COLORS).size).toBe(RAIL_RING_COLORS.length)
+    for (const hue of RAIL_RING_COLORS) {
+      // An unparseable colour feeds meshStandardMaterial glowing white.
+      expect(hue).toMatch(/^#[0-9a-f]{6}$/)
+    }
+  })
+
+  // Chip colour already means denomination. A ring that matches one reads as
+  // one more chip in the stack — a $500 halo under a $5 bet.
+  it('keeps every ring hue clear of the denomination colours', () => {
+    for (const hue of RAIL_RING_COLORS) {
+      for (const chip of CHIP_DENOMINATIONS) {
+        expect(hue, `${hue} vs $${chip.value}`).not.toBe(chip.color)
+      }
+    }
+  })
+
+  // An index off either end is a transient lineup glitch. Clamped, not
+  // wrapped: wrapping would hand a ninth player the shooter's gold.
+  it('clamps out-of-range rail places', () => {
+    expect(railChipRing(0)).toBe(RAIL_RING_COLORS[0])
+    expect(railChipRing(-2)).toBe(RAIL_RING_COLORS[0])
+    expect(railChipRing(99)).toBe(RAIL_RING_COLORS[RAIL_RING_COLORS.length - 1])
   })
 })
