@@ -37,6 +37,13 @@ export interface SharedCraps {
   readonly hasRoom: boolean
   /** Whether anything is stopping a throw right now. */
   readonly canRoll: boolean
+  /**
+   * When the room last threw the dice, on `performance.now()`, or null solo
+   * or before any roll. The panel derives the table's betting-window countdown
+   * from this with `secondsUntilRoll`; the worker is the authority and refuses
+   * early throws regardless.
+   */
+  readonly rollClockStartedAt: number | null
   /** Throws — locally when alone, by asking the room when not. */
   readonly roll: () => void
 }
@@ -65,6 +72,7 @@ export function useSharedCraps(): SharedCraps {
   const lineup = usePresenceStore((state) => state.lineups[TableId.Craps] ?? EMPTY)
   const peers = usePresenceStore((state) => state.peers)
   const passDice = usePresenceStore((state) => state.passDice)
+  const rollClocks = usePresenceStore((state) => state.rollClocks)
   const publishTable = usePresenceStore((state) => state.publishTable)
 
   const activeTable = useGameStore((state) => state.activeTable)
@@ -175,6 +183,9 @@ export function useSharedCraps(): SharedCraps {
     connected,
     isShooter,
     canRoll: !isRolling && isShooter && (!shared || connected),
+    // Null alone: solo dice answer to nobody's clock. The panel does the
+    // ticking; the worker does the refusing.
+    rollClockStartedAt: shared ? (rollClocks[TableId.Craps] ?? null) : null,
     roll: () => {
       if (isRolling) return
       // Nothing to ask, and nothing to throw locally: a shared table that has
