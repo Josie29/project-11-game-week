@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import {
   canTakeDownCrapsBet,
   chipStake,
@@ -15,6 +15,7 @@ import { useCrapsStore } from '../store/useCrapsStore'
 import { useGameStore } from '../store/useGameStore'
 import { useSessionStore } from '../store/useSessionStore'
 import { MARKER_AMOUNT } from '../world/money'
+import { ROLL_WINDOW_MS, secondsUntilRoll } from '../world/rollClock'
 import {
   CrapsBet,
   PLACE_BETS,
@@ -169,7 +170,40 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
    * `isShooter` is always true, so this reduces to exactly what it was.
    */
   const table = useSharedCraps()
-  const canRoll = !isRolling && staked > 0 && table.isShooter
+
+  /*
+   * The table's betting window, on the deal clock's pattern: derived from the
+   * `rolled` broadcast every client received, ticked locally, refused
+   * authoritatively by the room. A quarter-second interval so a boundary is
+   * never crossed by more than a blink; setting the same whole second is a
+   * no-op re-render.
+   */
+  const [rollCountdown, setRollCountdown] = useState<number | null>(null)
+  const rollClockStartedAt = table.rollClockStartedAt
+  useEffect(() => {
+    if (rollClockStartedAt === null) {
+      setRollCountdown(null)
+      return
+    }
+
+    const update = () =>
+      setRollCountdown(secondsUntilRoll(rollClockStartedAt, performance.now()))
+    update()
+    const ticker = setInterval(update, 250)
+    return () => clearInterval(ticker)
+  }, [rollClockStartedAt])
+
+  /*
+   * Open between the dice settling and the room taking throws again. Values
+   * above the window are the tumble — `isRolling` already covers that stretch,
+   * and the count stays hidden through it the way the turn clock hides during
+   * the opening deal. Zero is the room's business: the button re-arms and the
+   * worker would refuse a straggling click anyway.
+   */
+  const bettingWindowOpen =
+    rollCountdown !== null && rollCountdown > 0 && rollCountdown <= ROLL_WINDOW_MS / 1000
+
+  const canRoll = !isRolling && staked > 0 && table.isShooter && !bettingWindowOpen
 
   /** No point yet, so the line bets are live and the numbers are not. */
   const comeOut = game.phase === CrapsPhase.ComeOut
@@ -384,8 +418,12 @@ export function CrapsPanel({ venueId }: CrapsPanelProps) {
           {isRolling
             ? 'Rolling…'
             : table.shared && !table.isShooter
-              ? `Waiting for ${table.shooterName ?? 'the shooter'}`
-              : 'Roll the dice'}{' '}
+              ? `Waiting for ${table.shooterName ?? 'the shooter'}${
+                  bettingWindowOpen ? ` — bets open ${rollCountdown}s` : ''
+                }`
+              : bettingWindowOpen
+                ? `Roll in ${rollCountdown}s`
+                : 'Roll the dice'}{' '}
           <kbd>Space</kbd>
         </button>
 

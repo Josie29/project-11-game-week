@@ -17,6 +17,7 @@
 // `src/__tests__` can reach them: the play-order comparator so its direction
 // is pinned, the dice-holder rule and the deal grace for the same reason.
 import { dealGraceMs } from './dealGrace'
+import { rollWindowMs } from './rollWindow'
 import { resolveDiceHolder } from './dice'
 import { admitEmote } from './emoteLimit'
 import { byPlayOrder } from './playOrder'
@@ -1018,6 +1019,14 @@ export class Room implements DurableObject {
     const table = attachment.identity?.table
     if (typeof table !== 'string') return
     if (this.shooterAt(table)?.id !== attachment.id) return
+    /*
+     * The *when* gate, beside the *who* gate (issue #17): while the last
+     * roll's dice are still tumbling and the table's ten-second betting
+     * window runs, the dice do not leave the shooter's hand. Refused as
+     * silently as a wrong shooter is — every client disables its button for
+     * the same seconds, so a message here is a race, not a player.
+     */
+    if (await this.rollWindowOpen(table)) return
 
     /*
      * Broadcast first, persist second, and never the other way round.
@@ -1028,7 +1037,33 @@ export class Room implements DurableObject {
      * worse outcome than a missing timeout.
      */
     this.sendAll({ t: 'rolled', table, shooter: attachment.id, ...die2() })
+    await this.stampRollWindow(table)
     await this.armRollTimeout(table)
+  }
+
+  /**
+   * Opens the table's betting window: no throw until the dice have settled
+   * and the ten seconds have run. Best-effort like every storage touch — a
+   * failed write costs one window, never the roll that was already sent.
+   */
+  private async stampRollWindow(table: string): Promise<void> {
+    try {
+      await this.state.storage.put(`rollWindow:${table}`, Date.now() + rollWindowMs())
+    } catch {
+      // The roll went out; the shooter merely gets to throw again early.
+    }
+  }
+
+  /** Whether the table's betting window is still holding the dice. */
+  private async rollWindowOpen(table: string): Promise<boolean> {
+    try {
+      const until = await this.state.storage.get(`rollWindow:${table}`)
+      return typeof until === 'number' && Date.now() < until
+    } catch {
+      // A storage failure must not freeze the dice; an early roll is the
+      // lesser harm.
+      return false
+    }
   }
 
   /** Moves the dice to the next player in line and tells everyone. */
@@ -1156,7 +1191,13 @@ export class Room implements DurableObject {
         return
       }
 
-      await this.armTurnClock(table, 'roll')
+      /*
+       * With the window as grace, so the thirty seconds an absent shooter
+       * gets start where the betting window ends — a timeout armed at the
+       * broadcast would spend its first stretch inside a window in which
+       * rolling is refused.
+       */
+      await this.armTurnClock(table, 'roll', rollWindowMs())
     } catch {
       // No alarm. The table still plays; a vanished shooter just holds the dice
       // until somebody reloads.
@@ -1248,6 +1289,7 @@ export class Room implements DurableObject {
     }
 
     this.sendAll({ t: 'rolled', table, shooter: shooter.id, ...die2() })
+    await this.stampRollWindow(table)
     await this.armRollTimeout(table)
   }
 
@@ -1345,6 +1387,7 @@ export class Room implements DurableObject {
 
     try {
       await this.state.storage.delete(`state:${table}`)
+      await this.state.storage.delete(`rollWindow:${table}`)
       // This table's clocks only. Deleting the alarm outright took the other
       // table's pending deal with it.
       await this.clearTurnClock(table, 'roll')

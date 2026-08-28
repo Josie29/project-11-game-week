@@ -115,6 +115,16 @@ interface PresenceStore {
    * deadline without the deadline ever crossing the wire.
    */
   turnClocks: Readonly<Record<string, number>>
+  /**
+   * When each table's dice last flew, on `performance.now()`.
+   *
+   * The face of the room's roll window, third instance of the `betClocks`
+   * rule: the worker refuses the next throw until the tumble and the table's
+   * ten-second betting window have run, and it opens that window on the
+   * `rolled` broadcast every client receives — so "that roll plus the window"
+   * is the deadline without the deadline ever crossing the wire (issue #17).
+   */
+  rollClocks: Readonly<Record<string, number>>
   /** This player's own id in the room, so the HUD can say "your roll". */
   selfId: string | null
   /** Asks the room to throw. It refuses unless it is this player's turn. */
@@ -210,7 +220,7 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     lastSent = null
     currentRoom = null
     buffers.clear()
-    set({ peers: {}, connected: false, emotes: {}, selfEmote: null, invite: null })
+    set({ peers: {}, connected: false, emotes: {}, selfEmote: null, invite: null, rollClocks: {} })
   }
 
   return {
@@ -224,6 +234,7 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
     bets: {},
     betClocks: {},
     turnClocks: {},
+    rollClocks: {},
     selfId: null,
     emotes: {},
     selfEmote: null,
@@ -367,8 +378,17 @@ export const usePresenceStore = create<PresenceStore>()((set) => {
          * so identical rolls give identical tables without the room knowing
          * what a point is.
          */
-        onRolled: (_table, roll) => {
+        onRolled: (table, roll) => {
           useCrapsStore.getState().applyRoll({ ...roll, total: roll.first + roll.second })
+          /*
+           * Stamped per table, guarded on craps — the cross-table lesson
+           * `onExpired` records: only the craps table has dice, and a clock
+           * keyed on whatever string arrived would let one table's roll close
+           * the other's betting.
+           */
+          if (table === TableId.Craps) {
+            set((state) => ({ rollClocks: { ...state.rollClocks, [table]: performance.now() } }))
+          }
         },
 
         onSelf: (id) => set({ selfId: id }),

@@ -24,7 +24,12 @@ import { useGameStore } from './useGameStore'
  * dice were still in the air would give the result away early, the same
  * mistake the blackjack reveal made.
  */
-const DICE_SETTLE_MS = 2100
+/*
+ * Exported for one reader: `rollClock.test.ts`, which pins this against the
+ * worker's `ROLL_SETTLE_MS` so the betting window opens when the dice land on
+ * every screen, not when the numbers were decided.
+ */
+export const DICE_SETTLE_MS = 2100
 
 /** The chip in hand on walking up: a green quarter, the table's middle stake. */
 const DEFAULT_CHIP = 25
